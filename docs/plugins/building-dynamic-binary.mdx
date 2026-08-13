@@ -325,12 +325,23 @@ CMD ["/app/main"]
 **Build and run:**
 
 ```bash
-# Build the image
-docker build -f transports/Dockerfile.debian -t bifrost:dynamic-debian .
+# Build the glibc image intended for dynamic Go plugins
+docker build -f transports/Dockerfile.dynamic-debian -t bifrost:dynamic-debian .
 
 # Run the container
 docker run -p 8080:8080 -v ./plugins:/app/data/plugins bifrost:dynamic-debian
 ```
+
+**Verify glibc linkage:**
+
+```bash
+docker run --rm --entrypoint ldd bifrost:dynamic-debian /app/main
+```
+
+The output must include `libc.so.6` and must not report `not a dynamic executable`.
+Build Go plugins with Linux glibc, Go 1.26.5, and the same target architecture as
+the image (for example, `linux/amd64`). The default `transports/Dockerfile` remains
+the static Alpine image and cannot load Go dynamic plugins.
 
 ## libc Compatibility
 

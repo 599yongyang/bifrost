@@ -1,0 +1,97 @@
+# --- UI Build Stage: Build the React + Vite frontend ---
+FROM node:25-alpine3.23@sha256:bdf2cca6fe3dabd014ea60163eca3f0f7015fbd5c7ee1b0e9ccb4ced6eb02ef4 AS ui-builder
+WORKDIR /app
+
+# Apply latest Alpine security patches before installing packages
+RUN apk upgrade --no-cache
+
+# Copy UI package files and install dependencies
+COPY ui/package*.json ./
+RUN npm ci
+
+# Copy UI source code and build the enterprise UI
+COPY ui/ ./
+RUN npm run build-enterprise
+
+# --- Go Build Stage: Compile a glibc-linked Go binary for dynamic plugins ---
+FROM golang:1.26.5-bookworm AS builder
+WORKDIR /app
+
+# Install the compiler, glibc headers, and SQLite development files required by CGO.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      gcc \
+      libc6-dev \
+      libsqlite3-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+ENV CGO_ENABLED=1 GOOS=linux
+
+COPY transports/go.mod transports/go.sum ./
+RUN go mod download
+
+COPY transports/ ./
+COPY --from=ui-builder /app/out ./bifrost-http/ui
+
+# Dynamic Go plugins require a dynamically linked Bifrost binary built with the
+# same Go toolchain, GOARCH, and glibc ABI as the plugin.
+ENV GOWORK=off
+ARG VERSION=unknown
+RUN go build \
+    -ldflags="-w -s -X main.Version=v${VERSION}" \
+    -a -trimpath \
+    -o /app/main \
+    ./bifrost-http
+
+# Fail the image build if the binary is not dynamically linked against glibc.
+RUN test -f /app/main && \
+    ldd /app/main | grep -F "libc.so.6"
+
+# --- Runtime Stage: Debian/glibc runtime for dynamic Go plugins ---
+FROM debian:bookworm-slim
+WORKDIR /app
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      libc6 \
+      ca-certificates \
+      wget && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/main .
+COPY --from=builder /app/docker-entrypoint.sh .
+
+ARG ARG_APP_PORT=8080
+ARG ARG_APP_HOST=0.0.0.0
+ARG ARG_LOG_LEVEL=info
+ARG ARG_LOG_STYLE=json
+ARG ARG_APP_DIR=/app/data
+
+ENV APP_PORT=$ARG_APP_PORT \
+    APP_HOST=$ARG_APP_HOST \
+    LOG_LEVEL=$ARG_LOG_LEVEL \
+    LOG_STYLE=$ARG_LOG_STYLE \
+    APP_DIR=$ARG_APP_DIR
+
+# Go runtime performance tuning (override at runtime for your workload).
+ENV GOGC="" \
+    GOMEMLIMIT=""
+
+# Keep the default image's numeric UID:GID and group-writable data directory
+# behavior so Kubernetes and arbitrary OpenShift UIDs continue to work.
+RUN mkdir -p "$APP_DIR/logs" && \
+    useradd --uid 1000 --gid 0 --create-home --shell /bin/sh appuser && \
+    chown -R appuser:0 /app && \
+    chown -R appuser:0 "$APP_DIR" && \
+    { [ "$APP_DIR" = "/app" ] || chmod -R g=rwX "$APP_DIR"; } && \
+    chmod +x /app/docker-entrypoint.sh
+USER 1000:0
+
+VOLUME ["${APP_DIR}"]
+EXPOSE $APP_PORT
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD wget -q -O /dev/null http://127.0.0.1:${APP_PORT}/health || exit 1
+
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
+CMD ["/app/main"]
