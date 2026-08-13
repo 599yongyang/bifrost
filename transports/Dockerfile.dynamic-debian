@@ -27,21 +27,27 @@ RUN apt-get update && \
 
 ENV CGO_ENABLED=1 GOOS=linux
 
-COPY transports/go.mod transports/go.sum ./
-RUN go mod download
+COPY core/go.mod core/go.sum ./core/
+COPY framework/go.mod framework/go.sum ./framework/
+COPY transports/go.mod transports/go.sum ./transports/
+RUN go work init ./core ./framework ./transports && \
+    go work sync
 
-COPY transports/ ./
-COPY --from=ui-builder /app/out ./bifrost-http/ui
+COPY core/ ./core/
+COPY framework/ ./framework/
+COPY transports/ ./transports/
+COPY --from=ui-builder /app/out ./transports/bifrost-http/ui
 
 # Dynamic Go plugins require a dynamically linked Bifrost binary built with the
 # same Go toolchain, GOARCH, and glibc ABI as the plugin.
-ENV GOWORK=off
 ARG VERSION=unknown
-RUN go build \
+RUN test "$(go list -m -f '{{.Dir}}' github.com/maximhq/bifrost/core)" = "/app/core" && \
+    test "$(go list -m -f '{{.Dir}}' github.com/maximhq/bifrost/framework)" = "/app/framework" && \
+    go build \
     -ldflags="-w -s -X main.Version=v${VERSION}" \
     -a -trimpath \
     -o /app/main \
-    ./bifrost-http
+    ./transports/bifrost-http
 
 # Fail the image build if the binary is not dynamically linked against glibc.
 RUN test -f /app/main && \
@@ -59,7 +65,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/main .
-COPY --from=builder /app/docker-entrypoint.sh .
+COPY --from=builder /app/transports/docker-entrypoint.sh .
 
 ARG ARG_APP_PORT=8080
 ARG ARG_APP_HOST=0.0.0.0
