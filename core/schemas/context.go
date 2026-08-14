@@ -22,6 +22,7 @@ var reservedKeys = []any{
 	BifrostContextKeySelectedKeyName,
 	BifrostContextKeyNumberOfRetries,
 	BifrostContextKeyFallbackIndex,
+	BifrostContextKeyConfiguredRequestTimeoutSeconds,
 	BifrostContextKeySkipKeySelection,
 	BifrostContextKeyPassthroughHeaders,
 	BifrostContextKeySkipBudgetAndRateLimits,
@@ -54,6 +55,7 @@ var pluginLogStorePool = sync.Pool{
 // value inheritance when derived from another BifrostContext.
 type BifrostContext struct {
 	parent                context.Context
+	createdAt             time.Time
 	deadline              time.Time
 	hasDeadline           bool
 	done                  chan struct{}
@@ -91,6 +93,7 @@ func NewBifrostContext(parent context.Context, deadline time.Time) *BifrostConte
 	}
 	ctx := &BifrostContext{
 		parent:                parent,
+		createdAt:             time.Now(),
 		deadline:              deadline,
 		hasDeadline:           !deadline.IsZero(),
 		done:                  make(chan struct{}),
@@ -108,6 +111,17 @@ func NewBifrostContext(parent context.Context, deadline time.Time) *BifrostConte
 		go ctx.watchCancellation()
 	}
 	return ctx
+}
+
+// Elapsed returns the time since this Bifrost request context was created.
+// Scoped plugin contexts delegate to the request root so all observers report
+// the same request lifetime.
+func (bc *BifrostContext) Elapsed() time.Duration {
+	root := bc.Root()
+	if root == nil || root.createdAt.IsZero() {
+		return 0
+	}
+	return time.Since(root.createdAt)
 }
 
 // NewBifrostContextWithValue creates a new BifrostContext with the given value set.
