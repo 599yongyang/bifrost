@@ -316,7 +316,7 @@ func (t *Tracer) PopulateLLMRequestAttributes(handle schemas.SpanHandle, req *sc
 		return
 	}
 
-	attrs := PopulateRequestAttributes(req)
+	attrs := populateRequestAttributes(req, trace, span.SpanID)
 	for k, v := range attrs {
 		span.SetAttribute(k, v)
 	}
@@ -365,7 +365,7 @@ func (t *Tracer) PopulateLLMResponseAttributes(ctx *schemas.BifrostContext, hand
 	if span == nil {
 		return
 	}
-	respAttrs := PopulateResponseAttributes(resp)
+	respAttrs := populateResponseAttributes(resp, trace, span.SpanID)
 	for k, v := range respAttrs {
 		if k == schemas.AttrFinishReasons {
 			// Spec: gen_ai.response.finish_reasons (string[]) belongs on the GenAI (llm.call) span.
@@ -396,6 +396,27 @@ func (t *Tracer) PopulateLLMResponseAttributes(ctx *schemas.BifrostContext, hand
 	}
 	if engines, ok := ctx.Value(schemas.BifrostContextKeyRoutingEnginesUsed).([]string); ok && len(engines) > 0 {
 		span.SetAttribute(schemas.AttrBifrostRoutingEngineUsed, strings.Join(engines, ","))
+	}
+	requestType, _ := span.Attributes[schemas.AttrLegacyRequestType].(string)
+	routingInfo, hasRoutingInfo := imageRoutingInfo(ctx, resp, err)
+	if hasRoutingInfo && isImageTracingRequestType(requestType) {
+		publicModel := routingInfo.Model
+		if routingInfo.IsFallback && routingInfo.PrimaryModel != nil && *routingInfo.PrimaryModel != "" {
+			publicModel = *routingInfo.PrimaryModel
+		}
+		providerModel := routingInfo.Model
+		if routingInfo.ResolvedKeyAlias != nil && routingInfo.ResolvedKeyAlias.ModelID != "" {
+			providerModel = routingInfo.ResolvedKeyAlias.ModelID
+		}
+		if routingInfo.ServerSideFallbackModel != nil && *routingInfo.ServerSideFallbackModel != "" {
+			providerModel = *routingInfo.ServerSideFallbackModel
+		}
+		if publicModel != "" {
+			span.SetAttribute(schemas.AttrBifrostPublicModel, publicModel)
+		}
+		if providerModel != "" {
+			span.SetAttribute(schemas.AttrBifrostProviderModel, providerModel)
+		}
 	}
 
 	// Populate cost attribute using pricing manager
@@ -434,6 +455,33 @@ func (t *Tracer) PopulateLLMResponseAttributes(ctx *schemas.BifrostContext, hand
 		if v, ok := respAttrs[schemas.AttrFinishReasons]; ok {
 			rootSpan.SetAttribute(schemas.AttrFinishReasons, v)
 		}
+	}
+}
+
+func imageRoutingInfo(ctx *schemas.BifrostContext, resp *schemas.BifrostResponse, bifrostErr *schemas.BifrostError) (schemas.RoutingInfo, bool) {
+	if resp != nil {
+		if extraFields := resp.GetExtraFields(); extraFields != nil && extraFields.RoutingInfo.Provider != "" {
+			return extraFields.RoutingInfo, true
+		}
+	}
+	if bifrostErr != nil && bifrostErr.ExtraFields.RoutingInfo.Provider != "" {
+		return bifrostErr.ExtraFields.RoutingInfo, true
+	}
+	if ctx != nil {
+		if routingInfo, ok := ctx.Value(schemas.BifrostContextKeyRoutingInfo).(schemas.RoutingInfo); ok && routingInfo.Provider != "" {
+			return routingInfo, true
+		}
+	}
+	return schemas.RoutingInfo{}, false
+}
+
+func isImageTracingRequestType(requestType string) bool {
+	switch schemas.RequestType(requestType) {
+	case schemas.ImageGenerationRequest, schemas.ImageGenerationStreamRequest,
+		schemas.ImageEditRequest, schemas.ImageEditStreamRequest, schemas.ImageVariationRequest:
+		return true
+	default:
+		return false
 	}
 }
 

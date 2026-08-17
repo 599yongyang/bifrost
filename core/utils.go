@@ -363,6 +363,32 @@ func clearCtxForFallback(ctx *schemas.BifrostContext) {
 	ctx.ClearValue(schemas.BifrostContextKeySupportsAssistantPrefill)
 }
 
+// finalizeAttemptRoutingInfo carries the primary identity into fallback attempts
+// and publishes the current attempt before provider tracing runs. Unary requests
+// need this just as streams do: their LLM span is completed inside the provider
+// call, before the worker attaches RoutingInfo to the final response.
+func finalizeAttemptRoutingInfo(ctx *schemas.BifrostContext, info schemas.RoutingInfo) schemas.RoutingInfo {
+	if ctx == nil {
+		return info
+	}
+	if fallbackIndex, _ := ctx.Value(schemas.BifrostContextKeyFallbackIndex).(int); fallbackIndex > 0 {
+		info.IsFallback = true
+		if previous, ok := ctx.Value(schemas.BifrostContextKeyRoutingInfo).(schemas.RoutingInfo); ok {
+			if previous.IsFallback && previous.PrimaryProvider != nil {
+				info.PrimaryProvider = previous.PrimaryProvider
+				info.PrimaryModel = previous.PrimaryModel
+			} else if previous.Provider != "" {
+				primaryProvider := previous.Provider
+				primaryModel := previous.Model
+				info.PrimaryProvider = &primaryProvider
+				info.PrimaryModel = &primaryModel
+			}
+		}
+	}
+	ctx.SetRoutingInfoSnapshot(info)
+	return info
+}
+
 // ClearContextForInternalRequest clears context state that is specific to the
 // caller's original request, so a context derived from it can carry an
 // internal sub-request (e.g. a plugin generating an embedding for its own

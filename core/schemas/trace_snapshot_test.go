@@ -1,10 +1,49 @@
 package schemas
 
 import (
+	"encoding/json"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 )
+
+type traceMediaTestStore struct {
+	items map[string][]TraceMedia
+}
+
+func (s *traceMediaTestStore) Store(key string, media TraceMedia) bool {
+	media.Data = append([]byte(nil), media.Data...)
+	s.items[key] = append(s.items[key], media)
+	return true
+}
+
+func (s *traceMediaTestStore) List(key string) []TraceMedia {
+	return append([]TraceMedia(nil), s.items[key]...)
+}
+
+func (s *traceMediaTestStore) Delete(key string) { delete(s.items, key) }
+
+func TestTraceMediaIsExcludedFromGenericSerialization(t *testing.T) {
+	store := &traceMediaTestStore{items: make(map[string][]TraceMedia)}
+	trace := &Trace{TraceID: "trace-1", InternalID: "internal-1"}
+	trace.SetMediaStore(store, trace.InternalID)
+	trace.AddMedia(TraceMedia{
+		ID: "media-1", SpanID: "span-1", MIMEType: "image/png", Data: []byte("secret-image-bytes"),
+	})
+
+	payload, err := json.Marshal(trace)
+	if err != nil {
+		t.Fatalf("marshal trace: %v", err)
+	}
+	if strings.Contains(string(payload), "Media") || strings.Contains(string(payload), "c2VjcmV0LWltYWdlLWJ5dGVz") {
+		t.Fatalf("generic trace serialization included media sidecar: %s", payload)
+	}
+	snapshot := trace.SnapshotForExport()
+	if len(snapshot.MediaAttachments()) != 1 || &snapshot.MediaAttachments()[0].Data[0] != &trace.MediaAttachments()[0].Data[0] {
+		t.Fatal("snapshot should retain a manager handle without copying media bytes")
+	}
+}
 
 // TestSnapshotForExport_ConcurrentWriter reproduces the crash observed by the
 // Datadog/OTEL exporters: an exporter iterating a span's live Attributes map

@@ -21,6 +21,8 @@ var contentAttrKeysWant = []string{
 	schemas.AttrInputSpeech,
 	schemas.AttrInputEmbedding,
 	schemas.AttrOutputMessages,
+	schemas.AttrBifrostImageInput,
+	schemas.AttrBifrostImageOutput,
 	schemas.AttrPrompt,
 	schemas.AttrInstructions,
 	schemas.AttrRespReasoningText,

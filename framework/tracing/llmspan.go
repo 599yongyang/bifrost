@@ -2,12 +2,21 @@
 package tracing
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"reflect"
 	"strings"
 
 	"github.com/maximhq/bifrost/core/schemas"
 )
+
+const maxTraceMediaBytes = 20 << 20 // 20 MiB per attachment
 
 func formatTraceValue(v any) string {
 	if v == nil {
@@ -35,6 +44,10 @@ func formatTraceValue(v any) string {
 // PopulateRequestAttributes extracts common request attributes from a BifrostRequest.
 // This is the main entry point for populating request attributes on a span.
 func PopulateRequestAttributes(req *schemas.BifrostRequest) map[string]any {
+	return populateRequestAttributes(req, nil, "")
+}
+
+func populateRequestAttributes(req *schemas.BifrostRequest, trace *schemas.Trace, spanID string) map[string]any {
 	attrs := make(map[string]any)
 	if req == nil {
 		return attrs
@@ -57,6 +70,16 @@ func PopulateRequestAttributes(req *schemas.BifrostRequest) map[string]any {
 		PopulateTranscriptionRequestAttributes(req.TranscriptionRequest, attrs)
 	case schemas.SpeechRequest, schemas.SpeechStreamRequest:
 		PopulateSpeechRequestAttributes(req.SpeechRequest, attrs)
+	case schemas.ImageGenerationRequest, schemas.ImageGenerationStreamRequest:
+		PopulateImageGenerationRequestAttributes(req.ImageGenerationRequest, attrs)
+	case schemas.ImageEditRequest, schemas.ImageEditStreamRequest:
+		if req.ImageEditRequest != nil && req.ImageEditRequest.Input != nil {
+			attrs[schemas.AttrBifrostImageInput] = formatTraceValue(imageEditInputSummary(req.ImageEditRequest, trace, spanID))
+		}
+	case schemas.ImageVariationRequest:
+		if req.ImageVariationRequest != nil && req.ImageVariationRequest.Input != nil {
+			attrs[schemas.AttrBifrostImageInput] = formatTraceValue(imageVariationInputSummary(req.ImageVariationRequest, trace, spanID))
+		}
 	case schemas.ResponsesRequest, schemas.ResponsesStreamRequest:
 		PopulateResponsesRequestAttributes(req.ResponsesRequest, attrs)
 	case schemas.BatchCreateRequest:
@@ -87,6 +110,10 @@ func PopulateRequestAttributes(req *schemas.BifrostRequest) map[string]any {
 // PopulateResponseAttributes extracts common response attributes from a BifrostResponse.
 // This is the main entry point for populating response attributes on a span.
 func PopulateResponseAttributes(resp *schemas.BifrostResponse) map[string]any {
+	return populateResponseAttributes(resp, nil, "")
+}
+
+func populateResponseAttributes(resp *schemas.BifrostResponse, trace *schemas.Trace, spanID string) map[string]any {
 	attrs := make(map[string]any)
 	if resp == nil {
 		return attrs
@@ -103,6 +130,8 @@ func PopulateResponseAttributes(resp *schemas.BifrostResponse) map[string]any {
 		PopulateTranscriptionResponseAttributes(resp.TranscriptionResponse, attrs)
 	case resp.SpeechResponse != nil:
 		PopulateSpeechResponseAttributes(resp.SpeechResponse, attrs)
+	case resp.ImageGenerationResponse != nil:
+		populateImageResponseAttributes(resp.ImageGenerationResponse, attrs, trace, spanID)
 	case resp.ResponsesResponse != nil:
 		PopulateResponsesResponseAttributes(resp.ResponsesResponse, attrs)
 	case resp.BatchCreateResponse != nil:
@@ -128,6 +157,270 @@ func PopulateResponseAttributes(resp *schemas.BifrostResponse) map[string]any {
 	}
 
 	return attrs
+}
+
+// PopulateImageGenerationRequestAttributes extracts the content and parameters that
+// describe a text-to-image request. The JSON is intentionally compact and contains no
+// binary image payloads.
+func PopulateImageGenerationRequestAttributes(req *schemas.BifrostImageGenerationRequest, attrs map[string]any) {
+	if req == nil || req.Input == nil {
+		return
+	}
+	input := map[string]any{"prompt": req.Input.Prompt}
+	if req.Params != nil {
+		if req.Params.Size != nil {
+			input["size"] = *req.Params.Size
+		}
+		if req.Params.Quality != nil {
+			input["quality"] = *req.Params.Quality
+		}
+		if req.Params.N != nil {
+			input["n"] = *req.Params.N
+		}
+	}
+	attrs[schemas.AttrBifrostImageInput] = formatTraceValue(input)
+}
+
+// PopulateImageEditRequestAttributes is filled out by the media tracing path. Keeping
+// the dispatch here makes all image request types explicit at the common seam.
+func PopulateImageEditRequestAttributes(req *schemas.BifrostImageEditRequest, attrs map[string]any) {
+	if req == nil || req.Input == nil {
+		return
+	}
+	input := imageEditInputSummary(req, nil, "")
+	attrs[schemas.AttrBifrostImageInput] = formatTraceValue(input)
+}
+
+// PopulateImageVariationRequestAttributes is filled out by the media tracing path.
+func PopulateImageVariationRequestAttributes(req *schemas.BifrostImageVariationRequest, attrs map[string]any) {
+	if req == nil || req.Input == nil {
+		return
+	}
+	input := imageVariationInputSummary(req, nil, "")
+	attrs[schemas.AttrBifrostImageInput] = formatTraceValue(input)
+}
+
+func imageEditInputSummary(req *schemas.BifrostImageEditRequest, trace *schemas.Trace, spanID string) map[string]any {
+	input := map[string]any{"prompt": req.Input.Prompt}
+	images := make([]map[string]any, 0, len(req.Input.Images))
+	for i, image := range req.Input.Images {
+		images = append(images, summarizeImageBytes(trace, spanID, "input", "image", i, image.Image))
+	}
+	input["images"] = images
+	input["image_count"] = len(images)
+	if req.Params != nil {
+		if len(req.Params.Mask) > 0 {
+			input["mask"] = summarizeImageBytes(trace, spanID, "input", "mask", 0, req.Params.Mask)
+		}
+		if req.Params.Size != nil {
+			input["size"] = *req.Params.Size
+		}
+		if req.Params.Quality != nil {
+			input["quality"] = *req.Params.Quality
+		}
+		if req.Params.N != nil {
+			input["n"] = *req.Params.N
+		}
+	}
+	return input
+}
+
+func imageVariationInputSummary(req *schemas.BifrostImageVariationRequest, trace *schemas.Trace, spanID string) map[string]any {
+	input := map[string]any{
+		"images":      []map[string]any{summarizeImageBytes(trace, spanID, "input", "image", 0, req.Input.Image.Image)},
+		"image_count": 1,
+	}
+	if req.Params != nil {
+		if req.Params.Size != nil {
+			input["size"] = *req.Params.Size
+		}
+		if req.Params.N != nil {
+			input["n"] = *req.Params.N
+		}
+	}
+	return input
+}
+
+func summarizeImageBytes(trace *schemas.Trace, spanID, field, role string, index int, data []byte) map[string]any {
+	digest := sha256.Sum256(data)
+	sha := hex.EncodeToString(digest[:])
+	mimeType := http.DetectContentType(data)
+	summary := map[string]any{
+		"mime_type": mimeType,
+		"bytes":     len(data),
+		"sha256":    sha,
+	}
+	if !supportedTraceImageMIME(mimeType) {
+		summary["capture_status"] = "unsupported_mime"
+		return summary
+	}
+	if len(data) > maxTraceMediaBytes {
+		summary["capture_status"] = "too_large"
+		return summary
+	}
+	if trace == nil || spanID == "" {
+		summary["capture_status"] = "metadata_only"
+		return summary
+	}
+	mediaID := fmt.Sprintf("%s-%s-%s-%d-%s", spanID, field, role, index, sha[:16])
+	if !trace.AddMedia(schemas.TraceMedia{
+		ID: mediaID, SpanID: spanID, Field: field, Role: role, Index: index,
+		MIMEType: mimeType, Bytes: len(data), SHA256: sha, Data: data,
+	}) {
+		summary["capture_status"] = "trace_limit"
+		return summary
+	}
+	summary["media_ref"] = "bifrost-media://" + mediaID
+	summary["capture_status"] = "captured"
+	return summary
+}
+
+func supportedTraceImageMIME(mimeType string) bool {
+	switch mimeType {
+	case "image/png", "image/jpeg", "image/gif", "image/webp":
+		return true
+	default:
+		return false
+	}
+}
+
+// PopulateImageResponseAttributes extracts renderable URL outputs and revised prompts.
+// Base64 payloads are handled by the trace media sidecar and never copied into this JSON.
+func PopulateImageResponseAttributes(resp *schemas.BifrostImageGenerationResponse, attrs map[string]any) {
+	populateImageResponseAttributes(resp, attrs, nil, "")
+}
+
+func populateImageResponseAttributes(resp *schemas.BifrostImageGenerationResponse, attrs map[string]any, trace *schemas.Trace, spanID string) {
+	if resp == nil {
+		return
+	}
+	attrs[schemas.AttrBifrostImageOutput] = formatTraceValue(imageResponseSummary(resp, trace, spanID))
+	if resp.Model != "" {
+		attrs[schemas.AttrResponseModel] = resp.Model
+	}
+	if resp.Usage != nil {
+		attrs[schemas.AttrInputTokens] = resp.Usage.InputTokens
+		attrs[schemas.AttrOutputTokens] = resp.Usage.OutputTokens
+		attrs[schemas.AttrTotalTokens] = resp.Usage.TotalTokens
+		if resp.Usage.InputTokensDetails != nil {
+			attrs[schemas.AttrInputTokenDetailsImage] = resp.Usage.InputTokensDetails.ImageTokens
+			attrs[schemas.AttrInputTokenDetailsText] = resp.Usage.InputTokensDetails.TextTokens
+		}
+		if resp.Usage.OutputTokensDetails != nil {
+			attrs[schemas.AttrOutputTokenDetailsImage] = resp.Usage.OutputTokensDetails.ImageTokens
+			attrs[schemas.AttrOutputTokenDetailsText] = resp.Usage.OutputTokensDetails.TextTokens
+		}
+	}
+}
+
+func imageResponseSummary(resp *schemas.BifrostImageGenerationResponse, trace *schemas.Trace, spanID string) map[string]any {
+	images := make([]map[string]any, 0, len(resp.Data))
+	for i, data := range resp.Data {
+		image := map[string]any{"index": data.Index}
+		if data.URL != "" {
+			if safeURL := safeTraceImageURL(data.URL); safeURL != "" {
+				image["url"] = safeURL
+			} else {
+				image["capture_status"] = "invalid_url"
+			}
+		}
+		if data.B64JSON != "" {
+			for key, value := range summarizeBase64Image(trace, spanID, "output", "image", i, data.B64JSON) {
+				image[key] = value
+			}
+		}
+		if data.RevisedPrompt != "" {
+			image["revised_prompt"] = data.RevisedPrompt
+		}
+		images = append(images, image)
+	}
+	return map[string]any{"images": images, "image_count": len(images)}
+}
+
+func safeTraceImageURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
+		return ""
+	}
+	return u.String()
+}
+
+func summarizeBase64Image(trace *schemas.Trace, spanID, field, role string, index int, encoded string) map[string]any {
+	raw := strings.TrimSpace(encoded)
+	if strings.HasPrefix(raw, "data:") {
+		comma := strings.IndexByte(raw, ',')
+		if comma < 0 || !strings.Contains(raw[:comma], ";base64") {
+			return map[string]any{"capture_status": "invalid_base64"}
+		}
+		raw = raw[comma+1:]
+	}
+	data, total, sha, prefix, err := decodeTraceBase64(raw, base64.StdEncoding)
+	if err != nil {
+		data, total, sha, prefix, err = decodeTraceBase64(raw, base64.RawStdEncoding)
+	}
+	if err != nil {
+		return map[string]any{"capture_status": "invalid_base64"}
+	}
+	mimeType := http.DetectContentType(prefix)
+	summary := map[string]any{"mime_type": mimeType, "bytes": total, "sha256": sha}
+	if !supportedTraceImageMIME(mimeType) {
+		summary["capture_status"] = "unsupported_mime"
+		return summary
+	}
+	if total > maxTraceMediaBytes {
+		summary["capture_status"] = "too_large"
+		return summary
+	}
+	if trace == nil || spanID == "" {
+		summary["capture_status"] = "metadata_only"
+		return summary
+	}
+	mediaID := fmt.Sprintf("%s-%s-%s-%d-%s", spanID, field, role, index, sha[:16])
+	if !trace.AddMedia(schemas.TraceMedia{
+		ID: mediaID, SpanID: spanID, Field: field, Role: role, Index: index,
+		MIMEType: mimeType, Bytes: total, SHA256: sha, Data: data,
+	}) {
+		summary["capture_status"] = "trace_limit"
+		return summary
+	}
+	summary["media_ref"] = "bifrost-media://" + mediaID
+	summary["capture_status"] = "captured"
+	return summary
+}
+
+func decodeTraceBase64(raw string, encoding *base64.Encoding) (data []byte, total int, sha string, prefix []byte, err error) {
+	decoder := base64.NewDecoder(encoding, strings.NewReader(raw))
+	hasher := sha256.New()
+	var captured bytes.Buffer
+	prefix = make([]byte, 0, 512)
+	buf := make([]byte, 32<<10)
+	for {
+		n, readErr := decoder.Read(buf)
+		if n > 0 {
+			chunk := buf[:n]
+			_, _ = hasher.Write(chunk)
+			if len(prefix) < 512 {
+				needed := min(512-len(prefix), len(chunk))
+				prefix = append(prefix, chunk[:needed]...)
+			}
+			total += n
+			if total <= maxTraceMediaBytes {
+				_, _ = captured.Write(chunk)
+			} else {
+				captured.Reset()
+			}
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			return nil, 0, "", nil, readErr
+		}
+	}
+	if total <= maxTraceMediaBytes {
+		data = append([]byte(nil), captured.Bytes()...)
+	}
+	return data, total, hex.EncodeToString(hasher.Sum(nil)), prefix, nil
 }
 
 // PopulateErrorAttributes extracts error attributes from a BifrostError.

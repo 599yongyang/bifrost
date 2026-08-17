@@ -7,6 +7,97 @@ import (
 	"github.com/maximhq/bifrost/core/schemas"
 )
 
+func ptr[T any](value T) *T { return &value }
+
+func traceWithMediaStore() *schemas.Trace {
+	trace := &schemas.Trace{InternalID: "test-trace"}
+	trace.SetMediaStore(newTraceMediaStore(), trace.InternalID)
+	return trace
+}
+
+func TestPopulateImageGenerationAttributes(t *testing.T) {
+	requestAttrs := PopulateRequestAttributes(&schemas.BifrostRequest{
+		RequestType: schemas.ImageGenerationRequest,
+		ImageGenerationRequest: &schemas.BifrostImageGenerationRequest{
+			Provider: schemas.OpenAI,
+			Model:    "gpt-image-2",
+			Input:    &schemas.ImageGenerationInput{Prompt: "a moonlit harbor"},
+			Params: &schemas.ImageGenerationParameters{
+				Size:    ptr("2048x1152"),
+				Quality: ptr("high"),
+				N:       ptr(2),
+			},
+		},
+	})
+
+	input := assertJSONAttr(t, requestAttrs, "bifrost.image.input")
+	if input["prompt"] != "a moonlit harbor" || input["size"] != "2048x1152" || input["quality"] != "high" || input["n"] != float64(2) {
+		t.Fatalf("image input = %#v, want prompt/size/quality/n", input)
+	}
+
+	responseAttrs := PopulateResponseAttributes(&schemas.BifrostResponse{
+		ImageGenerationResponse: &schemas.BifrostImageGenerationResponse{
+			Model: "gpt-image-2-2026-08-01",
+			Data: []schemas.ImageData{{
+				URL:           "https://images.example.test/result.png",
+				RevisedPrompt: "A moonlit harbor in watercolor",
+			}},
+		},
+	})
+	output := assertJSONAttr(t, responseAttrs, "bifrost.image.output")
+	if output["image_count"] != float64(1) {
+		t.Fatalf("image output count = %v, want 1", output["image_count"])
+	}
+	images, ok := output["images"].([]any)
+	if !ok || len(images) != 1 {
+		t.Fatalf("image output images = %T(%v), want one image", output["images"], output["images"])
+	}
+	image, ok := images[0].(map[string]any)
+	if !ok || image["url"] != "https://images.example.test/result.png" || image["revised_prompt"] != "A moonlit harbor in watercolor" {
+		t.Fatalf("image output = %#v, want URL and revised prompt", images[0])
+	}
+}
+
+func TestPopulateImageResponseAttributesRejectsUnsafeURL(t *testing.T) {
+	attrs := map[string]any{}
+	PopulateImageResponseAttributes(&schemas.BifrostImageGenerationResponse{Data: []schemas.ImageData{{
+		URL: "https://user:password@example.com/generated.png",
+	}}}, attrs)
+
+	output, _ := attrs[schemas.AttrBifrostImageOutput].(string)
+	if strings.Contains(output, "password") || strings.Contains(output, "user:") {
+		t.Fatalf("image output leaked URL credentials: %s", output)
+	}
+	if !strings.Contains(output, `"capture_status":"invalid_url"`) {
+		t.Fatalf("image output missing invalid URL status: %s", output)
+	}
+}
+
+func TestImageMediaReferencesAreDistinctAcrossInputAndOutput(t *testing.T) {
+	trace := traceWithMediaStore()
+	image := []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a, 's', 'a', 'm', 'e'}
+	input := summarizeImageBytes(trace, "span-1", "input", "image", 0, image)
+	output := summarizeImageBytes(trace, "span-1", "output", "image", 0, image)
+	if input["media_ref"] == output["media_ref"] {
+		t.Fatalf("input and output reused media reference %v", input["media_ref"])
+	}
+}
+
+func TestImageMediaCaptureHasPerTraceAttachmentLimit(t *testing.T) {
+	trace := traceWithMediaStore()
+	image := []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a, 'i'}
+	for i := 0; i < 16; i++ {
+		summary := summarizeImageBytes(trace, "span-1", "input", "image", i, image)
+		if summary["capture_status"] != "captured" {
+			t.Fatalf("attachment %d status = %v, want captured", i, summary["capture_status"])
+		}
+	}
+	overflow := summarizeImageBytes(trace, "span-1", "input", "image", 16, image)
+	if overflow["capture_status"] != "trace_limit" || len(trace.MediaAttachments()) != 16 {
+		t.Fatalf("overflow status/media = %v/%d, want trace_limit/16", overflow["capture_status"], len(trace.MediaAttachments()))
+	}
+}
+
 func assertJSONAttr(t *testing.T, attrs map[string]any, key string) map[string]any {
 	t.Helper()
 

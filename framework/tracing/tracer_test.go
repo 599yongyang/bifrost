@@ -2,6 +2,7 @@ package tracing
 
 import (
 	"context"
+	"encoding/base64"
 	"strings"
 	"testing"
 	"time"
@@ -124,6 +125,234 @@ func TestTracer_CompleteAndFlushTraceRedactsContentBeforeInject(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for observability inject")
+	}
+}
+
+func TestTracer_ImageEditUsesMediaSidecar(t *testing.T) {
+	store := NewTraceStore(5*time.Minute, nil)
+	defer store.Stop()
+	tracer := NewTracer(store, nil, nil)
+	defer tracer.Stop()
+
+	traceID := tracer.CreateTrace("")
+	ctx := context.WithValue(context.Background(), schemas.BifrostContextKeyTraceID, traceID)
+	_, handle := tracer.StartSpan(ctx, "generate_content gpt-image-2", schemas.SpanKindLLMCall)
+	image := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0, 0, 0, 0, 'I', 'H', 'D', 'R'}
+	mask := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 1, 2, 3, 4, 'I', 'D', 'A', 'T'}
+	tracer.PopulateLLMRequestAttributes(handle, &schemas.BifrostRequest{
+		RequestType: schemas.ImageEditRequest,
+		ImageEditRequest: &schemas.BifrostImageEditRequest{
+			Provider: schemas.OpenAI,
+			Model:    "gpt-image-2",
+			Input: &schemas.ImageEditInput{
+				Prompt: "replace the sky",
+				Images: []schemas.ImageInput{{Image: image}},
+			},
+			Params: &schemas.ImageEditParameters{Mask: mask, Size: ptr("1024x1024"), Quality: ptr("high"), N: ptr(1)},
+		},
+	})
+
+	trace := tracer.EndTrace(traceID)
+	if trace == nil {
+		t.Fatal("trace was not completed")
+	}
+	defer tracer.ReleaseTrace(trace)
+	mediaAttachments := trace.MediaAttachments()
+	if len(mediaAttachments) != 2 {
+		t.Fatalf("trace media count = %d, want image and mask", len(mediaAttachments))
+	}
+	for _, media := range mediaAttachments {
+		if media.MIMEType != "image/png" || media.Bytes != 16 || len(media.SHA256) != 64 {
+			t.Fatalf("media summary = %+v, want png/16 bytes/sha256", media)
+		}
+		if len(media.Data) != 16 {
+			t.Fatalf("sidecar data bytes = %d, want 16", len(media.Data))
+		}
+	}
+	span := trace.GetSpan(handle.(*spanHandle).spanID)
+	raw, _ := span.Attributes[schemas.AttrBifrostImageInput].(string)
+	if raw == "" || strings.Contains(raw, "iVBOR") || strings.Contains(raw, "89504e47") {
+		t.Fatalf("span input must contain references, not image bytes: %q", raw)
+	}
+	var input map[string]any
+	if err := schemas.Unmarshal([]byte(raw), &input); err != nil {
+		t.Fatalf("image input is not JSON: %v", err)
+	}
+	images, _ := input["images"].([]any)
+	if len(images) != 1 || input["mask"] == nil {
+		t.Fatalf("image edit input = %#v, want image and mask summaries", input)
+	}
+}
+
+func TestTracer_ImageMediaCaptureDegradesForUnsupportedAndOversizedFiles(t *testing.T) {
+	store := NewTraceStore(5*time.Minute, nil)
+	defer store.Stop()
+	tracer := NewTracer(store, nil, nil)
+	defer tracer.Stop()
+
+	traceID := tracer.CreateTrace("")
+	ctx := context.WithValue(context.Background(), schemas.BifrostContextKeyTraceID, traceID)
+	_, handle := tracer.StartSpan(ctx, "image_variation dall-e-2", schemas.SpanKindLLMCall)
+	oversized := make([]byte, maxTraceMediaBytes+1)
+	copy(oversized, []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a})
+	tracer.PopulateLLMRequestAttributes(handle, &schemas.BifrostRequest{
+		RequestType: schemas.ImageVariationRequest,
+		ImageVariationRequest: &schemas.BifrostImageVariationRequest{
+			Input: &schemas.ImageVariationInput{Image: schemas.ImageInput{Image: oversized}},
+		},
+	})
+
+	trace := tracer.EndTrace(traceID)
+	if trace == nil {
+		t.Fatal("trace was not completed")
+	}
+	defer tracer.ReleaseTrace(trace)
+	if mediaCount := len(trace.MediaAttachments()); mediaCount != 0 {
+		t.Fatalf("oversized media payload was retained: %d attachments", mediaCount)
+	}
+	span := trace.GetSpan(handle.(*spanHandle).spanID)
+	raw, _ := span.Attributes[schemas.AttrBifrostImageInput].(string)
+	if !strings.Contains(raw, `"capture_status":"too_large"`) {
+		t.Fatalf("oversized capture summary = %q, want too_large", raw)
+	}
+}
+
+func TestTracer_ImageVariationCapturesInputMedia(t *testing.T) {
+	store := NewTraceStore(5*time.Minute, nil)
+	defer store.Stop()
+	tracer := NewTracer(store, nil, nil)
+	defer tracer.Stop()
+
+	traceID := tracer.CreateTrace("")
+	ctx := context.WithValue(context.Background(), schemas.BifrostContextKeyTraceID, traceID)
+	_, handle := tracer.StartSpan(ctx, "image_variation dall-e-2", schemas.SpanKindLLMCall)
+	image := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0, 0, 0, 0, 'I', 'H', 'D', 'R'}
+	tracer.PopulateLLMRequestAttributes(handle, &schemas.BifrostRequest{
+		RequestType: schemas.ImageVariationRequest,
+		ImageVariationRequest: &schemas.BifrostImageVariationRequest{
+			Provider: schemas.OpenAI,
+			Model:    "dall-e-2",
+			Input:    &schemas.ImageVariationInput{Image: schemas.ImageInput{Image: image}},
+			Params:   &schemas.ImageVariationParameters{Size: ptr("1024x1024"), N: ptr(1)},
+		},
+	})
+
+	trace := tracer.EndTrace(traceID)
+	defer tracer.ReleaseTrace(trace)
+	attachments := trace.MediaAttachments()
+	if len(attachments) != 1 || attachments[0].Field != "input" || attachments[0].MIMEType != "image/png" {
+		t.Fatalf("variation media = %+v, want one PNG input", attachments)
+	}
+	span := trace.GetSpan(handle.(*spanHandle).spanID)
+	input, _ := span.Attributes[schemas.AttrBifrostImageInput].(string)
+	if !strings.Contains(input, "bifrost-media://") || !strings.Contains(input, `"size":"1024x1024"`) {
+		t.Fatalf("variation input summary = %q", input)
+	}
+}
+
+func TestTracer_ImageBase64OutputUsesMediaSidecar(t *testing.T) {
+	store := NewTraceStore(5*time.Minute, nil)
+	defer store.Stop()
+	tracer := NewTracer(store, nil, nil)
+	defer tracer.Stop()
+
+	traceID := tracer.CreateTrace("")
+	ctx := schemas.NewBifrostContext(context.WithValue(context.Background(), schemas.BifrostContextKeyTraceID, traceID), time.Time{})
+	_, handle := tracer.StartSpan(ctx, "generate_content gpt-image-2", schemas.SpanKindLLMCall)
+	image := []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0, 'I', 'H', 'D', 'R'}
+	tracer.PopulateLLMResponseAttributes(ctx, handle, &schemas.BifrostResponse{
+		ImageGenerationResponse: &schemas.BifrostImageGenerationResponse{
+			Model: "gpt-image-2-2026-08-01",
+			Data: []schemas.ImageData{{
+				B64JSON:       base64.StdEncoding.EncodeToString(image),
+				RevisedPrompt: "A refined prompt",
+			}},
+			Usage: &schemas.ImageUsage{InputTokens: 11, OutputTokens: 22, TotalTokens: 33},
+		},
+	}, nil)
+
+	trace := tracer.EndTrace(traceID)
+	if trace == nil {
+		t.Fatal("trace was not completed")
+	}
+	defer tracer.ReleaseTrace(trace)
+	mediaAttachments := trace.MediaAttachments()
+	if len(mediaAttachments) != 1 || string(mediaAttachments[0].Data) != string(image) || mediaAttachments[0].Field != "output" {
+		t.Fatalf("output media sidecar = %+v, want decoded output image", mediaAttachments)
+	}
+	span := trace.GetSpan(handle.(*spanHandle).spanID)
+	raw, _ := span.Attributes[schemas.AttrBifrostImageOutput].(string)
+	if !strings.Contains(raw, "bifrost-media://") || strings.Contains(raw, base64.StdEncoding.EncodeToString(image)) {
+		t.Fatalf("output summary must reference sidecar without base64: %q", raw)
+	}
+	if span.Attributes[schemas.AttrInputTokens] != 11 || span.Attributes[schemas.AttrOutputTokens] != 22 || span.Attributes[schemas.AttrTotalTokens] != 33 {
+		t.Fatalf("image usage attributes = %#v, want 11/22/33", span.Attributes)
+	}
+}
+
+func TestTracer_ImageFallbackRecordsPublicAndProviderModels(t *testing.T) {
+	store := NewTraceStore(5*time.Minute, nil)
+	defer store.Stop()
+	tracer := NewTracer(store, nil, nil)
+	defer tracer.Stop()
+
+	traceID := tracer.CreateTrace("")
+	ctx := schemas.NewBifrostContext(context.WithValue(context.Background(), schemas.BifrostContextKeyTraceID, traceID), time.Time{})
+	primaryProvider := schemas.OpenAI
+	primaryModel := "gpt-image-public"
+	ctx.SetValue(schemas.BifrostContextKeyRoutingInfo, schemas.RoutingInfo{
+		Provider: schemas.Azure, Model: "fallback-deployment", IsFallback: true,
+		PrimaryProvider: &primaryProvider, PrimaryModel: &primaryModel,
+		ResolvedKeyAlias: &schemas.ResolvedKeyAlias{ModelID: "azure-image-wire-model"},
+	})
+	_, handle := tracer.StartSpan(ctx, "image_generation fallback-deployment", schemas.SpanKindLLMCall)
+	tracer.SetAttribute(handle, schemas.AttrLegacyRequestType, string(schemas.ImageGenerationRequest))
+	tracer.PopulateLLMRequestAttributes(handle, &schemas.BifrostRequest{
+		RequestType: schemas.ImageGenerationRequest,
+		ImageGenerationRequest: &schemas.BifrostImageGenerationRequest{
+			Provider: schemas.Azure, Model: "fallback-deployment", Input: &schemas.ImageGenerationInput{Prompt: "a lighthouse"},
+		},
+	})
+	tracer.PopulateLLMResponseAttributes(ctx, handle, &schemas.BifrostResponse{
+		ImageGenerationResponse: &schemas.BifrostImageGenerationResponse{Model: "azure-image-wire-model"},
+	}, nil)
+
+	trace := tracer.EndTrace(traceID)
+	defer tracer.ReleaseTrace(trace)
+	span := trace.GetSpan(handle.(*spanHandle).spanID)
+	if got := span.Attributes[schemas.AttrBifrostPublicModel]; got != primaryModel {
+		t.Fatalf("public model = %v, want %q", got, primaryModel)
+	}
+	if got := span.Attributes[schemas.AttrBifrostProviderModel]; got != "azure-image-wire-model" {
+		t.Fatalf("provider model = %v, want azure wire model", got)
+	}
+}
+
+func TestTracer_ImageFallbackPrefersResponseRoutingInfo(t *testing.T) {
+	store := NewTraceStore(5*time.Minute, nil)
+	defer store.Stop()
+	tracer := NewTracer(store, nil, nil)
+	defer tracer.Stop()
+
+	traceID := tracer.CreateTrace("")
+	ctx := schemas.NewBifrostContext(context.WithValue(context.Background(), schemas.BifrostContextKeyTraceID, traceID), time.Time{})
+	_, handle := tracer.StartSpan(ctx, "image_generation fallback-deployment", schemas.SpanKindLLMCall)
+	tracer.SetAttribute(handle, schemas.AttrLegacyRequestType, string(schemas.ImageGenerationRequest))
+	primaryProvider := schemas.OpenAI
+	primaryModel := "public-image-model"
+	response := &schemas.BifrostResponse{ImageGenerationResponse: &schemas.BifrostImageGenerationResponse{Model: "wire-image-model"}}
+	response.ImageGenerationResponse.ExtraFields.RoutingInfo = schemas.RoutingInfo{
+		Provider: schemas.Azure, Model: "fallback-deployment", IsFallback: true,
+		PrimaryProvider: &primaryProvider, PrimaryModel: &primaryModel,
+		ResolvedKeyAlias: &schemas.ResolvedKeyAlias{ModelID: "wire-image-model"},
+	}
+	tracer.PopulateLLMResponseAttributes(ctx, handle, response, nil)
+
+	trace := tracer.EndTrace(traceID)
+	defer tracer.ReleaseTrace(trace)
+	span := trace.GetSpan(handle.(*spanHandle).spanID)
+	if span.Attributes[schemas.AttrBifrostPublicModel] != primaryModel || span.Attributes[schemas.AttrBifrostProviderModel] != "wire-image-model" {
+		t.Fatalf("image fallback models = public:%v provider:%v", span.Attributes[schemas.AttrBifrostPublicModel], span.Attributes[schemas.AttrBifrostProviderModel])
 	}
 }
 

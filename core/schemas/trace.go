@@ -21,8 +21,75 @@ type Trace struct {
 	Attributes            map[string]any    // Additional attributes for the trace
 	RequestHeaders        map[string]string // Lowercased request headers, populated only when a connector opts in
 	PluginLogs            []PluginLogEntry  // Plugin log entries accumulated during request processing
+	mediaStore            TraceMediaStore   // Small handle to externally-owned, bounded binary attachments
+	mediaStoreKey         string
 	redactionReplacements RedactionMapsByPhase
 	mu                    sync.Mutex // Mutex for thread-safe span operations
+}
+
+// TraceMedia is a bounded, immutable media attachment associated with one span.
+// Data is kept out of Span.Attributes so OTEL exporters cannot accidentally serialize
+// large image payloads. Observability connectors may upload it to their media store and
+// replace the local reference in the compact image summary.
+type TraceMedia struct {
+	ID       string
+	SpanID   string
+	Field    string
+	Role     string
+	Index    int
+	MIMEType string
+	Bytes    int
+	SHA256   string
+	Data     []byte `json:"-"`
+}
+
+// TraceMediaStore owns request-sized media outside Trace and its export snapshots.
+// Implementations must bound retained bytes, copy input on Store, and treat values
+// returned by List as immutable. The trace holds only this interface and an opaque key.
+type TraceMediaStore interface {
+	Store(key string, media TraceMedia) bool
+	List(key string) []TraceMedia
+	Delete(key string)
+}
+
+// SetMediaStore attaches the externally-owned media manager used by this request.
+// key must be unique per request (Trace.InternalID in the framework tracer).
+func (t *Trace) SetMediaStore(store TraceMediaStore, key string) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.mediaStore = store
+	t.mediaStoreKey = key
+}
+
+// AddMedia appends an immutable media attachment to the trace. It returns false
+// when the per-trace count or byte budget is exhausted so observability degrades
+// without allowing a large multipart request to amplify tracing memory usage.
+func (t *Trace) AddMedia(media TraceMedia) bool {
+	if t == nil || media.ID == "" || len(media.Data) == 0 {
+		return false
+	}
+	t.mu.Lock()
+	store, key := t.mediaStore, t.mediaStoreKey
+	t.mu.Unlock()
+	return store != nil && key != "" && store.Store(key, media)
+}
+
+// MediaAttachments returns immutable attachment views from the external manager.
+// Binary payloads are not copied into the Trace or its export snapshots.
+func (t *Trace) MediaAttachments() []TraceMedia {
+	if t == nil {
+		return nil
+	}
+	t.mu.Lock()
+	store, key := t.mediaStore, t.mediaStoreKey
+	t.mu.Unlock()
+	if store == nil || key == "" {
+		return nil
+	}
+	return store.List(key)
 }
 
 // Trace-level attribute keys. Unlike span attributes, trace attributes are never
@@ -179,6 +246,8 @@ func (t *Trace) SnapshotForExport() *Trace {
 		Attributes:     maps.Clone(t.Attributes),
 		RequestHeaders: maps.Clone(t.RequestHeaders),
 		PluginLogs:     append([]PluginLogEntry(nil), t.PluginLogs...),
+		mediaStore:     t.mediaStore,
+		mediaStoreKey:  t.mediaStoreKey,
 	}
 	spans := append([]*Span(nil), t.Spans...)
 	rootSpan := t.RootSpan
@@ -272,6 +341,8 @@ func (t *Trace) Reset() {
 		t.PluginLogs[i] = PluginLogEntry{}
 	}
 	t.PluginLogs = t.PluginLogs[:0]
+	t.mediaStore = nil
+	t.mediaStoreKey = ""
 }
 
 // AppendPluginLogs appends plugin log entries to the trace in a thread-safe manner.
@@ -311,12 +382,12 @@ func traceRedactionReplacementsForAttribute(key string, inputReplacements map[st
 // traceContentAttributeScopeForKey classifies content attributes by request/response phase.
 func traceContentAttributeScopeForKey(key string) traceContentAttributeScope {
 	switch key {
-	case AttrInputMessages, AttrInputText, AttrInputSpeech, AttrInputEmbedding,
+	case AttrInputMessages, AttrInputText, AttrInputSpeech, AttrInputEmbedding, AttrBifrostImageInput,
 		AttrPrompt, AttrInstructions,
 		AttrTools, AttrToolChoiceType, AttrToolChoiceName,
 		AttrRespTools, AttrRespToolChoiceType, AttrRespToolChoiceName:
 		return traceContentAttributeScopeInput
-	case AttrOutputMessages, AttrRespReasoningText:
+	case AttrOutputMessages, AttrRespReasoningText, AttrBifrostImageOutput:
 		return traceContentAttributeScopeOutput
 	case AttrToolName, AttrToolCallID, AttrToolCallArguments, AttrToolCallResult, AttrToolType:
 		return traceContentAttributeScopeMixed
@@ -617,6 +688,12 @@ const (
 	AttrInputEmbedding = "gen_ai.input.embedding"
 	AttrOutputMessages = "gen_ai.output.messages"
 
+	// Image request/response summaries. These attributes contain compact JSON metadata
+	// only; image bytes live in the trace media sidecar and are never serialized as
+	// ordinary OTEL span attributes.
+	AttrBifrostImageInput  = "bifrost.image.input"
+	AttrBifrostImageOutput = "bifrost.image.output"
+
 	// Bifrost Context Attributes
 	// legacy: every key below sits under gen_ai.* but represents a Bifrost-internal
 	// concept (governance / routing). The bifrost.* mirrors are the canonical home
@@ -772,6 +849,8 @@ const (
 	AttrBifrostOverheadDurationMs = "bifrost.overhead.duration_ms"
 
 	AttrBifrostProviderName        = "bifrost.provider.name"
+	AttrBifrostPublicModel         = "bifrost.public_model"
+	AttrBifrostProviderModel       = "bifrost.provider_model"
 	AttrBifrostRequestID           = "bifrost.request.id"
 	AttrBifrostVirtualKeyID        = "bifrost.virtual_key.id"
 	AttrBifrostVirtualKeyName      = "bifrost.virtual_key.name"

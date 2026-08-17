@@ -25,24 +25,36 @@ RUN apt-get update && \
       libsqlite3-dev && \
     rm -rf /var/lib/apt/lists/*
 
-ENV CGO_ENABLED=1 GOOS=linux
+ENV CGO_ENABLED=1 GOOS=linux GODEBUG=http2client=0
 
 COPY core/go.mod core/go.sum ./core/
 COPY framework/go.mod framework/go.sum ./framework/
+COPY plugins/otel/go.mod plugins/otel/go.sum ./plugins/otel/
 COPY transports/go.mod transports/go.sum ./transports/
-RUN go work init ./core ./framework ./transports && \
-    go work sync
+RUN go work init ./core ./framework ./plugins/otel ./transports
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    sync_attempt=1; \
+    until go work sync; do \
+      if [ "$sync_attempt" -ge 3 ]; then exit 1; fi; \
+      sync_attempt=$((sync_attempt + 1)); \
+      sleep 2; \
+    done
 
 COPY core/ ./core/
 COPY framework/ ./framework/
+COPY plugins/otel/ ./plugins/otel/
 COPY transports/ ./transports/
 COPY --from=ui-builder /app/out ./transports/bifrost-http/ui
 
 # Dynamic Go plugins require a dynamically linked Bifrost binary built with the
 # same Go toolchain, GOARCH, and glibc ABI as the plugin.
 ARG VERSION=unknown
-RUN test "$(go list -m -f '{{.Dir}}' github.com/maximhq/bifrost/core)" = "/app/core" && \
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    test "$(go list -m -f '{{.Dir}}' github.com/maximhq/bifrost/core)" = "/app/core" && \
     test "$(go list -m -f '{{.Dir}}' github.com/maximhq/bifrost/framework)" = "/app/framework" && \
+    test "$(go list -m -f '{{.Dir}}' github.com/maximhq/bifrost/plugins/otel)" = "/app/plugins/otel" && \
     go build \
     -ldflags="-w -s -X main.Version=v${VERSION}" \
     -a -trimpath \

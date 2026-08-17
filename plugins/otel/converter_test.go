@@ -2,6 +2,7 @@ package otel
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 	"time"
 
@@ -126,6 +127,120 @@ func TestConvertTraceToResourceSpan_DisableRootSpanContent(t *testing.T) {
 	}
 	if attrString(child, schemas.AttrOutputMessages) == "" {
 		t.Error("child llm.call span should retain full output content")
+	}
+}
+
+func TestConvertTraceToResourceSpan_ImageGenerationLangfuseObservation(t *testing.T) {
+	p := &OtelPlugin{pluginSpanFilter: &PluginSpanFilter{}}
+	root := makeSpan("aaaa", "", "request", schemas.SpanKindInternal)
+	child := makeSpan("bbbb", "aaaa", "generate_content gpt-image-2", schemas.SpanKindLLMCall)
+	child.EndTime = child.StartTime.Add(1234 * time.Millisecond)
+	child.Attributes = map[string]any{
+		schemas.AttrLegacyRequestType:       "image_generation",
+		schemas.AttrRequestModel:            "gpt-image-2",
+		schemas.AttrBifrostProviderName:     "openai",
+		schemas.AttrBifrostRoutingRuleName:  "premium-images",
+		schemas.AttrBifrostFallbackIndex:    1,
+		schemas.AttrInputTokens:             11,
+		schemas.AttrOutputTokens:            22,
+		schemas.AttrTotalTokens:             33,
+		schemas.AttrInputTokenDetailsImage:  7,
+		schemas.AttrInputTokenDetailsText:   4,
+		schemas.AttrOutputTokenDetailsImage: 22,
+		schemas.AttrUsageCost:               0.42,
+		"bifrost.public_model":              "public-image-model",
+		"bifrost.provider_model":            "gpt-image-2-2026-08-01",
+		"bifrost.image.input":               `{"prompt":"a moonlit harbor","size":"2048x1152","quality":"high","n":1}`,
+		"bifrost.image.output":              `{"images":[{"url":"https://images.example.test/result.png","revised_prompt":"A moonlit harbor in watercolor"}]}`,
+	}
+	trace := &schemas.Trace{
+		TraceID:  "00000000000000000000000000000003",
+		RootSpan: root,
+		Spans:    []*schemas.Span{root, child},
+	}
+
+	rs := p.convertTraceToResourceSpan("svc", trace, nil, false, false, false)
+	var got *Span
+	for _, span := range rs.ScopeSpans[0].Spans {
+		if bytes.Equal(span.SpanId, hexToBytes("bbbb", 8)) {
+			got = span
+			break
+		}
+	}
+	if got == nil {
+		t.Fatal("image generation span was not exported")
+	}
+	if value := attrString(got, "langfuse.observation.type"); value != "generation" {
+		t.Fatalf("observation type = %q, want generation", value)
+	}
+	if value := attrString(got, "langfuse.observation.input"); value != child.Attributes["bifrost.image.input"] {
+		t.Fatalf("observation input = %q, want image input JSON", value)
+	}
+	if value := attrString(got, "langfuse.observation.output"); value != child.Attributes["bifrost.image.output"] {
+		t.Fatalf("observation output = %q, want image output JSON", value)
+	}
+	if parameters := attrString(got, "langfuse.observation.model.parameters"); !strings.Contains(parameters, `"size":"2048x1152"`) || !strings.Contains(parameters, `"quality":"high"`) || strings.Contains(parameters, "prompt") {
+		t.Fatalf("model parameters = %q, want size/quality without prompt", parameters)
+	}
+	if value := attrString(got, "langfuse.observation.metadata.request_type"); value != "image_generation" {
+		t.Fatalf("request_type metadata = %q, want image_generation", value)
+	}
+	for key, want := range map[string]string{
+		"langfuse.observation.model.name":              "gpt-image-2-2026-08-01",
+		"langfuse.observation.metadata.public_model":   "public-image-model",
+		"langfuse.observation.metadata.provider":       "openai",
+		"langfuse.observation.metadata.provider_model": "gpt-image-2-2026-08-01",
+		"langfuse.observation.metadata.routing_rule":   "premium-images",
+		"langfuse.observation.metadata.fallback_index": "1",
+		"langfuse.observation.metadata.latency_ms":     "1234",
+	} {
+		if value := attrString(got, key); value != want {
+			t.Errorf("%s = %q, want %q", key, value, want)
+		}
+	}
+	if usage := attrString(got, "langfuse.observation.usage_details"); !strings.Contains(usage, `"input":11`) || !strings.Contains(usage, `"output":22`) || !strings.Contains(usage, `"total":33`) || !strings.Contains(usage, `"input_image":7`) || !strings.Contains(usage, `"output_image":22`) {
+		t.Errorf("usage details = %q, want totals and image token details", usage)
+	}
+	if cost := attrString(got, "langfuse.observation.cost_details"); !strings.Contains(cost, `"total":0.42`) {
+		t.Errorf("cost details = %q, want total cost", cost)
+	}
+}
+
+func TestConvertImageEditAndVariationToLangfuseObservations(t *testing.T) {
+	for _, requestType := range []schemas.RequestType{schemas.ImageEditRequest, schemas.ImageVariationRequest} {
+		t.Run(string(requestType), func(t *testing.T) {
+			span := makeSpan("bbbb", "", string(requestType), schemas.SpanKindLLMCall)
+			span.Attributes = map[string]any{
+				schemas.AttrLegacyRequestType:  string(requestType),
+				schemas.AttrBifrostImageInput:  `{"images":[{"media_ref":"bifrost-media://input"}]}`,
+				schemas.AttrBifrostImageOutput: `{"images":[{"url":"https://images.example.test/output.png"}]}`,
+			}
+			got := convertSpanToOTELSpan("00000000000000000000000000000003", span, false)
+			input := attrString(got, "langfuse.observation.input")
+			if attrString(got, "langfuse.observation.type") != "generation" || input == "" || attrString(got, "langfuse.observation.output") == "" {
+				t.Fatalf("%s did not produce a complete Langfuse observation", requestType)
+			}
+			if strings.Contains(input, "bifrost-media://") {
+				t.Fatalf("%s exported an internal media reference: %s", requestType, input)
+			}
+		})
+	}
+}
+
+func TestConvertImageErrorToLangfuseStatus(t *testing.T) {
+	span := makeSpan("bbbb", "", "image_generation", schemas.SpanKindLLMCall)
+	span.Status = schemas.SpanStatusError
+	span.Attributes = map[string]any{
+		schemas.AttrLegacyRequestType: string(schemas.ImageGenerationRequest),
+		schemas.AttrError:             "upstream gateway timed out",
+		schemas.AttrErrorTypeSpec:     "upstream_timeout",
+	}
+	got := convertSpanToOTELSpan("00000000000000000000000000000003", span, false)
+	if attrString(got, "langfuse.observation.level") != "ERROR" {
+		t.Fatalf("observation level = %q, want ERROR", attrString(got, "langfuse.observation.level"))
+	}
+	if attrString(got, "langfuse.observation.status_message") != "upstream gateway timed out" {
+		t.Fatalf("status message = %q, want safe Bifrost error", attrString(got, "langfuse.observation.status_message"))
 	}
 }
 

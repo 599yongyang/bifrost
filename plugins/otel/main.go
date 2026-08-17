@@ -61,6 +61,10 @@ const (
 	// collector fails once per request; logging each one makes the logging itself a load
 	// source on top of the outage.
 	exportLogThrottle = 500
+
+	// mediaUploadConcurrency bounds per-trace object-store uploads while avoiding
+	// attachment-count × timeout latency for edit requests with several images.
+	mediaUploadConcurrency = 4
 )
 
 // PluginSpanFilter, its mode type, and the include/exclude constants are shared across
@@ -358,6 +362,7 @@ type otelTarget struct {
 	url                    string
 	traceType              TraceType
 	client                 OtelClient
+	mediaUploader          mediaUploader
 	metricsExporter        *MetricsExporter
 	requestHeaders         []string
 	disableContentLogging  bool
@@ -550,10 +555,16 @@ func (p *OtelPlugin) buildTarget(index int, profile *Profile) (*otelTarget, erro
 		target.client, err = NewOtelClientGRPC(url, headers, profile.TLSCACert, profile.Insecure)
 	case ProtocolHTTP:
 		target.client, err = NewOtelClientHTTP(url, headers, profile.TLSCACert, profile.Insecure, exportTimeout)
+		if err == nil {
+			target.mediaUploader, err = newLangfuseMediaClient(url, headers, exportTimeout, profile.TLSCACert, profile.Insecure)
+		}
 	default:
 		return nil, fmt.Errorf("profile %d: invalid protocol type %q", index, profile.Protocol)
 	}
 	if err != nil {
+		if target.mediaUploader != nil {
+			target.mediaUploader.Close()
+		}
 		return nil, fmt.Errorf("profile %d: %w", index, err)
 	}
 
@@ -561,6 +572,9 @@ func (p *OtelPlugin) buildTarget(index int, profile *Profile) (*otelTarget, erro
 	if profile.MetricsEnabled {
 		if profile.MetricsEndpoint.GetValue() == "" {
 			target.client.Close()
+			if target.mediaUploader != nil {
+				target.mediaUploader.Close()
+			}
 			return nil, fmt.Errorf("profile %d: metrics_endpoint is required when metrics_enabled is true", index)
 		}
 		pushInterval := profile.MetricsPushInterval
@@ -568,6 +582,9 @@ func (p *OtelPlugin) buildTarget(index int, profile *Profile) (*otelTarget, erro
 			pushInterval = 15 // default 15 seconds
 		} else if pushInterval > 300 {
 			target.client.Close()
+			if target.mediaUploader != nil {
+				target.mediaUploader.Close()
+			}
 			return nil, fmt.Errorf("profile %d: metrics_push_interval must be between 1 and 300 seconds, got %d", index, pushInterval)
 		}
 		metricsConfig := &MetricsConfig{
@@ -584,6 +601,9 @@ func (p *OtelPlugin) buildTarget(index int, profile *Profile) (*otelTarget, erro
 			// Clean up trace client if metrics exporter fails
 			if target.client != nil {
 				target.client.Close()
+			}
+			if target.mediaUploader != nil {
+				target.mediaUploader.Close()
 			}
 			return nil, fmt.Errorf("profile %d: failed to initialize metrics exporter: %w", index, err)
 		}
@@ -773,7 +793,35 @@ func (p *OtelPlugin) Inject(ctx context.Context, trace *schemas.Trace) error {
 			if t.client == nil || t.breakerOpen() {
 				return
 			}
-			resourceSpan := p.convertTraceToResourceSpan(t.serviceName, trace, t.requestHeaders, t.disableContentLogging, t.groupTracesBySession, t.disableRootSpanContent)
+			mediaRefs := make(map[string]string)
+			attachments := trace.MediaAttachments()
+			for _, media := range attachments {
+				mediaRefs["bifrost-media://"+media.ID] = ""
+			}
+			if !t.disableContentLogging && t.mediaUploader != nil {
+				var mediaWG sync.WaitGroup
+				var mediaRefsMu sync.Mutex
+				mediaSem := make(chan struct{}, mediaUploadConcurrency)
+				for _, media := range attachments {
+					media := media
+					mediaWG.Go(func() {
+						mediaSem <- struct{}{}
+						defer func() { <-mediaSem }()
+						mediaCtx, mediaCancel := context.WithTimeout(ctx, t.exportTimeout)
+						token, mediaErr := t.mediaUploader.Upload(mediaCtx, trace.TraceID, media)
+						mediaCancel()
+						if mediaErr != nil {
+							logger.Error("failed to upload trace media trace_id=%s observation_id=%s field=%s mime=%s bytes=%d sha256=%s: %v", trace.TraceID, media.SpanID, media.Field, media.MIMEType, media.Bytes, media.SHA256, mediaErr)
+							return
+						}
+						mediaRefsMu.Lock()
+						mediaRefs["bifrost-media://"+media.ID] = token
+						mediaRefsMu.Unlock()
+					})
+				}
+				mediaWG.Wait()
+			}
+			resourceSpan := p.convertTraceToResourceSpanWithMedia(t.serviceName, trace, t.requestHeaders, t.disableContentLogging, t.groupTracesBySession, t.disableRootSpanContent, mediaRefs)
 			// The caller passes context.Background(), so this deadline is the only bound
 			// on the export — and the only bound at all on the gRPC path.
 			emitCtx, cancel := context.WithTimeout(ctx, t.exportTimeout)
@@ -1194,6 +1242,9 @@ func (p *OtelPlugin) Cleanup() error {
 			if err := t.client.Close(); err != nil && firstErr == nil {
 				firstErr = err
 			}
+		}
+		if t.mediaUploader != nil {
+			t.mediaUploader.Close()
 		}
 	}
 	return firstErr
