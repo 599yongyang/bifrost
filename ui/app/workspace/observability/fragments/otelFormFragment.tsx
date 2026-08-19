@@ -13,7 +13,7 @@ import { otelFormSchema, type OtelFormSchema, type SecretVar } from "@/lib/types
 import { emptySecretVar, toSecretVarFormValue, toSecretVarMapFormValue } from "@/lib/utils/secretVarForm";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ChevronDown, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, Info, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useFieldArray, useForm, type Control, type Resolver, type UseFormReturn } from "react-hook-form";
 
@@ -377,6 +377,24 @@ interface OtelProfileSectionProps {
 	onRemove: () => void;
 }
 
+function SelectionFieldLabel({ label, description }: { label: string; description: string }) {
+	return (
+		<TooltipProvider delayDuration={200}>
+			<div className="flex items-center gap-1.5">
+				<FormLabel>{label}</FormLabel>
+				<Tooltip>
+					<TooltipTrigger asChild>
+						<button type="button" className="text-muted-foreground hover:text-foreground" aria-label={`About ${label}`}>
+							<Info className="size-3.5" aria-hidden="true" />
+						</button>
+					</TooltipTrigger>
+					<TooltipContent className="max-w-xs leading-relaxed">{description}</TooltipContent>
+				</Tooltip>
+			</div>
+		</TooltipProvider>
+	);
+}
+
 function SelectiveExportSection({
 	form,
 	hasOtelAccess,
@@ -395,7 +413,8 @@ function SelectiveExportSection({
 				<div>
 					<FormLabel className="text-base">Selective Complete Record Export</FormLabel>
 					<FormDescription>
-						Rules are evaluated by priority. The first matching rule either exports the complete record or drops it from every OTEL target.
+						Rules are evaluated by priority. Conditions inside one rule use AND; the first matching rule decides whether the complete record
+						is exported.
 					</FormDescription>
 				</div>
 				<FormField
@@ -447,7 +466,10 @@ function SelectiveExportSection({
 							name="selective_export.candidate_rate"
 							render={({ field }) => (
 								<FormItem>
-									<FormLabel>Media Candidate %</FormLabel>
+									<SelectionFieldLabel
+										label="Media Candidate %"
+										description="Head-sampling performed before the result is known. Only candidates retain image media and can later be selected by Error, Fallback, Latency, or Quality rules."
+									/>
 									<FormControl>
 										<Input
 											type="number"
@@ -472,7 +494,10 @@ function SelectiveExportSection({
 							name="selective_export.max_exports_per_minute"
 							render={({ field }) => (
 								<FormItem>
-									<FormLabel>Process Max / Minute</FormLabel>
+									<SelectionFieldLabel
+										label="Process Max / Minute"
+										description="Maximum selected records exported by this Bifrost process per minute across all rules. Zero means unlimited."
+									/>
 									<FormControl>
 										<Input
 											type="number"
@@ -504,7 +529,10 @@ function SelectiveExportSection({
 										name={`${base}.id`}
 										render={({ field }) => (
 											<FormItem>
-												<FormLabel>Rule ID</FormLabel>
+												<SelectionFieldLabel
+													label="Rule ID"
+													description="A custom name for logs and metadata only. Names such as errors or aaa have no built-in matching meaning."
+												/>
 												<FormControl>
 													<Input disabled={!hasOtelAccess} data-testid={`otel-selective-export-rule-${index}-id`} {...field} />
 												</FormControl>
@@ -517,7 +545,10 @@ function SelectiveExportSection({
 										name={`${base}.priority`}
 										render={({ field }) => (
 											<FormItem>
-												<FormLabel>Priority</FormLabel>
+												<SelectionFieldLabel
+													label="Priority"
+													description="Higher numbers are evaluated first. Evaluation stops at the first matching rule."
+												/>
 												<FormControl>
 													<Input
 														type="number"
@@ -538,7 +569,10 @@ function SelectiveExportSection({
 										name={`${base}.request_types`}
 										render={({ field }) => (
 											<FormItem>
-												<FormLabel>Request Type</FormLabel>
+												<SelectionFieldLabel
+													label="Request Type"
+													description="Limits the rule to image generation, image edit, image variation, or all image requests. Stream variants are included in their family."
+												/>
 												<Select
 													value={field.value?.[0] ?? "all"}
 													onValueChange={(value) => field.onChange(value === "all" ? [] : [value])}
@@ -565,7 +599,10 @@ function SelectiveExportSection({
 										name={`${base}.export_rate`}
 										render={({ field }) => (
 											<FormItem>
-												<FormLabel>Export %</FormLabel>
+												<SelectionFieldLabel
+													label="Export %"
+													description="Deterministic percentage of matching candidates to export. Zero drops every match; 100 exports every match, subject to quota and media completeness."
+												/>
 												<FormControl>
 													<Input
 														type="number"
@@ -587,7 +624,10 @@ function SelectiveExportSection({
 										name={`${base}.min_latency_ms`}
 										render={({ field }) => (
 											<FormItem>
-												<FormLabel>Min Latency ms</FormLabel>
+												<SelectionFieldLabel
+													label="Min Latency ms"
+													description="Matches requests whose total elapsed time is greater than or equal to this value. Leave empty for no lower bound."
+												/>
 												<FormControl>
 													<Input
 														type="number"
@@ -608,7 +648,10 @@ function SelectiveExportSection({
 										name={`${base}.max_latency_ms`}
 										render={({ field }) => (
 											<FormItem>
-												<FormLabel>Max Latency ms</FormLabel>
+												<SelectionFieldLabel
+													label="Max Latency ms"
+													description="Matches requests whose total elapsed time is lower than this value. Leave empty for no upper bound."
+												/>
 												<FormControl>
 													<Input
 														type="number"
@@ -629,7 +672,10 @@ function SelectiveExportSection({
 										name={`${base}.min_technical_quality`}
 										render={({ field }) => (
 											<FormItem>
-												<FormLabel>Min Technical Quality</FormLabel>
+												<SelectionFieldLabel
+													label="Min Technical Quality"
+													description="A 0–1 completeness score based on success, usable image output, expected image count, revised prompt, and fallback. It is not an aesthetic image-quality score."
+												/>
 												<FormControl>
 													<Input
 														type="number"
@@ -652,7 +698,10 @@ function SelectiveExportSection({
 										name={`${base}.max_per_minute`}
 										render={({ field }) => (
 											<FormItem>
-												<FormLabel>Rule Max / Minute</FormLabel>
+												<SelectionFieldLabel
+													label="Rule Max / Minute"
+													description="Maximum exports from this rule per Bifrost process per minute. Zero means unlimited; the process-wide limit still applies."
+												/>
 												<FormControl>
 													<Input
 														type="number"
@@ -673,7 +722,10 @@ function SelectiveExportSection({
 										name={`${base}.require_error`}
 										render={({ field }) => (
 											<FormItem>
-												<FormLabel>Error</FormLabel>
+												<SelectionFieldLabel
+													label="Error"
+													description="Required matches requests whose final image attempt failed. Exclude matches final success. A failed primary followed by a successful fallback is considered successful."
+												/>
 												<Select
 													value={field.value === undefined ? "any" : String(field.value)}
 													onValueChange={(value) => field.onChange(value === "any" ? undefined : value === "true")}
@@ -698,7 +750,10 @@ function SelectiveExportSection({
 										name={`${base}.require_fallback`}
 										render={({ field }) => (
 											<FormItem>
-												<FormLabel>Fallback</FormLabel>
+												<SelectionFieldLabel
+													label="Fallback"
+													description="Required matches requests completed through a configured fallback route. Exclude matches requests handled by the primary route."
+												/>
 												<Select
 													value={field.value === undefined ? "any" : String(field.value)}
 													onValueChange={(value) => field.onChange(value === "any" ? undefined : value === "true")}
