@@ -62,8 +62,9 @@ const (
 	// source on top of the outage.
 	exportLogThrottle = 500
 
-	// mediaUploadConcurrency bounds per-trace object-store uploads while avoiding
-	// attachment-count × timeout latency for edit requests with several images.
+	// mediaUploadConcurrency bounds object-store uploads across every trace handled
+	// by one target. The semaphore lives on otelTarget; a per-trace semaphore would
+	// multiply this limit by maxConcurrentInjectsPerPlugin.
 	mediaUploadConcurrency = 4
 )
 
@@ -168,7 +169,8 @@ func (p *Profile) UnmarshalJSON(data []byte) error {
 //   - the canonical wrapper {"profiles": [ ... ], "plugin_span_filter": { ... }}
 //   - a legacy single profile object, which is normalized into a one-element Profiles slice.
 type Config struct {
-	Profiles []*Profile `json:"profiles"`
+	Profiles        []*Profile             `json:"profiles"`
+	SelectiveExport *SelectiveExportConfig `json:"selective_export,omitempty"`
 
 	// PluginSpanFilter is a single policy applied across every profile. In a legacy
 	// single-object config it is read from the object; in a profiles wrapper it is read
@@ -261,8 +263,9 @@ type profileForStorage struct {
 
 // configForStorage is the persisted wrapper shape.
 type configForStorage struct {
-	Profiles         []profileForStorage `json:"profiles"`
-	PluginSpanFilter *PluginSpanFilter   `json:"plugin_span_filter,omitempty"`
+	Profiles         []profileForStorage    `json:"profiles"`
+	PluginSpanFilter *PluginSpanFilter      `json:"plugin_span_filter,omitempty"`
+	SelectiveExport  *SelectiveExportConfig `json:"selective_export,omitempty"`
 }
 
 // MarshalForStorage serializes Config to JSON with *SecretVar fields as plain strings
@@ -273,6 +276,7 @@ func (c *Config) MarshalForStorage() ([]byte, error) {
 	out := configForStorage{
 		Profiles:         make([]profileForStorage, 0, len(c.Profiles)),
 		PluginSpanFilter: c.PluginSpanFilter,
+		SelectiveExport:  c.SelectiveExport,
 	}
 	for _, p := range c.Profiles {
 		if p == nil {
@@ -310,7 +314,7 @@ func (c *Config) Redacted() *Config {
 	if c == nil {
 		return nil
 	}
-	redacted := &Config{PluginSpanFilter: c.PluginSpanFilter}
+	redacted := &Config{PluginSpanFilter: c.PluginSpanFilter, SelectiveExport: c.SelectiveExport}
 	if c.Profiles != nil {
 		redacted.Profiles = make([]*Profile, 0, len(c.Profiles))
 		for _, p := range c.Profiles {
@@ -380,6 +384,50 @@ type otelTarget struct {
 	breakerOpenUntil    atomic.Int64 // UnixNano; exports are skipped until this instant
 	suppressedExports   atomic.Int64
 	failedExports       atomic.Int64
+
+	mediaRuntimeOnce sync.Once
+	mediaSem         chan struct{}
+
+	mediaConsecutiveFailures atomic.Int64
+	mediaBreakerOpenUntil    atomic.Int64
+	mediaSuppressedBatches   atomic.Int64
+	failedMediaBatches       atomic.Int64
+}
+
+func (t *otelTarget) ensureMediaRuntime() {
+	t.mediaRuntimeOnce.Do(func() {
+		if t.mediaSem == nil {
+			t.mediaSem = make(chan struct{}, mediaUploadConcurrency)
+		}
+	})
+}
+
+func (t *otelTarget) tripMediaBreaker() int64 {
+	failed := t.failedMediaBatches.Add(1)
+	if t.mediaConsecutiveFailures.Add(1) >= breakerFailureThreshold {
+		t.mediaBreakerOpenUntil.Store(time.Now().Add(breakerCooldown).UnixNano())
+	}
+	return failed
+}
+
+func (t *otelTarget) resetMediaBreaker() {
+	t.mediaConsecutiveFailures.Store(0)
+	t.mediaBreakerOpenUntil.Store(0)
+}
+
+func (t *otelTarget) mediaBreakerOpen() bool {
+	openUntil := t.mediaBreakerOpenUntil.Load()
+	if openUntil == 0 {
+		return false
+	}
+	if time.Now().UnixNano() >= openUntil {
+		next := time.Now().Add(breakerCooldown).UnixNano()
+		if t.mediaBreakerOpenUntil.CompareAndSwap(openUntil, next) {
+			return false
+		}
+	}
+	t.mediaSuppressedBatches.Add(1)
+	return true
 }
 
 // tripBreaker records a failed export and opens the circuit once the failure threshold
@@ -437,6 +485,15 @@ type OtelPlugin struct {
 	pricingManager *modelcatalog.ModelCatalog
 
 	pluginSpanFilter *PluginSpanFilter
+	selector         *traceSelector
+	mediaSem         chan struct{}
+
+	selectionCandidates        atomic.Int64
+	selectionCandidateDropped  atomic.Int64
+	selectionSelected          atomic.Int64
+	selectionDropped           atomic.Int64
+	selectionQuotaRejected     atomic.Int64
+	selectionIncompleteDropped atomic.Int64
 }
 
 // Init function for the OTEL plugin
@@ -453,6 +510,28 @@ func Init(ctx context.Context, config *Config, _logger schemas.Logger, pricingMa
 	}
 	if err := config.PluginSpanFilter.Validate(); err != nil {
 		return nil, err
+	}
+	selector, err := newTraceSelector(config.SelectiveExport)
+	if err != nil {
+		return nil, err
+	}
+	if selector != nil {
+		enabledProfiles := 0
+		for _, profile := range config.Profiles {
+			if profile == nil || !profile.Enabled {
+				continue
+			}
+			enabledProfiles++
+			if profile.Protocol != ProtocolHTTP {
+				return nil, fmt.Errorf("selective_export requires an HTTP profile with Langfuse media support")
+			}
+			if profile.DisableContentLogging {
+				return nil, fmt.Errorf("selective_export requires content logging on its profile")
+			}
+		}
+		if enabledProfiles != 1 {
+			return nil, fmt.Errorf("selective_export requires exactly one enabled profile to preserve atomic record export")
+		}
 	}
 	// Loading attributes from environment
 	attributesFromEnvironment := make([]*commonpb.KeyValue, 0)
@@ -487,6 +566,8 @@ func Init(ctx context.Context, config *Config, _logger schemas.Logger, pricingMa
 		attributesFromEnvironment: attributesFromEnvironment,
 		instanceAttrs:             instanceAttrs,
 		pluginSpanFilter:          config.PluginSpanFilter,
+		selector:                  selector,
+		mediaSem:                  make(chan struct{}, mediaUploadConcurrency),
 	}
 	p.ctx, p.cancel = context.WithCancel(ctx)
 
@@ -503,6 +584,10 @@ func Init(ctx context.Context, config *Config, _logger schemas.Logger, pricingMa
 			return nil, err
 		}
 		p.targets = append(p.targets, target)
+	}
+	if selector != nil && (len(p.targets) != 1 || p.targets[0].mediaUploader == nil) {
+		_ = p.Cleanup()
+		return nil, fmt.Errorf("selective_export requires a Langfuse OTLP HTTP collector URL with media support")
 	}
 
 	return p, nil
@@ -546,6 +631,7 @@ func (p *OtelPlugin) buildTarget(index int, profile *Profile) (*otelTarget, erro
 		groupTracesBySession:   profile.GroupTracesBySession,
 		disableRootSpanContent: profile.DisableRootSpanContent,
 		exportTimeout:          exportTimeout,
+		mediaSem:               p.mediaSem,
 	}
 
 	switch profile.Protocol {
@@ -628,6 +714,36 @@ func resolveExportTimeout(seconds int) (time.Duration, error) {
 // GetName function for the OTEL plugin
 func (p *OtelPlugin) GetName() string {
 	return PluginName
+}
+
+// BeginTraceMediaCapture implements schemas.TraceMediaCapturePolicy. It runs
+// before tracing copies multipart bytes or decodes base64 output.
+func (p *OtelPlugin) BeginTraceMediaCapture(traceID string, request *schemas.BifrostRequest) schemas.TraceMediaCaptureDecision {
+	canCaptureMedia := false
+	for _, target := range p.targets {
+		if target != nil && !target.disableContentLogging && target.mediaUploader != nil {
+			canCaptureMedia = true
+			break
+		}
+	}
+	capture := canCaptureMedia && (p.selector == nil || p.selector.shouldCaptureCandidate(traceID, request))
+	if p.selector != nil && request != nil && isSelectiveImageRequest(request.RequestType) {
+		if capture {
+			p.selectionCandidates.Add(1)
+			p.recordObservabilityEvent(context.Background(), "media_candidate", "accepted")
+		} else {
+			p.selectionCandidateDropped.Add(1)
+			reason := "sampled_out"
+			if !canCaptureMedia {
+				reason = "no_media_target"
+			}
+			p.recordObservabilityEvent(context.Background(), "media_candidate", reason)
+		}
+	}
+	return schemas.TraceMediaCaptureDecision{
+		Capture:        capture,
+		PolicySnapshot: &selectorSnapshot{selector: p.selector},
+	}
 }
 
 // MarshalConfigForStorage implements schemas.ConfigMarshallerPlugin.
@@ -776,6 +892,45 @@ func (p *OtelPlugin) Inject(ctx context.Context, trace *schemas.Trace) error {
 	if trace == nil {
 		return nil
 	}
+	selector := p.selector
+	if snapshotsValue, exists := trace.GetAttribute(schemas.TraceAttrMediaPolicySnapshots); exists {
+		if snapshots, ok := snapshotsValue.(map[string]any); ok {
+			switch pinned := snapshots[PluginName].(type) {
+			case *selectorSnapshot:
+				selector = pinned.selector
+			case *traceSelector: // compatibility with traces started by the initial fork implementation
+				selector = pinned
+			}
+		}
+	}
+	if selector != nil {
+		decision := selector.decide(trace)
+		event := "selection"
+		if selector.dryRun {
+			event = "selection_dry_run"
+		}
+		p.recordObservabilityEvent(ctx, event, decision.reason)
+		for _, reason := range traceMediaCaptureFailureReasons(trace) {
+			p.recordObservabilityEvent(ctx, "media_capture_rejected", reason)
+		}
+		if decision.selected {
+			p.selectionSelected.Add(1)
+		} else {
+			p.selectionDropped.Add(1)
+			if decision.reason == "quota" {
+				p.selectionQuotaRejected.Add(1)
+			}
+		}
+		if !decision.selected && !selector.dryRun {
+			return nil
+		}
+		if decision.selected && !selector.dryRun && finalImageSpan(trace) != nil && !traceMediaSummariesComplete(trace) {
+			p.selectionIncompleteDropped.Add(1)
+			p.recordObservabilityEvent(ctx, "selection", "incomplete_capture")
+			return nil
+		}
+		annotateSelectionDecision(trace, decision, selector.dryRun)
+	}
 	// Emit the trace to every configured profile's collector, and record metrics against
 	// each profile's exporter. Conversion is per-target because the resource service name
 	// differs per profile; everything else (filter, instance attrs) is shared.
@@ -784,6 +939,12 @@ func (p *OtelPlugin) Inject(ctx context.Context, trace *schemas.Trace) error {
 		wg.Add(1)
 		go func(t *otelTarget) {
 			defer wg.Done()
+			defer func() {
+				if recovered := recover(); recovered != nil && logger != nil {
+					logger.Error("OTEL target export panicked and was isolated: %v", recovered)
+				}
+			}()
+			t.ensureMediaRuntime()
 			// Metrics first: they are SDK-buffered and never touch the network here, so
 			// they still get recorded even when the trace endpoint is broken.
 			if t.metricsExporter != nil {
@@ -795,31 +956,61 @@ func (p *OtelPlugin) Inject(ctx context.Context, trace *schemas.Trace) error {
 			}
 			mediaRefs := make(map[string]string)
 			attachments := trace.MediaAttachments()
+			if selector != nil {
+				attachments = selectedTraceMediaAttachments(trace)
+			}
+			mediaComplete := len(attachments) == 0
 			for _, media := range attachments {
 				mediaRefs["bifrost-media://"+media.ID] = ""
 			}
-			if !t.disableContentLogging && t.mediaUploader != nil {
-				var mediaWG sync.WaitGroup
-				var mediaRefsMu sync.Mutex
-				mediaSem := make(chan struct{}, mediaUploadConcurrency)
+			if !t.disableContentLogging && t.mediaUploader != nil && len(attachments) > 0 && !t.mediaBreakerOpen() {
+				mediaCtx, mediaCancel := context.WithTimeout(ctx, t.exportTimeout)
+				defer mediaCancel()
+				var mediaBatchErr error
+				var failedMedia schemas.TraceMedia
+			mediaLoop:
 				for _, media := range attachments {
-					media := media
-					mediaWG.Go(func() {
-						mediaSem <- struct{}{}
-						defer func() { <-mediaSem }()
-						mediaCtx, mediaCancel := context.WithTimeout(ctx, t.exportTimeout)
-						token, mediaErr := t.mediaUploader.Upload(mediaCtx, trace.TraceID, media)
-						mediaCancel()
-						if mediaErr != nil {
-							logger.Error("failed to upload trace media trace_id=%s observation_id=%s field=%s mime=%s bytes=%d sha256=%s: %v", trace.TraceID, media.SpanID, media.Field, media.MIMEType, media.Bytes, media.SHA256, mediaErr)
-							return
-						}
-						mediaRefsMu.Lock()
-						mediaRefs["bifrost-media://"+media.ID] = token
-						mediaRefsMu.Unlock()
-					})
+					select {
+					case t.mediaSem <- struct{}{}:
+					case <-mediaCtx.Done():
+						mediaBatchErr = mediaCtx.Err()
+						failedMedia = media
+						break mediaLoop
+					}
+					token, mediaErr := func() (string, error) {
+						defer func() { <-t.mediaSem }()
+						return t.mediaUploader.Upload(mediaCtx, trace.TraceID, media)
+					}()
+					if mediaErr != nil {
+						mediaBatchErr = mediaErr
+						failedMedia = media
+						break
+					}
+					mediaRefs["bifrost-media://"+media.ID] = token
 				}
-				mediaWG.Wait()
+				if mediaBatchErr != nil {
+					if t.metricsExporter != nil {
+						t.metricsExporter.RecordObservabilityEvent(ctx, "media_upload", "failed")
+					}
+					if failed := t.tripMediaBreaker(); failed == 1 || failed%exportLogThrottle == 0 {
+						logger.Error("failed to upload trace media trace_id=%s observation_id=%s field=%s mime=%s bytes=%d sha256=%s: %v (%d failed media batches so far)", trace.TraceID, failedMedia.SpanID, failedMedia.Field, failedMedia.MIMEType, failedMedia.Bytes, failedMedia.SHA256, mediaBatchErr, failed)
+					}
+				} else {
+					if t.metricsExporter != nil {
+						t.metricsExporter.RecordObservabilityEvent(ctx, "media_upload", "succeeded")
+					}
+					t.resetMediaBreaker()
+					mediaComplete = true
+				}
+			} else if !t.disableContentLogging && t.mediaUploader != nil && len(attachments) > 0 {
+				if t.metricsExporter != nil {
+					t.metricsExporter.RecordObservabilityEvent(ctx, "media_upload", "breaker_open")
+				}
+			}
+			if selector != nil && !selector.dryRun && !mediaComplete {
+				p.selectionIncompleteDropped.Add(1)
+				p.recordObservabilityEvent(ctx, "selection", "incomplete_upload")
+				return
 			}
 			resourceSpan := p.convertTraceToResourceSpanWithMedia(t.serviceName, trace, t.requestHeaders, t.disableContentLogging, t.groupTracesBySession, t.disableRootSpanContent, mediaRefs)
 			// The caller passes context.Background(), so this deadline is the only bound
@@ -840,15 +1031,38 @@ func (p *OtelPlugin) Inject(ctx context.Context, trace *schemas.Trace) error {
 	return nil
 }
 
+func (p *OtelPlugin) recordObservabilityEvent(ctx context.Context, event, reason string) {
+	for _, target := range p.targets {
+		if target != nil && target.metricsExporter != nil {
+			target.metricsExporter.RecordObservabilityEvent(ctx, event, reason)
+		}
+	}
+}
+
+// SelectionStats exposes bounded, process-local operational counters for
+// Dashboard diagnostics and tests without adding high-cardinality rule labels.
+func (p *OtelPlugin) SelectionStats() map[string]int64 {
+	return map[string]int64{
+		"candidates":         p.selectionCandidates.Load(),
+		"candidate_dropped":  p.selectionCandidateDropped.Load(),
+		"selected":           p.selectionSelected.Load(),
+		"dropped":            p.selectionDropped.Load(),
+		"quota_rejected":     p.selectionQuotaRejected.Load(),
+		"incomplete_dropped": p.selectionIncompleteDropped.Load(),
+	}
+}
+
 // ExportStats reports per-target export health: how many exports failed and how many
 // were suppressed by an open circuit breaker. A rising suppressed count means the
 // target's endpoint is being treated as dead — usually a misconfigured collector URL.
-func (p *OtelPlugin) ExportStats() map[string]struct{ Failed, Suppressed int64 } {
-	stats := make(map[string]struct{ Failed, Suppressed int64 }, len(p.targets))
+func (p *OtelPlugin) ExportStats() map[string]struct{ Failed, Suppressed, MediaFailed, MediaSuppressed int64 } {
+	stats := make(map[string]struct{ Failed, Suppressed, MediaFailed, MediaSuppressed int64 }, len(p.targets))
 	for _, t := range p.targets {
-		stats[t.url] = struct{ Failed, Suppressed int64 }{
-			Failed:     t.failedExports.Load(),
-			Suppressed: t.suppressedExports.Load(),
+		stats[t.url] = struct{ Failed, Suppressed, MediaFailed, MediaSuppressed int64 }{
+			Failed:          t.failedExports.Load(),
+			Suppressed:      t.suppressedExports.Load(),
+			MediaFailed:     t.failedMediaBatches.Load(),
+			MediaSuppressed: t.mediaSuppressedBatches.Load(),
 		}
 	}
 	return stats

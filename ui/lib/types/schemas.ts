@@ -988,10 +988,85 @@ export const otelConfigSchema = z
 
 // OTEL form schema for the OtelFormFragment. The plugin itself is gated by `enabled`;
 // it carries one or more export profiles, each independently enable-able.
-export const otelFormSchema = z.object({
-	enabled: z.boolean().default(true),
-	profiles: z.array(otelConfigSchema).min(1, "At least one profile is required"),
-});
+export const otelSelectionRuleSchema = z
+	.object({
+		id: z.string().trim().min(1, "Rule ID is required"),
+		priority: z.number().int().min(-1000).max(1000),
+		request_types: z
+			.array(z.enum(["image_generation", "image_generation_stream", "image_edit", "image_edit_stream", "image_variation"]))
+			.default([]),
+		min_latency_ms: z.number().int().min(0).optional(),
+		max_latency_ms: z.number().int().min(0).optional(),
+		require_error: z.boolean().optional(),
+		require_fallback: z.boolean().optional(),
+		min_technical_quality: z.number().min(0).max(1).optional(),
+		export_rate: z.number().min(0).max(1),
+		max_per_minute: z.number().int().min(0).max(10000).default(0),
+	})
+	.refine((rule) => rule.min_latency_ms === undefined || rule.max_latency_ms === undefined || rule.min_latency_ms <= rule.max_latency_ms, {
+		message: "Minimum latency cannot exceed maximum latency",
+		path: ["min_latency_ms"],
+	});
+
+export const otelSelectiveExportSchema = z
+	.object({
+		enabled: z.boolean().default(false),
+		dry_run: z.boolean().default(false),
+		require_complete_record: z.literal(true).default(true),
+		candidate_rate: z.number().min(0).max(1).default(1),
+		max_exports_per_minute: z.number().int().min(0).max(10000).default(0),
+		rules: z.array(otelSelectionRuleSchema).max(32).default([]),
+	})
+	.superRefine((selection, ctx) => {
+		if (!selection.enabled) return;
+		if (selection.rules.length === 0) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["rules"],
+				message: "At least one selection rule is required",
+			});
+		}
+		const seen = new Set<string>();
+		selection.rules.forEach((rule, index) => {
+			if (seen.has(rule.id)) {
+				ctx.addIssue({
+					code: "custom",
+					path: ["rules", index, "id"],
+					message: "Rule IDs must be unique",
+				});
+			}
+			seen.add(rule.id);
+		});
+	});
+
+export const otelFormSchema = z
+	.object({
+		enabled: z.boolean().default(true),
+		profiles: z.array(otelConfigSchema).min(1, "At least one profile is required"),
+		selective_export: otelSelectiveExportSchema.default({
+			enabled: false,
+			dry_run: false,
+			require_complete_record: true,
+			candidate_rate: 1,
+			max_exports_per_minute: 0,
+			rules: [],
+		}),
+	})
+	.superRefine((data, ctx) => {
+		if (!data.selective_export.enabled) return;
+		const enabledProfiles = data.profiles.filter((profile) => profile.enabled);
+		if (enabledProfiles.length !== 1) {
+			ctx.addIssue({ code: "custom", path: ["profiles"], message: "Selective export requires exactly one enabled profile" });
+			return;
+		}
+		const profile = enabledProfiles[0];
+		if (profile.protocol !== "http") {
+			ctx.addIssue({ code: "custom", path: ["profiles"], message: "Selective export requires the HTTP protocol" });
+		}
+		if (profile.disable_content_logging) {
+			ctx.addIssue({ code: "custom", path: ["profiles"], message: "Selective export requires content logging" });
+		}
+	});
 
 // Maxim Configuration Schema
 export const maximConfigSchema = z.object({

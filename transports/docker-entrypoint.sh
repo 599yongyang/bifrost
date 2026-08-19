@@ -70,6 +70,30 @@ ensure_app_dir() {
 # Prepare the app directory before starting the application
 ensure_app_dir
 
+# The dynamic Debian image opts into a cgroup-aware Go heap limit. Keep this in
+# the shared entrypoint behind an explicit flag so the default image is unchanged.
+set_auto_go_memory_limit() {
+    if [ "${BIFROST_AUTO_GOMEMLIMIT:-0}" != "1" ] || [ -n "${GOMEMLIMIT:-}" ]; then
+        return
+    fi
+    CGROUP_LIMIT=""
+    if [ -r /sys/fs/cgroup/memory.max ]; then
+        CGROUP_LIMIT=$(cat /sys/fs/cgroup/memory.max)
+    elif [ -r /sys/fs/cgroup/memory/memory.limit_in_bytes ]; then
+        CGROUP_LIMIT=$(cat /sys/fs/cgroup/memory/memory.limit_in_bytes)
+    fi
+    case "$CGROUP_LIMIT" in
+        ''|*[!0-9]*) return ;;
+    esac
+    # Ignore the effectively-unlimited sentinel used by cgroup v1.
+    if [ "$CGROUP_LIMIT" -lt 1152921504606846976 ]; then
+        export GOMEMLIMIT="$((CGROUP_LIMIT / 10 * 7))B"
+        echo "Configured GOMEMLIMIT=$GOMEMLIMIT from cgroup memory limit"
+    fi
+}
+
+set_auto_go_memory_limit
+
 # Parse command line arguments and set environment variables
 parse_args() {
     while [ $# -gt 0 ]; do

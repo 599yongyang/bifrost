@@ -1,6 +1,7 @@
 package tracing
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 
@@ -93,8 +94,24 @@ func TestImageMediaCaptureHasPerTraceAttachmentLimit(t *testing.T) {
 		}
 	}
 	overflow := summarizeImageBytes(trace, "span-1", "input", "image", 16, image)
-	if overflow["capture_status"] != "trace_limit" || len(trace.MediaAttachments()) != 16 {
-		t.Fatalf("overflow status/media = %v/%d, want trace_limit/16", overflow["capture_status"], len(trace.MediaAttachments()))
+	if overflow["capture_status"] != "attachment_limit" || len(trace.MediaAttachments()) != 16 {
+		t.Fatalf("overflow status/media = %v/%d, want attachment_limit/16", overflow["capture_status"], len(trace.MediaAttachments()))
+	}
+}
+
+func TestPopulateImageResponseRejectsOversizedBase64BeforeDecode(t *testing.T) {
+	encodedLength := base64.StdEncoding.EncodedLen(maxTraceMediaBytes + 1)
+	oversizedInvalid := strings.Repeat("A", encodedLength-1) + "!"
+	attrs := map[string]any{}
+	populateImageResponseAttributes(&schemas.BifrostImageGenerationResponse{
+		Data: []schemas.ImageData{{B64JSON: oversizedInvalid}},
+	}, attrs, traceWithMediaStore(), "span-1")
+
+	output := assertJSONAttr(t, attrs, schemas.AttrBifrostImageOutput)
+	images, _ := output["images"].([]any)
+	image, _ := images[0].(map[string]any)
+	if status := image["capture_status"]; status != "too_large" {
+		t.Fatalf("oversized base64 status = %v, want too_large preflight", status)
 	}
 }
 

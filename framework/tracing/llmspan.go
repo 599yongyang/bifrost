@@ -242,13 +242,10 @@ func imageVariationInputSummary(req *schemas.BifrostImageVariationRequest, trace
 }
 
 func summarizeImageBytes(trace *schemas.Trace, spanID, field, role string, index int, data []byte) map[string]any {
-	digest := sha256.Sum256(data)
-	sha := hex.EncodeToString(digest[:])
 	mimeType := http.DetectContentType(data)
 	summary := map[string]any{
 		"mime_type": mimeType,
 		"bytes":     len(data),
-		"sha256":    sha,
 	}
 	if !supportedTraceImageMIME(mimeType) {
 		summary["capture_status"] = "unsupported_mime"
@@ -262,12 +259,21 @@ func summarizeImageBytes(trace *schemas.Trace, spanID, field, role string, index
 		summary["capture_status"] = "metadata_only"
 		return summary
 	}
+	digest := sha256.Sum256(data)
+	sha := hex.EncodeToString(digest[:])
+	summary["sha256"] = sha
+	if mediaRef, exists := trace.FindMediaRef(field, role, index, sha); exists {
+		summary["media_ref"] = mediaRef
+		summary["capture_status"] = "captured"
+		return summary
+	}
 	mediaID := fmt.Sprintf("%s-%s-%s-%d-%s", spanID, field, role, index, sha[:16])
-	if !trace.AddMedia(schemas.TraceMedia{
+	captureStatus := trace.AddMediaWithStatus(schemas.TraceMedia{
 		ID: mediaID, SpanID: spanID, Field: field, Role: role, Index: index,
 		MIMEType: mimeType, Bytes: len(data), SHA256: sha, Data: data,
-	}) {
-		summary["capture_status"] = "trace_limit"
+	})
+	if captureStatus != schemas.TraceMediaCaptureStatusCaptured {
+		summary["capture_status"] = captureStatus
 		return summary
 	}
 	summary["media_ref"] = "bifrost-media://" + mediaID
@@ -354,6 +360,21 @@ func summarizeBase64Image(trace *schemas.Trace, spanID, field, role string, inde
 		}
 		raw = raw[comma+1:]
 	}
+	if trace == nil || spanID == "" {
+		return map[string]any{"capture_status": "metadata_only"}
+	}
+	estimatedBytes := decodedBase64SizeUpperBound(raw)
+	if estimatedBytes > maxTraceMediaBytes {
+		return map[string]any{
+			"bytes_estimate": estimatedBytes,
+			"capture_status": "too_large",
+		}
+	}
+	releaseDecode, acquired := trace.TryAcquireMediaDecode()
+	if !acquired {
+		return map[string]any{"capture_status": "decode_saturated"}
+	}
+	defer releaseDecode()
 	data, total, sha, prefix, err := decodeTraceBase64(raw, base64.StdEncoding)
 	if err != nil {
 		data, total, sha, prefix, err = decodeTraceBase64(raw, base64.RawStdEncoding)
@@ -371,21 +392,37 @@ func summarizeBase64Image(trace *schemas.Trace, spanID, field, role string, inde
 		summary["capture_status"] = "too_large"
 		return summary
 	}
-	if trace == nil || spanID == "" {
-		summary["capture_status"] = "metadata_only"
+	mediaID := fmt.Sprintf("%s-%s-%s-%d-%s", spanID, field, role, index, sha[:16])
+	if mediaRef, exists := trace.FindMediaRef(field, role, index, sha); exists {
+		summary["media_ref"] = mediaRef
+		summary["capture_status"] = "captured"
 		return summary
 	}
-	mediaID := fmt.Sprintf("%s-%s-%s-%d-%s", spanID, field, role, index, sha[:16])
-	if !trace.AddMedia(schemas.TraceMedia{
+	captureStatus := trace.AddOwnedMediaWithStatus(schemas.TraceMedia{
 		ID: mediaID, SpanID: spanID, Field: field, Role: role, Index: index,
 		MIMEType: mimeType, Bytes: total, SHA256: sha, Data: data,
-	}) {
-		summary["capture_status"] = "trace_limit"
+	})
+	if captureStatus != schemas.TraceMediaCaptureStatusCaptured {
+		summary["capture_status"] = captureStatus
 		return summary
 	}
 	summary["media_ref"] = "bifrost-media://" + mediaID
 	summary["capture_status"] = "captured"
 	return summary
+}
+
+func decodedBase64SizeUpperBound(raw string) int {
+	if raw == "" {
+		return 0
+	}
+	padding := 0
+	if raw[len(raw)-1] == '=' {
+		padding++
+		if len(raw) > 1 && raw[len(raw)-2] == '=' {
+			padding++
+		}
+	}
+	return (len(raw)*6+7)/8 - padding
 }
 
 func decodeTraceBase64(raw string, encoding *base64.Encoding) (data []byte, total int, sha string, prefix []byte, err error) {
@@ -418,7 +455,7 @@ func decodeTraceBase64(raw string, encoding *base64.Encoding) (data []byte, tota
 		}
 	}
 	if total <= maxTraceMediaBytes {
-		data = append([]byte(nil), captured.Bytes()...)
+		data = captured.Bytes()
 	}
 	return data, total, hex.EncodeToString(hasher.Sum(nil)), prefix, nil
 }

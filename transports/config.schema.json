@@ -3272,6 +3272,49 @@
       ],
       "additionalProperties": false
     },
+    "otel_selection_rule": {
+      "type": "object",
+      "description": "First-match rule that selects complete records for OTEL/Langfuse export.",
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "priority": { "type": "integer", "minimum": -1000, "maximum": 1000 },
+        "request_types": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["image_generation", "image_generation_stream", "image_edit", "image_edit_stream", "image_variation"]
+          },
+          "uniqueItems": true
+        },
+        "min_latency_ms": { "type": "integer", "minimum": 0 },
+        "max_latency_ms": { "type": "integer", "minimum": 0 },
+        "require_error": { "type": "boolean" },
+        "require_fallback": { "type": "boolean" },
+        "min_technical_quality": { "type": "number", "minimum": 0, "maximum": 1 },
+        "export_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "max_per_minute": { "type": "integer", "minimum": 0, "maximum": 10000, "default": 0 }
+      },
+      "required": ["id", "priority", "export_rate"],
+      "additionalProperties": false
+    },
+    "otel_selective_export_config": {
+      "type": "object",
+      "description": "Selects whole completed records for export. When disabled, every trace is exported for backward compatibility.",
+      "properties": {
+        "enabled": { "type": "boolean", "default": false },
+        "dry_run": { "type": "boolean", "default": false },
+        "require_complete_record": { "const": true, "default": true, "description": "Selected image records are always exported atomically; incomplete records are dropped." },
+        "candidate_rate": { "type": "number", "minimum": 0, "maximum": 1, "default": 1 },
+        "max_exports_per_minute": { "type": "integer", "minimum": 0, "maximum": 10000, "default": 0 },
+        "rules": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/otel_selection_rule" },
+          "maxItems": 32
+        }
+      },
+      "required": ["enabled", "rules"],
+      "additionalProperties": false
+    },
     "otel_profiles_config": {
       "type": "object",
       "description": "OpenTelemetry plugin configuration with one or more export profiles.",
@@ -3286,6 +3329,9 @@
         },
         "plugin_span_filter": {
           "$ref": "#/$defs/plugin_span_filter"
+        },
+        "selective_export": {
+          "$ref": "#/$defs/otel_selective_export_config"
         }
       },
       "required": ["profiles"],

@@ -91,9 +91,9 @@ ENV APP_PORT=$ARG_APP_PORT \
     LOG_STYLE=$ARG_LOG_STYLE \
     APP_DIR=$ARG_APP_DIR
 
-# Go runtime performance tuning (override at runtime for your workload).
-ENV GOGC="" \
-    GOMEMLIMIT=""
+# The dynamic entrypoint derives a conservative Go heap target from the actual
+# cgroup limit. An explicit runtime GOMEMLIMIT always wins.
+ENV BIFROST_AUTO_GOMEMLIMIT=1
 
 # Keep the default image's numeric UID:GID and group-writable data directory
 # behavior so Kubernetes and arbitrary OpenShift UIDs continue to work.

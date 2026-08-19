@@ -248,6 +248,15 @@ func appendImageObservationAttributes(otelSpan *Span, span *schemas.Span, disabl
 	if routingRule != "" {
 		otelSpan.Attributes = append(otelSpan.Attributes, kvStr("langfuse.observation.metadata.routing_rule", routingRule))
 	}
+	if selectionRule := getStringAttr(attrs, attrSelectionRule); selectionRule != "" {
+		otelSpan.Attributes = append(otelSpan.Attributes, kvStr("langfuse.observation.metadata.selection_rule", selectionRule))
+	}
+	if quality := numericAttr(attrs, attrSelectionTechnicalQuality); quality > 0 {
+		otelSpan.Attributes = append(otelSpan.Attributes, kvDbl("langfuse.observation.metadata.technical_quality", quality))
+	}
+	if selected, ok := attrs[attrSelectionDryRunSelected].(bool); ok {
+		otelSpan.Attributes = append(otelSpan.Attributes, kvBool("langfuse.observation.metadata.dry_run_selected", selected))
+	}
 	if fallbackIndex := getIntAttr(attrs, schemas.AttrBifrostFallbackIndex); fallbackIndex > 0 {
 		otelSpan.Attributes = append(otelSpan.Attributes, kvStr("langfuse.observation.metadata.fallback_index", strconv.Itoa(fallbackIndex)))
 	} else {

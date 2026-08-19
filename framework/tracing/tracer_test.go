@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,6 +15,41 @@ import (
 type testRealtimeObservabilityPlugin struct {
 	injected        chan *schemas.Trace
 	injectedPayload chan string
+}
+
+type rejectMediaCapturePlugin struct {
+	testRealtimeObservabilityPlugin
+}
+
+type flippingMediaCapturePlugin struct {
+	testRealtimeObservabilityPlugin
+	calls atomic.Int64
+}
+
+func (p *flippingMediaCapturePlugin) BeginTraceMediaCapture(string, *schemas.BifrostRequest) schemas.TraceMediaCaptureDecision {
+	return schemas.TraceMediaCaptureDecision{Capture: p.calls.Add(1) == 1, PolicySnapshot: "first-policy"}
+}
+
+type panickingMediaCapturePlugin struct {
+	testRealtimeObservabilityPlugin
+}
+
+type imageOnlyRejectMediaCapturePlugin struct {
+	testRealtimeObservabilityPlugin
+	calls atomic.Int64
+}
+
+func (p *imageOnlyRejectMediaCapturePlugin) BeginTraceMediaCapture(_ string, request *schemas.BifrostRequest) schemas.TraceMediaCaptureDecision {
+	p.calls.Add(1)
+	return schemas.TraceMediaCaptureDecision{Capture: request == nil || !isImageTracingRequestType(string(request.RequestType))}
+}
+
+func (*panickingMediaCapturePlugin) BeginTraceMediaCapture(string, *schemas.BifrostRequest) schemas.TraceMediaCaptureDecision {
+	panic("broken dynamic policy")
+}
+
+func (*rejectMediaCapturePlugin) BeginTraceMediaCapture(string, *schemas.BifrostRequest) schemas.TraceMediaCaptureDecision {
+	return schemas.TraceMediaCaptureDecision{Capture: false}
 }
 
 func (p *testRealtimeObservabilityPlugin) GetName() string { return "test-observability" }
@@ -287,6 +323,141 @@ func TestTracer_ImageBase64OutputUsesMediaSidecar(t *testing.T) {
 	}
 	if span.Attributes[schemas.AttrInputTokens] != 11 || span.Attributes[schemas.AttrOutputTokens] != 22 || span.Attributes[schemas.AttrTotalTokens] != 33 {
 		t.Fatalf("image usage attributes = %#v, want 11/22/33", span.Attributes)
+	}
+}
+
+func TestTracer_MediaCapturePolicySkipsInputCopyAndBase64Decode(t *testing.T) {
+	store := NewTraceStore(5*time.Minute, nil)
+	defer store.Stop()
+	tracer := NewTracer(store, nil, nil)
+	defer tracer.Stop()
+	tracer.SetObservabilityPlugins([]schemas.ObservabilityPlugin{&rejectMediaCapturePlugin{}})
+
+	traceID := tracer.CreateTrace("")
+	ctx := schemas.NewBifrostContext(context.WithValue(context.Background(), schemas.BifrostContextKeyTraceID, traceID), time.Time{})
+	_, handle := tracer.StartSpan(ctx, "image_edit image-model", schemas.SpanKindLLMCall)
+	image := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0, 0, 0, 0, 'I', 'H', 'D', 'R'}
+	tracer.PopulateLLMRequestAttributes(handle, &schemas.BifrostRequest{
+		RequestType: schemas.ImageEditRequest,
+		ImageEditRequest: &schemas.BifrostImageEditRequest{
+			Input: &schemas.ImageEditInput{Prompt: "edit", Images: []schemas.ImageInput{{Image: image}}},
+		},
+	})
+	tracer.PopulateLLMResponseAttributes(ctx, handle, &schemas.BifrostResponse{
+		ImageGenerationResponse: &schemas.BifrostImageGenerationResponse{Data: []schemas.ImageData{{B64JSON: base64.StdEncoding.EncodeToString(image)}}},
+	}, nil)
+
+	trace := tracer.EndTrace(traceID)
+	defer tracer.ReleaseTrace(trace)
+	if attachments := trace.MediaAttachments(); len(attachments) != 0 {
+		t.Fatalf("capture-rejected trace retained %d media attachments", len(attachments))
+	}
+	span := trace.GetSpan(handle.(*spanHandle).spanID)
+	input, _ := span.Attributes[schemas.AttrBifrostImageInput].(string)
+	output, _ := span.Attributes[schemas.AttrBifrostImageOutput].(string)
+	if !strings.Contains(input, `"capture_status":"metadata_only"`) || !strings.Contains(output, `"capture_status":"metadata_only"`) {
+		t.Fatalf("capture-rejected summaries input=%s output=%s", input, output)
+	}
+}
+
+func TestTracer_MediaCapturePolicyIsPinnedOnFirstAttempt(t *testing.T) {
+	store := NewTraceStore(5*time.Minute, nil)
+	defer store.Stop()
+	tracer := NewTracer(store, nil, nil)
+	defer tracer.Stop()
+	policy := &flippingMediaCapturePlugin{}
+	tracer.SetObservabilityPlugins([]schemas.ObservabilityPlugin{policy})
+
+	traceID := tracer.CreateTrace("")
+	ctx := schemas.NewBifrostContext(context.WithValue(context.Background(), schemas.BifrostContextKeyTraceID, traceID), time.Time{})
+	_, first := tracer.StartSpan(ctx, "image_edit primary", schemas.SpanKindLLMCall)
+	_, fallback := tracer.StartSpan(ctx, "image_edit fallback", schemas.SpanKindLLMCall)
+	request := &schemas.BifrostRequest{RequestType: schemas.ImageEditRequest, ImageEditRequest: &schemas.BifrostImageEditRequest{
+		Input: &schemas.ImageEditInput{Prompt: "edit", Images: []schemas.ImageInput{{Image: []byte("not-an-image")}}},
+	}}
+	tracer.PopulateLLMRequestAttributes(first, request)
+	tracer.PopulateLLMRequestAttributes(fallback, request)
+
+	trace := tracer.EndTrace(traceID)
+	defer tracer.ReleaseTrace(trace)
+	if calls := policy.calls.Load(); calls != 1 {
+		t.Fatalf("media policy calls = %d, want one pinned decision across fallback attempts", calls)
+	}
+	if eligible, ok := trace.GetAttribute(schemas.TraceAttrMediaCaptureEligible); !ok || eligible != true {
+		t.Fatalf("media capture eligibility = %#v, %v; want pinned true", eligible, ok)
+	}
+}
+
+func TestTracer_NonImageSpanDoesNotPinImageMediaCapturePolicy(t *testing.T) {
+	store := NewTraceStore(5*time.Minute, nil)
+	defer store.Stop()
+	tracer := NewTracer(store, nil, nil)
+	defer tracer.Stop()
+	policy := &imageOnlyRejectMediaCapturePlugin{}
+	tracer.SetObservabilityPlugins([]schemas.ObservabilityPlugin{policy})
+
+	traceID := tracer.CreateTrace("")
+	ctx := schemas.NewBifrostContext(context.WithValue(context.Background(), schemas.BifrostContextKeyTraceID, traceID), time.Time{})
+	_, internal := tracer.StartSpan(ctx, "internal embedding", schemas.SpanKindLLMCall)
+	tracer.PopulateLLMRequestAttributes(internal, &schemas.BifrostRequest{RequestType: schemas.EmbeddingRequest})
+	_, image := tracer.StartSpan(ctx, "image_edit model", schemas.SpanKindLLMCall)
+	tracer.PopulateLLMRequestAttributes(image, &schemas.BifrostRequest{RequestType: schemas.ImageEditRequest, ImageEditRequest: &schemas.BifrostImageEditRequest{
+		Input: &schemas.ImageEditInput{Prompt: "edit", Images: []schemas.ImageInput{{Image: []byte("image")}}},
+	}})
+
+	trace := tracer.EndTrace(traceID)
+	defer tracer.ReleaseTrace(trace)
+	if calls := policy.calls.Load(); calls != 1 {
+		t.Fatalf("media policy calls = %d, want only the image request to initialize it", calls)
+	}
+	if eligible, ok := trace.GetAttribute(schemas.TraceAttrMediaCaptureEligible); !ok || eligible != false {
+		t.Fatalf("image media eligibility = %#v, %v; want false", eligible, ok)
+	}
+}
+
+func TestTracer_MediaCapturePolicyPanicIsIsolatedAndFailsClosed(t *testing.T) {
+	store := NewTraceStore(5*time.Minute, nil)
+	defer store.Stop()
+	tracer := NewTracer(store, nil, nil)
+	defer tracer.Stop()
+	tracer.SetObservabilityPlugins([]schemas.ObservabilityPlugin{&panickingMediaCapturePlugin{}})
+
+	traceID := tracer.CreateTrace("")
+	ctx := schemas.NewBifrostContext(context.WithValue(context.Background(), schemas.BifrostContextKeyTraceID, traceID), time.Time{})
+	_, handle := tracer.StartSpan(ctx, "image_generation model", schemas.SpanKindLLMCall)
+	tracer.PopulateLLMRequestAttributes(handle, &schemas.BifrostRequest{
+		RequestType:            schemas.ImageGenerationRequest,
+		ImageGenerationRequest: &schemas.BifrostImageGenerationRequest{Input: &schemas.ImageGenerationInput{Prompt: "safe"}},
+	})
+
+	trace := tracer.EndTrace(traceID)
+	defer tracer.ReleaseTrace(trace)
+	if eligible, ok := trace.GetAttribute(schemas.TraceAttrMediaCaptureEligible); !ok || eligible != false {
+		t.Fatalf("media capture eligibility = %#v, %v; want fail-closed false", eligible, ok)
+	}
+}
+
+func TestTracer_FallbackAttemptsReuseIdenticalInputMedia(t *testing.T) {
+	store := NewTraceStore(5*time.Minute, nil)
+	defer store.Stop()
+	tracer := NewTracer(store, nil, nil)
+	defer tracer.Stop()
+
+	traceID := tracer.CreateTrace("")
+	ctx := schemas.NewBifrostContext(context.WithValue(context.Background(), schemas.BifrostContextKeyTraceID, traceID), time.Time{})
+	image := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0, 0, 0, 0, 'I', 'H', 'D', 'R'}
+	request := &schemas.BifrostRequest{RequestType: schemas.ImageEditRequest, ImageEditRequest: &schemas.BifrostImageEditRequest{
+		Input: &schemas.ImageEditInput{Prompt: "edit", Images: []schemas.ImageInput{{Image: image}}},
+	}}
+	for _, name := range []string{"image_edit primary", "image_edit fallback"} {
+		_, handle := tracer.StartSpan(ctx, name, schemas.SpanKindLLMCall)
+		tracer.PopulateLLMRequestAttributes(handle, request)
+	}
+
+	trace := tracer.EndTrace(traceID)
+	defer tracer.ReleaseTrace(trace)
+	if attachments := trace.MediaAttachments(); len(attachments) != 1 {
+		t.Fatalf("fallback attempts retained %d copies of identical input, want 1", len(attachments))
 	}
 }
 

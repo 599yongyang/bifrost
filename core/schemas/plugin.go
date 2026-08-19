@@ -422,3 +422,15 @@ type ObservabilityPlugin interface {
 	// asynchronously, it must copy the data it needs before returning.
 	Inject(ctx context.Context, trace *Trace) error
 }
+
+type TraceMediaCaptureDecision struct {
+	Capture        bool
+	PolicySnapshot any
+}
+
+// TraceMediaCapturePolicy lets an observability connector make a cheap head
+// decision before tracing copies multipart bytes or decodes base64 output. The
+// opaque snapshot pins tail selection to the same immutable policy version.
+type TraceMediaCapturePolicy interface {
+	BeginTraceMediaCapture(traceID string, request *BifrostRequest) TraceMediaCaptureDecision
+}

@@ -3,11 +3,13 @@ package otel
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -52,11 +54,55 @@ func (f *failingTestMediaUploader) Upload(context.Context, string, schemas.Trace
 }
 func (f *failingTestMediaUploader) Close() {}
 
+type countingFailingMediaUploader struct {
+	calls atomic.Int32
+}
+
+func (u *countingFailingMediaUploader) Upload(context.Context, string, schemas.TraceMedia) (string, error) {
+	u.calls.Add(1)
+	return "", io.ErrUnexpectedEOF
+}
+
+func (u *countingFailingMediaUploader) Close() {}
+
+type countingTestOtelClient struct {
+	calls atomic.Int32
+}
+
+func (c *countingTestOtelClient) Emit(context.Context, []*ResourceSpan) error {
+	c.calls.Add(1)
+	return nil
+}
+func (c *countingTestOtelClient) Close() error { return nil }
+
+type blockingTestMediaUploader struct {
+	active    atomic.Int32
+	maxActive atomic.Int32
+}
+
+func (u *blockingTestMediaUploader) Upload(ctx context.Context, _ string, _ schemas.TraceMedia) (string, error) {
+	active := u.active.Add(1)
+	defer u.active.Add(-1)
+	for {
+		maximum := u.maxActive.Load()
+		if active <= maximum || u.maxActive.CompareAndSwap(maximum, active) {
+			break
+		}
+	}
+	<-ctx.Done()
+	return "", ctx.Err()
+}
+
+func (u *blockingTestMediaUploader) Close() {}
+
 type capturingTestOtelClient struct {
+	mu            sync.Mutex
 	resourceSpans []*ResourceSpan
 }
 
 func (c *capturingTestOtelClient) Emit(_ context.Context, spans []*ResourceSpan) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.resourceSpans = spans
 	return nil
 }
@@ -313,5 +359,73 @@ func TestInjectMediaFailureDegradesWithoutDroppingTrace(t *testing.T) {
 	}
 	if input == "" || strings.Contains(input, "bifrost-media://") || strings.Contains(input, "not exported raw") {
 		t.Fatalf("degraded observation input = %q, want metadata without local/raw media", input)
+	}
+}
+
+func TestInjectBoundsMediaConcurrencyAcrossTracesAndBatchLifetime(t *testing.T) {
+	logger = bifrost.NewDefaultLogger(schemas.LogLevelError)
+	uploader := &blockingTestMediaUploader{}
+	client := &capturingTestOtelClient{}
+	target := &otelTarget{
+		serviceName: "bifrost-test", client: client, mediaUploader: uploader,
+		exportTimeout: 50 * time.Millisecond,
+		mediaSem:      make(chan struct{}, 2),
+	}
+	plugin := &OtelPlugin{pluginSpanFilter: &PluginSpanFilter{}, targets: []*otelTarget{target}}
+
+	started := time.Now()
+	var wg sync.WaitGroup
+	for traceIndex := 0; traceIndex < 8; traceIndex++ {
+		trace := &schemas.Trace{TraceID: fmt.Sprintf("%032x", traceIndex+1)}
+		attachments := make([]schemas.TraceMedia, 0, 4)
+		for mediaIndex := 0; mediaIndex < 4; mediaIndex++ {
+			attachments = append(attachments, schemas.TraceMedia{
+				ID:     fmt.Sprintf("trace-%d-media-%d", traceIndex, mediaIndex),
+				SpanID: "span-1", Field: "input", MIMEType: "image/png", Data: []byte("image"),
+			})
+		}
+		attachTestMedia(trace, attachments...)
+		wg.Go(func() {
+			if err := plugin.Inject(context.Background(), trace); err != nil {
+				t.Errorf("Inject() error = %v", err)
+			}
+		})
+	}
+	wg.Wait()
+
+	if maximum := uploader.maxActive.Load(); maximum > 2 {
+		t.Fatalf("maximum concurrent media uploads = %d, want target-wide limit 2", maximum)
+	}
+	if elapsed := time.Since(started); elapsed > 300*time.Millisecond {
+		t.Fatalf("media batches took %s, want one shared deadline including semaphore wait", elapsed)
+	}
+}
+
+func TestInjectMediaBreakerSuppressesFailedUploadsWithoutSuppressingOTLP(t *testing.T) {
+	logger = bifrost.NewDefaultLogger(schemas.LogLevelError)
+	uploader := &countingFailingMediaUploader{}
+	client := &countingTestOtelClient{}
+	target := &otelTarget{
+		serviceName: "bifrost-test", client: client, mediaUploader: uploader,
+		exportTimeout: time.Second,
+		mediaSem:      make(chan struct{}, 2),
+	}
+	plugin := &OtelPlugin{pluginSpanFilter: &PluginSpanFilter{}, targets: []*otelTarget{target}}
+
+	for traceIndex := 0; traceIndex < 12; traceIndex++ {
+		trace := &schemas.Trace{TraceID: fmt.Sprintf("%032x", traceIndex+1)}
+		attachTestMedia(trace, schemas.TraceMedia{
+			ID: fmt.Sprintf("media-%d", traceIndex), SpanID: "span-1", Field: "input", MIMEType: "image/png", Data: []byte("image"),
+		})
+		if err := plugin.Inject(context.Background(), trace); err != nil {
+			t.Fatalf("Inject() error = %v", err)
+		}
+	}
+
+	if calls := uploader.calls.Load(); calls != breakerFailureThreshold {
+		t.Fatalf("media upload calls = %d, want %d before breaker suppression", calls, breakerFailureThreshold)
+	}
+	if calls := client.calls.Load(); calls != 12 {
+		t.Fatalf("OTLP emit calls = %d, want 12 despite media breaker", calls)
 	}
 }

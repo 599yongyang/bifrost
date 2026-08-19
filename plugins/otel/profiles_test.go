@@ -19,7 +19,13 @@ func TestConfigUnmarshalLegacySingleObject(t *testing.T) {
 		"trace_type": "genai_extension",
 		"protocol": "grpc",
 		"headers": {"Authorization": "env.OTEL_TOKEN"},
-		"plugin_span_filter": {"mode": "exclude", "plugins": ["logging"]}
+		"plugin_span_filter": {"mode": "exclude", "plugins": ["logging"]},
+		"selective_export": {
+			"enabled": true,
+			"dry_run": true,
+			"max_exports_per_minute": 500,
+			"rules": [{"id":"slow","priority":80,"min_latency_ms":30000,"export_rate":0.3,"max_per_minute":100}]
+		}
 	}`
 
 	var cfg Config
@@ -44,6 +50,24 @@ func TestConfigUnmarshalLegacySingleObject(t *testing.T) {
 	}
 	if cfg.PluginSpanFilter == nil || cfg.PluginSpanFilter.Mode != PluginSpanFilterModeExclude {
 		t.Fatalf("PluginSpanFilter not hoisted: %+v", cfg.PluginSpanFilter)
+	}
+}
+
+func TestInitSelectiveExportRejectsNonAtomicProfileLayouts(t *testing.T) {
+	selector := &SelectiveExportConfig{Enabled: true, Rules: []SelectionRule{{ID: "all", ExportRate: 1}}}
+	profile := func(protocol Protocol) *Profile {
+		return &Profile{Enabled: true, CollectorURL: schemas.NewSecretVar("https://langfuse.example/api/public/otel/v1/traces"), Protocol: protocol}
+	}
+	for name, cfg := range map[string]*Config{
+		"grpc":             {Profiles: []*Profile{profile(ProtocolGRPC)}, SelectiveExport: selector},
+		"multiple":         {Profiles: []*Profile{profile(ProtocolHTTP), profile(ProtocolHTTP)}, SelectiveExport: selector},
+		"content disabled": {Profiles: []*Profile{func() *Profile { p := profile(ProtocolHTTP); p.DisableContentLogging = true; return p }()}, SelectiveExport: selector},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Init(context.Background(), cfg, testLogger{}, nil, ""); err == nil {
+				t.Fatal("Init() succeeded, want selective export profile validation error")
+			}
+		})
 	}
 }
 
@@ -191,7 +215,13 @@ func TestMarshalForStorageRoundTrip(t *testing.T) {
 				"headers": {"Authorization": "env.OTEL_SECOND_TOKEN", "X-Tenant": "beta"}
 			}
 		],
-		"plugin_span_filter": {"mode": "exclude", "plugins": ["logging"]}
+		"plugin_span_filter": {"mode": "exclude", "plugins": ["logging"]},
+		"selective_export": {
+			"enabled": true,
+			"dry_run": true,
+			"max_exports_per_minute": 500,
+			"rules": [{"id":"slow","priority":80,"min_latency_ms":30000,"export_rate":0.3,"max_per_minute":100}]
+		}
 	}`
 
 	var cfg Config
@@ -216,6 +246,9 @@ func TestMarshalForStorageRoundTrip(t *testing.T) {
 	if _, ok := asMap["plugin_span_filter"]; !ok {
 		t.Errorf("plugin_span_filter missing from stored config")
 	}
+	if _, ok := asMap["selective_export"]; !ok {
+		t.Errorf("selective_export missing from stored config")
+	}
 
 	// Round-trip back into a Config.
 	var back Config
@@ -227,6 +260,9 @@ func TestMarshalForStorageRoundTrip(t *testing.T) {
 	}
 	if back.PluginSpanFilter == nil || back.PluginSpanFilter.Mode != PluginSpanFilterModeExclude {
 		t.Fatalf("round-trip plugin_span_filter = %+v, want exclude", back.PluginSpanFilter)
+	}
+	if back.SelectiveExport == nil || !back.SelectiveExport.Enabled || !back.SelectiveExport.DryRun || len(back.SelectiveExport.Rules) != 1 {
+		t.Fatalf("round-trip selective_export = %+v", back.SelectiveExport)
 	}
 	if len(back.PluginSpanFilter.Plugins) != 1 || back.PluginSpanFilter.Plugins[0] != "logging" {
 		t.Errorf("round-trip plugin_span_filter plugins = %v, want [logging]", back.PluginSpanFilter.Plugins)

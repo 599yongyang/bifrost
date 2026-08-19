@@ -102,6 +102,7 @@ func (s *TraceStore) CreateTrace(inheritedTraceID string, requestID ...string) s
 	trace.StartTime = time.Now()
 	trace.EndTime = time.Time{}
 	trace.RootSpan = nil
+	trace.ResetMediaCaptureDecision()
 
 	// Reset slices but keep capacity
 	if trace.Spans != nil {

@@ -41,9 +41,16 @@ interface StoredOtelProfile {
 	disable_root_span_content?: boolean;
 }
 
+type StoredSelectiveExport = OtelFormSchema["selective_export"];
+
 // StoredOtelConfig is either the canonical { profiles: [...] } wrapper or a legacy single
 // profile object (no "profiles" key).
-type StoredOtelConfig = (StoredOtelProfile & { profiles?: StoredOtelProfile[] }) | undefined;
+type StoredOtelConfig =
+	| (StoredOtelProfile & {
+			profiles?: StoredOtelProfile[];
+			selective_export?: StoredSelectiveExport;
+	  })
+	| undefined;
 
 interface OtelFormFragmentProps {
 	currentConfig?: {
@@ -106,6 +113,65 @@ const emptyProfile = (): ProfileForm => ({
 	disable_root_span_content: false,
 });
 
+const defaultSelectionRules = (): StoredSelectiveExport["rules"] => [
+	{
+		id: "errors",
+		priority: 100,
+		request_types: [],
+		require_error: true,
+		export_rate: 1,
+		max_per_minute: 100,
+	},
+	{
+		id: "fallbacks",
+		priority: 90,
+		request_types: [],
+		require_fallback: true,
+		export_rate: 0.5,
+		max_per_minute: 100,
+	},
+	{
+		id: "slow",
+		priority: 80,
+		request_types: [],
+		min_latency_ms: 30000,
+		export_rate: 0.3,
+		max_per_minute: 100,
+	},
+	{
+		id: "technically-good",
+		priority: 70,
+		request_types: [],
+		min_technical_quality: 0.85,
+		export_rate: 0.1,
+		max_per_minute: 100,
+	},
+	{
+		id: "fast",
+		priority: 20,
+		request_types: [],
+		max_latency_ms: 10000,
+		export_rate: 0.02,
+		max_per_minute: 50,
+	},
+	{
+		id: "default",
+		priority: 0,
+		request_types: [],
+		export_rate: 0.01,
+		max_per_minute: 50,
+	},
+];
+
+const defaultSelectiveExport = (): StoredSelectiveExport => ({
+	enabled: false,
+	dry_run: true,
+	require_complete_record: true,
+	candidate_rate: 1,
+	max_exports_per_minute: 500,
+	rules: defaultSelectionRules(),
+});
+
 // toProfileForm normalizes a stored profile into the SecretVar-based form representation.
 const toProfileForm = (p?: StoredOtelProfile): ProfileForm => ({
 	enabled: p?.enabled ?? true,
@@ -140,7 +206,11 @@ const buildDefaults = (initial?: OtelFormFragmentProps["currentConfig"]): OtelFo
 		profiles = [];
 	}
 	if (profiles.length === 0) profiles = [emptyProfile()];
-	return { enabled: initial?.enabled ?? true, profiles };
+	return {
+		enabled: initial?.enabled ?? true,
+		profiles,
+		selective_export: cfg?.selective_export ?? defaultSelectiveExport(),
+	};
 };
 
 export function OtelFormFragment({
@@ -224,6 +294,8 @@ export function OtelFormFragment({
 					<Plus className="size-4" /> Add Profile
 				</Button>
 
+				<SelectiveExportSection form={form} hasOtelAccess={hasOtelAccess} />
+
 				{/* Form Actions */}
 				<div className="flex w-full flex-row items-center border-t pt-4">
 					<FormField
@@ -303,6 +375,387 @@ interface OtelProfileSectionProps {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	onRemove: () => void;
+}
+
+function SelectiveExportSection({
+	form,
+	hasOtelAccess,
+}: {
+	form: UseFormReturn<OtelFormSchema, unknown, OtelFormSchema>;
+	hasOtelAccess: boolean;
+}) {
+	const enabled = form.watch("selective_export.enabled");
+	const { fields, append, remove } = useFieldArray({
+		control: form.control,
+		name: "selective_export.rules",
+	});
+	return (
+		<div className="space-y-4 rounded-sm border p-4" data-testid="otel-selective-export-section">
+			<div className="flex items-center justify-between gap-4">
+				<div>
+					<FormLabel className="text-base">Selective Complete Record Export</FormLabel>
+					<FormDescription>
+						Rules are evaluated by priority. The first matching rule either exports the complete record or drops it from every OTEL target.
+					</FormDescription>
+				</div>
+				<FormField
+					control={form.control}
+					name="selective_export.enabled"
+					render={({ field }) => (
+						<FormItem>
+							<FormControl>
+								<Switch
+									checked={field.value}
+									onCheckedChange={field.onChange}
+									disabled={!hasOtelAccess}
+									data-testid="otel-selective-export-enable-toggle"
+								/>
+							</FormControl>
+						</FormItem>
+					)}
+				/>
+			</div>
+			{enabled && (
+				<>
+					<div className="grid gap-4 md:grid-cols-2">
+						<FormField
+							control={form.control}
+							name="selective_export.dry_run"
+							render={({ field }) => (
+								<FormItem className="flex items-center justify-between rounded-sm border p-3">
+									<div>
+										<FormLabel>Dry Run</FormLabel>
+										<FormDescription>Export everything, but record which rule would select it.</FormDescription>
+									</div>
+									<FormControl>
+										<Switch
+											checked={field.value}
+											onCheckedChange={field.onChange}
+											disabled={!hasOtelAccess}
+											data-testid="otel-selective-export-dry-run-toggle"
+										/>
+									</FormControl>
+								</FormItem>
+							)}
+						/>
+						<div className="rounded-sm border p-3">
+							<FormLabel>Atomic complete records</FormLabel>
+							<FormDescription>Selected records are dropped if required media cannot be captured or uploaded.</FormDescription>
+						</div>
+						<FormField
+							control={form.control}
+							name="selective_export.candidate_rate"
+							render={({ field }) => (
+								<FormItem>
+									<FormLabel>Media Candidate %</FormLabel>
+									<FormControl>
+										<Input
+											type="number"
+											min={0}
+											max={100}
+											step={0.1}
+											disabled={!hasOtelAccess}
+											data-testid="otel-selective-export-candidate-rate"
+											value={Math.round((field.value ?? 0) * 10000) / 100}
+											onChange={(event) => field.onChange(Number(event.target.value) / 100)}
+										/>
+									</FormControl>
+									<FormDescription>
+										Only candidate requests copy multipart media or decode base64. Tail rules can select records only from this pool.
+									</FormDescription>
+									<FormMessage />
+								</FormItem>
+							)}
+						/>
+						<FormField
+							control={form.control}
+							name="selective_export.max_exports_per_minute"
+							render={({ field }) => (
+								<FormItem>
+									<FormLabel>Process Max / Minute</FormLabel>
+									<FormControl>
+										<Input
+											type="number"
+											min={0}
+											max={10000}
+											disabled={!hasOtelAccess}
+											data-testid="otel-selective-export-process-limit"
+											{...field}
+											onChange={(event) => field.onChange(Number(event.target.value))}
+										/>
+									</FormControl>
+									<FormDescription>Maximum selected records per Bifrost process. 0 means unlimited.</FormDescription>
+									<FormMessage />
+								</FormItem>
+							)}
+						/>
+					</div>
+					<div className="space-y-3">
+						{fields.map((rule, index) => {
+							const base = `selective_export.rules.${index}` as const;
+							return (
+								<div
+									key={rule.id}
+									className="grid gap-3 rounded-sm border p-3 md:grid-cols-4"
+									data-testid={`otel-selective-export-rule-${index}`}
+								>
+									<FormField
+										control={form.control}
+										name={`${base}.id`}
+										render={({ field }) => (
+											<FormItem>
+												<FormLabel>Rule ID</FormLabel>
+												<FormControl>
+													<Input disabled={!hasOtelAccess} data-testid={`otel-selective-export-rule-${index}-id`} {...field} />
+												</FormControl>
+												<FormMessage />
+											</FormItem>
+										)}
+									/>
+									<FormField
+										control={form.control}
+										name={`${base}.priority`}
+										render={({ field }) => (
+											<FormItem>
+												<FormLabel>Priority</FormLabel>
+												<FormControl>
+													<Input
+														type="number"
+														min={-1000}
+														max={1000}
+														disabled={!hasOtelAccess}
+														data-testid={`otel-selective-export-rule-${index}-priority`}
+														{...field}
+														onChange={(event) => field.onChange(Number(event.target.value))}
+													/>
+												</FormControl>
+												<FormMessage />
+											</FormItem>
+										)}
+									/>
+									<FormField
+										control={form.control}
+										name={`${base}.request_types`}
+										render={({ field }) => (
+											<FormItem>
+												<FormLabel>Request Type</FormLabel>
+												<Select
+													value={field.value?.[0] ?? "all"}
+													onValueChange={(value) => field.onChange(value === "all" ? [] : [value])}
+													disabled={!hasOtelAccess}
+												>
+													<FormControl>
+														<SelectTrigger data-testid={`otel-selective-export-rule-${index}-request-type`}>
+															<SelectValue />
+														</SelectTrigger>
+													</FormControl>
+													<SelectContent>
+														<SelectItem value="all">All image requests</SelectItem>
+														<SelectItem value="image_generation">Generation</SelectItem>
+														<SelectItem value="image_edit">Edit</SelectItem>
+														<SelectItem value="image_variation">Variation</SelectItem>
+													</SelectContent>
+												</Select>
+												<FormMessage />
+											</FormItem>
+										)}
+									/>
+									<FormField
+										control={form.control}
+										name={`${base}.export_rate`}
+										render={({ field }) => (
+											<FormItem>
+												<FormLabel>Export %</FormLabel>
+												<FormControl>
+													<Input
+														type="number"
+														min={0}
+														max={100}
+														step={0.1}
+														disabled={!hasOtelAccess}
+														data-testid={`otel-selective-export-rule-${index}-export-rate`}
+														value={Math.round((field.value ?? 0) * 10000) / 100}
+														onChange={(event) => field.onChange(Number(event.target.value) / 100)}
+													/>
+												</FormControl>
+												<FormMessage />
+											</FormItem>
+										)}
+									/>
+									<FormField
+										control={form.control}
+										name={`${base}.min_latency_ms`}
+										render={({ field }) => (
+											<FormItem>
+												<FormLabel>Min Latency ms</FormLabel>
+												<FormControl>
+													<Input
+														type="number"
+														min={0}
+														placeholder="Any"
+														disabled={!hasOtelAccess}
+														data-testid={`otel-selective-export-rule-${index}-min-latency`}
+														value={field.value ?? ""}
+														onChange={(event) => field.onChange(event.target.value === "" ? undefined : Number(event.target.value))}
+													/>
+												</FormControl>
+												<FormMessage />
+											</FormItem>
+										)}
+									/>
+									<FormField
+										control={form.control}
+										name={`${base}.max_latency_ms`}
+										render={({ field }) => (
+											<FormItem>
+												<FormLabel>Max Latency ms</FormLabel>
+												<FormControl>
+													<Input
+														type="number"
+														min={0}
+														placeholder="Any"
+														disabled={!hasOtelAccess}
+														data-testid={`otel-selective-export-rule-${index}-max-latency`}
+														value={field.value ?? ""}
+														onChange={(event) => field.onChange(event.target.value === "" ? undefined : Number(event.target.value))}
+													/>
+												</FormControl>
+												<FormMessage />
+											</FormItem>
+										)}
+									/>
+									<FormField
+										control={form.control}
+										name={`${base}.min_technical_quality`}
+										render={({ field }) => (
+											<FormItem>
+												<FormLabel>Min Technical Quality</FormLabel>
+												<FormControl>
+													<Input
+														type="number"
+														min={0}
+														max={1}
+														step={0.05}
+														placeholder="Any"
+														disabled={!hasOtelAccess}
+														data-testid={`otel-selective-export-rule-${index}-min-quality`}
+														value={field.value ?? ""}
+														onChange={(event) => field.onChange(event.target.value === "" ? undefined : Number(event.target.value))}
+													/>
+												</FormControl>
+												<FormMessage />
+											</FormItem>
+										)}
+									/>
+									<FormField
+										control={form.control}
+										name={`${base}.max_per_minute`}
+										render={({ field }) => (
+											<FormItem>
+												<FormLabel>Rule Max / Minute</FormLabel>
+												<FormControl>
+													<Input
+														type="number"
+														min={0}
+														max={10000}
+														disabled={!hasOtelAccess}
+														data-testid={`otel-selective-export-rule-${index}-max-per-minute`}
+														{...field}
+														onChange={(event) => field.onChange(Number(event.target.value))}
+													/>
+												</FormControl>
+												<FormMessage />
+											</FormItem>
+										)}
+									/>
+									<FormField
+										control={form.control}
+										name={`${base}.require_error`}
+										render={({ field }) => (
+											<FormItem>
+												<FormLabel>Error</FormLabel>
+												<Select
+													value={field.value === undefined ? "any" : String(field.value)}
+													onValueChange={(value) => field.onChange(value === "any" ? undefined : value === "true")}
+													disabled={!hasOtelAccess}
+												>
+													<FormControl>
+														<SelectTrigger data-testid={`otel-selective-export-rule-${index}-require-error`}>
+															<SelectValue />
+														</SelectTrigger>
+													</FormControl>
+													<SelectContent>
+														<SelectItem value="any">Any</SelectItem>
+														<SelectItem value="true">Required</SelectItem>
+														<SelectItem value="false">Exclude</SelectItem>
+													</SelectContent>
+												</Select>
+											</FormItem>
+										)}
+									/>
+									<FormField
+										control={form.control}
+										name={`${base}.require_fallback`}
+										render={({ field }) => (
+											<FormItem>
+												<FormLabel>Fallback</FormLabel>
+												<Select
+													value={field.value === undefined ? "any" : String(field.value)}
+													onValueChange={(value) => field.onChange(value === "any" ? undefined : value === "true")}
+													disabled={!hasOtelAccess}
+												>
+													<FormControl>
+														<SelectTrigger data-testid={`otel-selective-export-rule-${index}-require-fallback`}>
+															<SelectValue />
+														</SelectTrigger>
+													</FormControl>
+													<SelectContent>
+														<SelectItem value="any">Any</SelectItem>
+														<SelectItem value="true">Required</SelectItem>
+														<SelectItem value="false">Exclude</SelectItem>
+													</SelectContent>
+												</Select>
+											</FormItem>
+										)}
+									/>
+									<div className="flex items-end justify-end">
+										<Button
+											type="button"
+											variant="ghost"
+											size="sm"
+											onClick={() => remove(index)}
+											disabled={!hasOtelAccess}
+											data-testid={`otel-selective-export-rule-${index}-remove`}
+										>
+											<Trash2 className="size-4" /> Remove
+										</Button>
+									</div>
+								</div>
+							);
+						})}
+					</div>
+					<Button
+						type="button"
+						variant="outline"
+						size="sm"
+						onClick={() =>
+							append({
+								id: `rule-${fields.length + 1}`,
+								priority: 0,
+								request_types: [],
+								export_rate: 0.01,
+								max_per_minute: 50,
+							})
+						}
+						disabled={!hasOtelAccess || fields.length >= 32}
+						data-testid="otel-selective-export-add-rule"
+					>
+						<Plus className="size-4" /> Add Rule
+					</Button>
+				</>
+			)}
+		</div>
+	);
 }
 
 // OtelProfileSection renders one collapsible profile. The header stays visible when collapsed
@@ -608,8 +1061,8 @@ function OtelProfileSection({ form, control, index, hasOtelAccess, canRemove, op
 									/>
 								</FormControl>
 								<FormDescription>
-									Maximum time for a single trace export (1-60 seconds). Traces are dropped rather than retried past this
-									limit, so an unreachable collector cannot slow down request handling.
+									Maximum time for a single trace export (1-60 seconds). Traces are dropped rather than retried past this limit, so an
+									unreachable collector cannot slow down request handling.
 								</FormDescription>
 								<FormMessage />
 							</FormItem>

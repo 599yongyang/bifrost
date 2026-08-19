@@ -24,6 +24,7 @@ type Trace struct {
 	mediaStore            TraceMediaStore   // Small handle to externally-owned, bounded binary attachments
 	mediaStoreKey         string
 	redactionReplacements RedactionMapsByPhase
+	mediaCaptureOnce      *sync.Once
 	mu                    sync.Mutex // Mutex for thread-safe span operations
 }
 
@@ -52,6 +53,25 @@ type TraceMediaStore interface {
 	Delete(key string)
 }
 
+type traceMediaDecodeLimiter interface {
+	TryAcquireDecode() (release func(), ok bool)
+}
+
+type traceMediaOwnedStore interface {
+	StoreOwned(key string, media TraceMedia) bool
+}
+
+type traceMediaStatusStore interface {
+	StoreWithStatus(key string, media TraceMedia, transferOwnership bool) string
+}
+
+const (
+	TraceMediaCaptureStatusCaptured        = "captured"
+	TraceMediaCaptureStatusAttachmentLimit = "attachment_limit"
+	TraceMediaCaptureStatusTraceByteLimit  = "trace_byte_limit"
+	TraceMediaCaptureStatusGlobalByteLimit = "global_byte_limit"
+)
+
 // SetMediaStore attaches the externally-owned media manager used by this request.
 // key must be unique per request (Trace.InternalID in the framework tracer).
 func (t *Trace) SetMediaStore(store TraceMediaStore, key string) {
@@ -68,13 +88,56 @@ func (t *Trace) SetMediaStore(store TraceMediaStore, key string) {
 // when the per-trace count or byte budget is exhausted so observability degrades
 // without allowing a large multipart request to amplify tracing memory usage.
 func (t *Trace) AddMedia(media TraceMedia) bool {
+	return t.AddMediaWithStatus(media) == TraceMediaCaptureStatusCaptured
+}
+
+// AddMediaWithStatus stores defensively-copied media and returns a bounded,
+// non-sensitive rejection reason suitable for observability metrics.
+func (t *Trace) AddMediaWithStatus(media TraceMedia) string {
 	if t == nil || media.ID == "" || len(media.Data) == 0 {
-		return false
+		return TraceMediaCaptureStatusTraceByteLimit
 	}
 	t.mu.Lock()
 	store, key := t.mediaStore, t.mediaStoreKey
 	t.mu.Unlock()
-	return store != nil && key != "" && store.Store(key, media)
+	if statusStore, ok := store.(traceMediaStatusStore); ok && key != "" {
+		return statusStore.StoreWithStatus(key, media, false)
+	}
+	if store != nil && key != "" && store.Store(key, media) {
+		return TraceMediaCaptureStatusCaptured
+	}
+	return TraceMediaCaptureStatusTraceByteLimit
+}
+
+// AddOwnedMedia transfers a freshly allocated immutable buffer to stores that
+// support ownership transfer. It is used for decoded base64 output to avoid a
+// second request-sized copy; other stores retain the defensive-copy contract.
+func (t *Trace) AddOwnedMedia(media TraceMedia) bool {
+	return t.AddOwnedMediaWithStatus(media) == TraceMediaCaptureStatusCaptured
+}
+
+// AddOwnedMediaWithStatus is the ownership-transfer counterpart of
+// AddMediaWithStatus for freshly decoded base64 buffers.
+func (t *Trace) AddOwnedMediaWithStatus(media TraceMedia) string {
+	if t == nil || media.ID == "" || len(media.Data) == 0 {
+		return TraceMediaCaptureStatusTraceByteLimit
+	}
+	t.mu.Lock()
+	store, key := t.mediaStore, t.mediaStoreKey
+	t.mu.Unlock()
+	if statusStore, ok := store.(traceMediaStatusStore); ok && key != "" {
+		return statusStore.StoreWithStatus(key, media, true)
+	}
+	if owned, ok := store.(traceMediaOwnedStore); ok && key != "" {
+		if owned.StoreOwned(key, media) {
+			return TraceMediaCaptureStatusCaptured
+		}
+		return TraceMediaCaptureStatusTraceByteLimit
+	}
+	if store != nil && key != "" && store.Store(key, media) {
+		return TraceMediaCaptureStatusCaptured
+	}
+	return TraceMediaCaptureStatusTraceByteLimit
 }
 
 // MediaAttachments returns immutable attachment views from the external manager.
@@ -92,6 +155,34 @@ func (t *Trace) MediaAttachments() []TraceMedia {
 	return store.List(key)
 }
 
+// FindMediaRef returns an existing local reference for identical request media.
+// Fallback attempts commonly reuse the same multipart images and masks; sharing
+// their immutable sidecar avoids exhausting per-trace attachment/byte budgets.
+func (t *Trace) FindMediaRef(field, role string, index int, sha256 string) (string, bool) {
+	for _, media := range t.MediaAttachments() {
+		if media.Field == field && media.Role == role && media.Index == index && media.SHA256 == sha256 {
+			return "bifrost-media://" + media.ID, true
+		}
+	}
+	return "", false
+}
+
+// TryAcquireMediaDecode obtains a process-wide decode slot when the attached
+// store provides one. Stores used by connectors/tests that do not implement a
+// limiter preserve the previous behaviour via a no-op lease.
+func (t *Trace) TryAcquireMediaDecode() (release func(), ok bool) {
+	if t == nil {
+		return func() {}, true
+	}
+	t.mu.Lock()
+	store := t.mediaStore
+	t.mu.Unlock()
+	if limiter, supported := store.(traceMediaDecodeLimiter); supported {
+		return limiter.TryAcquireDecode()
+	}
+	return func() {}, true
+}
+
 // Trace-level attribute keys. Unlike span attributes, trace attributes are never
 // exported as OTEL/Datadog span attributes — observability connectors (BigQuery,
 // Datadog) read them directly off the completed trace.
@@ -102,6 +193,11 @@ const (
 	// TraceAttrDimensions holds the map[string]string of request dimensions
 	// parsed from x-bf-dim-* headers, keyed by bare dimension name.
 	TraceAttrDimensions = "bifrost.dimensions"
+	// TraceAttrMediaCaptureEligible is an internal decision shared by framework
+	// tracing and observability connectors. Trace attributes are not emitted as
+	// ordinary OTEL span attributes.
+	TraceAttrMediaCaptureEligible = "bifrost.internal.media_capture_eligible"
+	TraceAttrMediaPolicySnapshots = "bifrost.internal.media_capture_policy_snapshots"
 )
 
 // AddSpan adds a span to the trace in a thread-safe manner
@@ -214,6 +310,48 @@ func (t *Trace) GetAttribute(key string) (any, bool) {
 	defer t.mu.Unlock()
 	value, ok := t.Attributes[key]
 	return value, ok
+}
+
+// GetOrInitializeMediaCaptureDecision pins the head-capture policy to the first
+// attempt of a request. Fallback/retry spans reuse the same result even when a
+// Dashboard hot reload swaps observability plugins while the request is running.
+func (t *Trace) GetOrInitializeMediaCaptureDecision(decide func() (bool, map[string]any)) (bool, map[string]any) {
+	if t == nil {
+		return false, nil
+	}
+	t.mu.Lock()
+	if t.mediaCaptureOnce == nil {
+		t.mediaCaptureOnce = &sync.Once{}
+	}
+	once := t.mediaCaptureOnce
+	t.mu.Unlock()
+	once.Do(func() {
+		capture, snapshots := decide()
+		t.mu.Lock()
+		if t.Attributes == nil {
+			t.Attributes = make(map[string]any)
+		}
+		t.Attributes[TraceAttrMediaCaptureEligible] = capture
+		if len(snapshots) > 0 {
+			t.Attributes[TraceAttrMediaPolicySnapshots] = snapshots
+		}
+		t.mu.Unlock()
+	})
+	t.mu.Lock()
+	capture, _ := t.Attributes[TraceAttrMediaCaptureEligible].(bool)
+	snapshots, _ := t.Attributes[TraceAttrMediaPolicySnapshots].(map[string]any)
+	t.mu.Unlock()
+	return capture, snapshots
+}
+
+// ResetMediaCaptureDecision prepares a pooled Trace for a new request.
+func (t *Trace) ResetMediaCaptureDecision() {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	t.mediaCaptureOnce = &sync.Once{}
+	t.mu.Unlock()
 }
 
 // SnapshotForExport returns a copy of the trace that is safe for concurrent
