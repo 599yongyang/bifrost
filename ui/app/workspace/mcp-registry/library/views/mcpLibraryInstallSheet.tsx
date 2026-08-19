@@ -21,6 +21,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { MCPHeadersAuthorizer } from "../../views/mcpHeadersAuthorizer";
 import { OAuth2Authorizer } from "../../views/oauth2Authorizer";
+import i18n from "@/lib/i18n";
 
 const MCP_ICON_FALLBACK = "/images/mcp.svg";
 
@@ -389,8 +390,8 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 		<Sheet open={open} onOpenChange={(sheetOpen) => !sheetOpen && !oauthFlow && !headersFlow && onClose()}>
 			<SheetContent className="flex w-full flex-col overflow-x-hidden p-0 pt-4 sm:max-w-2xl">
 				<SheetHeader className="flex flex-col items-start px-0 py-4" headerClassName="mb-0 sticky px-8 -top-4 bg-card z-10">
-					<SheetTitle>Install MCP server</SheetTitle>
-					<SheetDescription>Confirm the catalog configuration before adding this server to Bifrost.</SheetDescription>
+					<SheetTitle>{i18n.t("supplemental.installMcpServer")}</SheetTitle>
+					<SheetDescription>{i18n.t("supplemental.confirmCatalogConfig")}</SheetDescription>
 				</SheetHeader>
 
 				<Form {...form}>
@@ -435,7 +436,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 
 							<section className="space-y-4">
 								<div className="space-y-1">
-									<h3 className="text-sm font-medium">Client details</h3>
+									<h3 className="text-sm font-medium">{i18n.t("supplemental.clientDetails")}</h3>
 									<p className="text-muted-foreground text-sm">Bifrost uses this name internally when routing MCP tool calls.</p>
 								</div>
 
@@ -459,7 +460,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 									}}
 									render={({ field }) => (
 										<FormItem>
-											<FormLabel>Server name</FormLabel>
+											<FormLabel>{i18n.t("supplemental.serverName")}</FormLabel>
 											<FormControl>
 												<Input {...field} data-testid="library-mcp-name-input" maxLength={50} />
 											</FormControl>
@@ -473,7 +474,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 								<section className="space-y-4 border-t pt-5">
 									<div className="space-y-1">
 										<div className="flex items-center gap-2">
-											<h3 className="text-sm font-medium">Launch environment</h3>
+											<h3 className="text-sm font-medium">{i18n.t("supplemental.launchEnvironment")}</h3>
 											<TooltipProvider>
 												<Tooltip>
 													<TooltipTrigger asChild>
@@ -502,29 +503,29 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 								<div className="space-y-1">
 									<div className="flex items-center gap-2">
 										<KeyRound className="text-muted-foreground size-4" />
-										<h3 className="text-sm font-medium">Authentication</h3>
+										<h3 className="text-sm font-medium">{i18n.t("supplemental.authentication")}</h3>
 									</div>
 									<p className="text-muted-foreground text-sm">{authHelpText(authType)}</p>
 								</div>
 
 								{/* Authentication Type */}
 								<FormItem className="w-full">
-									<FormLabel>Authentication type</FormLabel>
+									<FormLabel>{i18n.t("supplemental.authenticationType")}</FormLabel>
 									<Select value={authKind} onValueChange={(value: "none" | "headers" | "oauth") => applyAuthKind(value)}>
 										<FormControl>
 											<SelectTrigger className="w-full" data-testid="library-auth-type-select">
-												<SelectValue placeholder="Select authentication type" />
+												<SelectValue placeholder={i18n.t("supplemental.selectAuthenticationType")} />
 											</SelectTrigger>
 										</FormControl>
 										<SelectContent>
 											<SelectItem value="none" data-testid="library-auth-type-none">
-												None
+												{i18n.t("workspace.mcpForm.none")}
 											</SelectItem>
 											<SelectItem value="headers" data-testid="library-auth-type-headers">
-												Headers
+												{i18n.t("workspace.mcpForm.headers")}
 											</SelectItem>
 											<SelectItem value="oauth" data-testid="library-auth-type-oauth">
-												OAuth 2.0
+												{i18n.t("workspace.mcpForm.oauth")}
 											</SelectItem>
 										</SelectContent>
 									</Select>
@@ -533,19 +534,19 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 								{/* Auth Scope — only meaningful when there's an auth flow */}
 								{authKind !== "none" && (
 									<FormItem className="w-full">
-										<FormLabel>Auth Scope</FormLabel>
+										<FormLabel>{i18n.t("supplemental.authScope")}</FormLabel>
 										<Select value={authScope} onValueChange={(value: "shared" | "per_user") => applyAuthScope(value)}>
 											<FormControl>
 												<SelectTrigger className="w-full" data-testid="library-auth-scope-select">
-													<SelectValue placeholder="Select auth scope" />
+													<SelectValue placeholder={i18n.t("supplemental.selectAuthScope")} />
 												</SelectTrigger>
 											</FormControl>
 											<SelectContent>
 												<SelectItem value="shared" data-testid="library-auth-scope-shared">
-													Shared
+													{i18n.t("supplemental.shared")}
 												</SelectItem>
 												<SelectItem value="per_user" data-testid="library-auth-scope-per-user">
-													Per-User
+													{i18n.t("supplemental.perUser")}
 												</SelectItem>
 											</SelectContent>
 										</Select>
@@ -579,7 +580,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 										    per-user on install via the MCPHeadersAuthorizer dialog. */}
 										<div className="space-y-1">
 											<div className="space-y-0.5">
-												<div className="text-sm font-medium">Required Headers</div>
+												<div className="text-sm font-medium">{i18n.t("workspace.config.security.requiredHeaders")}</div>
 												<p className="text-muted-foreground text-sm">
 													Comma-separated list of header names each caller must supply when they first use this server (e.g.{" "}
 													<code>X-API-Key, X-Tenant-ID</code>). Values are submitted per user - never stored on this server config.
@@ -624,7 +625,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 									<Accordion type="single" collapsible className="w-full">
 										<AccordionItem value="oauth-advanced" className="border-b-0">
 											<AccordionTrigger className="py-0" data-testid="library-oauth-advanced-trigger">
-												<span className="text-sm font-medium">OAuth Client Advanced Settings</span>
+												<span className="text-sm font-medium">{i18n.t("supplemental.oauthAdvanced")}</span>
 											</AccordionTrigger>
 											<AccordionContent className="space-y-4 pt-4 pb-0">
 												<FormField
@@ -633,7 +634,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 													render={({ field }) => (
 														<FormItem>
 															<div className="flex items-center gap-2">
-																<FormLabel>OAuth client ID</FormLabel>
+																<FormLabel>{i18n.t("supplemental.oauthClientId")}</FormLabel>
 																<TooltipProvider>
 																	<Tooltip>
 																		<TooltipTrigger asChild>
@@ -663,7 +664,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 													name="oauth_config.client_secret"
 													render={({ field }) => (
 														<FormItem>
-															<FormLabel>OAuth client secret</FormLabel>
+															<FormLabel>{i18n.t("supplemental.oauthClientSecret")}</FormLabel>
 															<FormControl>
 																<SecretVarInput
 																	value={field.value}
@@ -685,7 +686,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 														name="oauth_config.authorize_url"
 														render={({ field }) => (
 															<FormItem>
-																<FormLabel>Authorization URL</FormLabel>
+																<FormLabel>{i18n.t("supplemental.authorizationUrl")}</FormLabel>
 																<FormControl>
 																	<Input
 																		{...field}
@@ -694,7 +695,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 																			field.onChange(event);
 																			clearErrors("oauth_config.authorize_url");
 																		}}
-																		placeholder="Auto-discovered"
+																		placeholder={i18n.t("supplemental.autoDiscovered")}
 																		data-testid="library-oauth-authorize-url"
 																	/>
 																</FormControl>
@@ -708,7 +709,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 														name="oauth_config.token_url"
 														render={({ field }) => (
 															<FormItem>
-																<FormLabel>Token URL</FormLabel>
+																<FormLabel>{i18n.t("supplemental.tokenUrl")}</FormLabel>
 																<FormControl>
 																	<Input
 																		{...field}
@@ -717,7 +718,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 																			field.onChange(event);
 																			clearErrors("oauth_config.token_url");
 																		}}
-																		placeholder="Auto-discovered"
+																		placeholder={i18n.t("supplemental.autoDiscovered")}
 																		data-testid="library-oauth-token-url"
 																	/>
 																</FormControl>
@@ -732,7 +733,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 													name="oauth_config.registration_url"
 													render={({ field }) => (
 														<FormItem>
-															<FormLabel>Registration URL</FormLabel>
+															<FormLabel>{i18n.t("supplemental.registrationUrl")}</FormLabel>
 															<FormControl>
 																<Input
 																	{...field}
@@ -741,7 +742,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 																		field.onChange(event);
 																		clearErrors("oauth_config.registration_url");
 																	}}
-																	placeholder="Auto-discovered"
+																	placeholder={i18n.t("supplemental.autoDiscovered")}
 																	data-testid="library-oauth-registration-url"
 																/>
 															</FormControl>
@@ -751,16 +752,16 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 												/>
 
 												<div className="space-y-2">
-													<Label>Scopes</Label>
+													<Label>{i18n.t("supplemental.scopes")}</Label>
 													<Input
 														value={scopesText}
 														onChange={(event) => setScopesText(event.target.value)}
-														placeholder="read, write, admin"
+														placeholder={i18n.t("workspace.mcpForm.oauthScopesPlaceholder")}
 														data-testid="library-oauth-scopes-input"
 													/>
 												</div>
 												<div className="space-y-2">
-													<Label>Resource</Label>
+													<Label>{i18n.t("supplemental.resource")}</Label>
 													<Input
 														value={resourceText}
 														onChange={(event) => setResourceText(event.target.value)}
@@ -778,7 +779,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 									<Accordion type="single" collapsible className="w-full">
 										<AccordionItem value="tls-config" className="border-b-0">
 											<AccordionTrigger className="py-0" data-testid="library-tls-config-trigger">
-												<span className="text-sm font-medium">TLS / Certificate</span>
+												<span className="text-sm font-medium">{i18n.t("workspace.providers.tlsCertificate")}</span>
 											</AccordionTrigger>
 											<AccordionContent className="space-y-4 pt-4 pb-0">
 												<FormField
@@ -787,7 +788,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 													render={({ field }) => (
 														<FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
 															<div className="space-y-0.5">
-																<FormLabel>Skip TLS verification</FormLabel>
+																<FormLabel>{i18n.t("workspace.providers.skipTlsVerification")}</FormLabel>
 																<p className="text-muted-foreground text-sm">
 																	Disable TLS certificate verification. Use only in trusted isolated environments. Takes priority over CA
 																	certificate.
@@ -808,7 +809,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 													name="tls_config.ca_cert_pem"
 													render={({ field }) => (
 														<FormItem>
-															<FormLabel>CA Certificate (PEM) (Optional)</FormLabel>
+															<FormLabel>{i18n.t("workspace.providers.caCertificatePemOptional")}</FormLabel>
 															<FormControl>
 																<SecretVarInput
 																	variant="textarea"
@@ -847,7 +848,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 								</p>
 								<div className="flex justify-end gap-2">
 									<Button type="button" variant="outline" onClick={onClose} disabled={isLoading} data-testid="library-install-cancel-btn">
-										Cancel
+										{i18n.t("common.cancel")}
 									</Button>
 									<TooltipProvider>
 										<Tooltip>

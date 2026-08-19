@@ -11,6 +11,7 @@
 import { Button } from "@/components/ui/button";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import i18n from "@/lib/i18n";
 
 export default function MCPRegistryOAuthCallbackPage() {
 	const [closeAttempted, setCloseAttempted] = useState(false);
@@ -45,7 +46,7 @@ export default function MCPRegistryOAuthCallbackPage() {
 				<p className="text-muted-foreground mt-4 text-sm">{closeAttempted ? "You can close this tab." : "This window can be closed."}</p>
 				<div className="mt-6">
 					<Button asChild variant="outline" data-testid="mcp-callback-back-button">
-						<Link to="/workspace/mcp-registry">Back to MCP registry</Link>
+						<Link to="/workspace/mcp-registry">{i18n.t("supplemental.backMcpRegistry")}</Link>
 					</Button>
 				</div>
 			</div>

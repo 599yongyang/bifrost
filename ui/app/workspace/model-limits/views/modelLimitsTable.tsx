@@ -38,6 +38,7 @@ import { ModelLimitsEmptyState } from "./modelLimitsEmptyState";
 import "@enterprise/lib/registrations/modelLimitScopes";
 import { PIN_SHADOW_RIGHT } from "@/components/table/columnPinning";
 import { useNavigate } from "@tanstack/react-router";
+import i18n from "@/lib/i18n";
 
 // Helper to format reset duration for display
 const formatResetDuration = (duration: string) => {
@@ -90,7 +91,7 @@ function ModelLimitActionsMenu({
 					}}
 				>
 					<Edit className="h-4 w-4" />
-					Edit
+					{i18n.t("common.edit")}
 				</DropdownMenuItem>
 				<DropdownMenuItem
 					variant="destructive"
@@ -104,7 +105,7 @@ function ModelLimitActionsMenu({
 					}}
 				>
 					<Trash2 className="h-4 w-4" />
-					Delete
+					{i18n.t("common.delete")}
 				</DropdownMenuItem>
 			</DropdownMenuContent>
 		</DropdownMenu>
@@ -246,7 +247,7 @@ export default function ModelLimitsTable({
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>
-						<AlertDialogCancel>Cancel</AlertDialogCancel>
+						<AlertDialogCancel>{i18n.t("common.cancel")}</AlertDialogCancel>
 						<AlertDialogAction
 							onClick={() => deletingModelConfig && handleDelete(deletingModelConfig.id)}
 							disabled={isDeleting}
@@ -277,8 +278,8 @@ export default function ModelLimitsTable({
 					<div className="relative min-w-[220px] flex-1">
 						<Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
 						<Input
-							aria-label="Search model limits by model name"
-							placeholder="Search by model name..."
+							aria-label={i18n.t("workspace.modelLimits.searchAriaLabel")}
+							placeholder={i18n.t("workspace.modelLimits.searchPlaceholder")}
 							value={search}
 							onChange={(e) => onSearchChange(e.target.value)}
 							className="pl-9"
@@ -302,10 +303,10 @@ export default function ModelLimitsTable({
 
 					<Select value={provider || "all"} onValueChange={(v) => onProviderChange(v === "all" ? "" : v)}>
 						<SelectTrigger className="w-[160px]" data-testid="model-limits-filter-provider">
-							<SelectValue placeholder="All Providers" />
+							<SelectValue placeholder={i18n.t("workspace.modelLimits.allProviders")} />
 						</SelectTrigger>
 						<SelectContent>
-							<SelectItem value="all">All Providers</SelectItem>
+							<SelectItem value="all">{i18n.t("workspace.modelLimits.allProviders")}</SelectItem>
 							{(providers ?? []).map((p) => (
 								<SelectItem key={p.name} value={p.name}>
 									<div className="flex items-center gap-2">
@@ -328,7 +329,7 @@ export default function ModelLimitsTable({
 							}}
 							data-testid="model-limits-filter-clear"
 						>
-							Clear filters
+							{i18n.t("supplemental.clearFilters")}
 						</Button>
 					)}
 				</div>
@@ -337,12 +338,12 @@ export default function ModelLimitsTable({
 					<Table containerClassName="h-full overflow-auto">
 						<TableHeader className="bg-muted sticky top-0 z-10">
 							<TableRow className="hover:bg-transparent">
-								<TableHead className="font-medium">Model</TableHead>
-								<TableHead className="font-medium">Provider</TableHead>
-								<TableHead className="font-medium">Scope</TableHead>
+								<TableHead className="font-medium">{i18n.t("workspace.logs.colModel")}</TableHead>
+								<TableHead className="font-medium">{i18n.t("workspace.logs.colProvider")}</TableHead>
+								<TableHead className="font-medium">{i18n.t("workspace.routingRules.scope")}</TableHead>
 								<TableHead className="font-medium">Scope Target</TableHead>
-								<TableHead className="font-medium">Budget</TableHead>
-								<TableHead className="font-medium">Rate Limit</TableHead>
+								<TableHead className="font-medium">{i18n.t("workspace.modelLimits.budget")}</TableHead>
+								<TableHead className="font-medium">{i18n.t("workspace.modelLimits.rateLimit")}</TableHead>
 								<TableHead className={`bg-muted sticky right-0 z-30 w-[50px] text-right ${PIN_SHADOW_RIGHT}`}></TableHead>
 							</TableRow>
 						</TableHeader>
@@ -392,7 +393,7 @@ export default function ModelLimitsTable({
 													</span>
 													{isExhausted && (
 														<Badge variant="destructive" className="w-fit text-xs">
-															Limit Reached
+															{i18n.t("workspace.modelLimits.limitReached")}
 														</Badge>
 													)}
 												</div>
@@ -404,7 +405,7 @@ export default function ModelLimitsTable({
 														<span className="text-sm">{ProviderLabels[config.provider as ProviderName] || config.provider}</span>
 													</div>
 												) : (
-													<span className="text-muted-foreground text-sm">All Providers</span>
+													<span className="text-muted-foreground text-sm">{i18n.t("workspace.modelLimits.allProviders")}</span>
 												)}
 											</TableCell>
 											<TableCell>
@@ -447,7 +448,7 @@ export default function ModelLimitsTable({
 																	{formatCurrency(b.current_usage)} / {formatCurrency(b.max_limit)}
 																</span>
 																<span className="text-muted-foreground text-xs">
-																	Resets {formatResetDuration(b.reset_duration)}
+																	{i18n.t("supplemental.resets")} {formatResetDuration(b.reset_duration)}
 																	{config.calendar_aligned && supportsCalendarAlignment(b.reset_duration) && " (calendar)"}
 																</span>
 															</div>
@@ -466,7 +467,7 @@ export default function ModelLimitsTable({
 																	<TooltipTrigger asChild>
 																		<div className="space-y-1.5">
 																			<div className="flex items-center justify-between gap-4 text-xs">
-																				<span className="font-medium">{config.rate_limit.token_max_limit.toLocaleString()} tokens</span>
+																				<span className="font-medium">{config.rate_limit.token_max_limit.toLocaleString()} {i18n.t("workspace.governance.teams.tokensUnit")}</span>
 																				<span className="text-muted-foreground">
 																					{formatResetDuration(config.rate_limit.token_reset_duration || "1h")}
 																				</span>
@@ -487,10 +488,10 @@ export default function ModelLimitsTable({
 																	<TooltipContent>
 																		<p className="font-medium">
 																			{config.rate_limit.token_current_usage.toLocaleString()} /{" "}
-																			{config.rate_limit.token_max_limit.toLocaleString()} tokens
+																			{config.rate_limit.token_max_limit.toLocaleString()} {i18n.t("workspace.governance.teams.tokensUnit")}
 																		</p>
 																		<p className="text-primary-foreground/80 text-xs">
-																			Resets {formatResetDuration(config.rate_limit.token_reset_duration || "1h")}
+																			{i18n.t("supplemental.resets")} {formatResetDuration(config.rate_limit.token_reset_duration || "1h")}
 																		</p>
 																	</TooltipContent>
 																</Tooltip>
@@ -502,7 +503,7 @@ export default function ModelLimitsTable({
 																	<TooltipTrigger asChild>
 																		<div className="space-y-1.5">
 																			<div className="flex items-center justify-between gap-4 text-xs">
-																				<span className="font-medium">{config.rate_limit.request_max_limit.toLocaleString()} req</span>
+																				<span className="font-medium">{config.rate_limit.request_max_limit.toLocaleString()} {i18n.t("workspace.governance.teams.requestUnitShort")}</span>
 																				<span className="text-muted-foreground">
 																					{formatResetDuration(config.rate_limit.request_reset_duration || "1h")}
 																				</span>
@@ -523,10 +524,10 @@ export default function ModelLimitsTable({
 																	<TooltipContent>
 																		<p className="font-medium">
 																			{config.rate_limit.request_current_usage.toLocaleString()} /{" "}
-																			{config.rate_limit.request_max_limit.toLocaleString()} requests
+																			{config.rate_limit.request_max_limit.toLocaleString()} {i18n.t("workspace.governance.teams.requestsUnit")}
 																		</p>
 																		<p className="text-primary-foreground/80 text-xs">
-																			Resets {formatResetDuration(config.rate_limit.request_reset_duration || "1h")}
+																			{i18n.t("supplemental.resets")} {formatResetDuration(config.rate_limit.request_reset_duration || "1h")}
 																		</p>
 																	</TooltipContent>
 																</Tooltip>
@@ -567,7 +568,7 @@ export default function ModelLimitsTable({
 					<div className="flex shrink-0 items-center justify-between text-xs" data-testid="pagination">
 						<div className="text-muted-foreground flex items-center gap-2">
 							{(offset + 1).toLocaleString()}-{Math.min(offset + limit, totalCount).toLocaleString()} of {totalCount.toLocaleString()}{" "}
-							entries
+							{i18n.t("workspace.virtualKeys.entries")}
 						</div>
 
 						<div className="flex items-center gap-2">
@@ -577,7 +578,7 @@ export default function ModelLimitsTable({
 								onClick={() => onOffsetChange(Math.max(0, offset - limit))}
 								disabled={offset === 0}
 								data-testid="model-limits-pagination-prev-btn"
-								aria-label="Previous page"
+								aria-label={i18n.t("supplemental.previousPage")}
 							>
 								<ChevronLeft className="size-3" />
 							</Button>
@@ -594,7 +595,7 @@ export default function ModelLimitsTable({
 								onClick={() => onOffsetChange(offset + limit)}
 								disabled={offset + limit >= totalCount}
 								data-testid="model-limits-pagination-next-btn"
-								aria-label="Next page"
+								aria-label={i18n.t("supplemental.nextPage")}
 							>
 								<ChevronRight className="size-3" />
 							</Button>

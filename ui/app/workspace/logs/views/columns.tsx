@@ -11,6 +11,7 @@ import { ColumnDef } from "@tanstack/react-table";
 import { format, formatDistanceToNow } from "date-fns";
 import { ArrowUpDown, MoreHorizontal, Trash2 } from "lucide-react";
 import { useState } from "react";
+import i18n from "@/lib/i18n";
 
 function LogActionsMenu({ log, onDelete }: { log: LogEntry; onDelete: (log: LogEntry) => void }) {
 	const [isOpen, setIsOpen] = useState(false);
@@ -18,7 +19,7 @@ function LogActionsMenu({ log, onDelete }: { log: LogEntry; onDelete: (log: LogE
 	return (
 		<DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
 			<DropdownMenuTrigger asChild onClick={(event) => event.stopPropagation()}>
-				<Button variant="ghost" size="icon" data-testid="log-actions-btn" aria-label="Log actions" className="h-7 w-7">
+				<Button variant="ghost" size="icon" data-testid="log-actions-btn" aria-label={i18n.t("supplemental.logActions")} className="h-7 w-7">
 					<MoreHorizontal className="h-4 w-4" />
 				</Button>
 			</DropdownMenuTrigger>
@@ -34,7 +35,7 @@ function LogActionsMenu({ log, onDelete }: { log: LogEntry; onDelete: (log: LogE
 					}}
 				>
 					<Trash2 className="h-4 w-4" />
-					Delete
+					{i18n.t("common.delete")}
 				</DropdownMenuItem>
 			</DropdownMenuContent>
 		</DropdownMenu>
@@ -172,7 +173,7 @@ export function LogMessageCell({ log, contentClassName = "max-w-full" }: { log: 
 			{isLargePayload && (
 				<span
 					className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/50 dark:text-amber-400"
-					title="Large payload - streamed directly to provider"
+					title={i18n.t("supplemental.largePayloadDirect")}
 				>
 					LP
 				</span>
@@ -180,10 +181,10 @@ export function LogMessageCell({ log, contentClassName = "max-w-full" }: { log: 
 			{realtimeMessages &&
 				(realtimeMessages.tool || realtimeMessages.user || realtimeMessages.assistantToolCall || realtimeMessages.assistant) ? (
 				<div className={cn(contentClassName, "font-mono text-sm font-normal leading-5")}>
-					{realtimeMessages.tool ? <div className="truncate">Tool Result: {realtimeMessages.tool}</div> : null}
+					{realtimeMessages.tool ? <div className="truncate">{i18n.t("supplemental.toolResult")} {realtimeMessages.tool}</div> : null}
 					{realtimeMessages.user ? <div className="truncate">User: {realtimeMessages.user}</div> : null}
 					{realtimeMessages.assistantToolCall ? (
-						<div className="truncate">Assistant Tool Call: {realtimeMessages.assistantToolCall}</div>
+						<div className="truncate">{i18n.t("supplemental.assistantToolCall")} {realtimeMessages.assistantToolCall}</div>
 					) : null}
 					{realtimeMessages.assistant ? <div className="truncate">Assistant: {realtimeMessages.assistant}</div> : null}
 				</div>
@@ -266,7 +267,7 @@ export const createColumns = (
 			accessorKey: "timestamp",
 			header: ({ column }) => (
 				<Button variant="ghost" data-testid="logs-time-sort-btn" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}>
-					Time
+					{i18n.t("workspace.logs.colTime")}
 					<ArrowUpDown className="ml-2 h-4 w-4" />
 				</Button>
 			),
@@ -276,7 +277,7 @@ export const createColumns = (
 				const date = timestamp ? new Date(timestamp) : null;
 				const isValid = date && date.toString() !== "Invalid Date";
 				if (!isValid) {
-					return <div className="truncate text-xs">N/A</div>;
+					return <div className="truncate text-xs">{i18n.t("workspace.mcpLogs.na")}</div>;
 				}
 				return (
 					<div className="flex flex-col leading-tight">
@@ -332,7 +333,7 @@ export const createColumns = (
 			accessorKey: "latency",
 			header: ({ column }) => (
 				<Button variant="ghost" data-testid="logs-latency-sort-btn" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}>
-					Latency
+					{i18n.t("workspace.logs.colLatency")}
 					<ArrowUpDown className="ml-2 h-4 w-4" />
 				</Button>
 			),
@@ -340,7 +341,7 @@ export const createColumns = (
 			cell: ({ row }) => {
 				const latency = row.original.latency;
 				if (latency === undefined || latency === null) {
-					return <div className="pl-4 font-mono text-xs">N/A</div>;
+					return <div className="pl-4 font-mono text-xs">{i18n.t("workspace.mcpLogs.na")}</div>;
 				}
 				const tone = latency >= 5000 ? "bg-red-500" : latency >= 2000 ? "bg-amber-500" : "bg-emerald-500";
 				const pct = Math.min(100, (latency / 5000) * 100);
@@ -366,7 +367,7 @@ export const createColumns = (
 			cell: ({ row }) => {
 				const tokenUsage = row.original.token_usage;
 				if (!tokenUsage) {
-					return <div className="pl-4 font-mono text-xs">N/A</div>;
+					return <div className="pl-4 font-mono text-xs">{i18n.t("workspace.mcpLogs.na")}</div>;
 				}
 				const prompt = tokenUsage.prompt_tokens ?? 0;
 				const completion = tokenUsage.completion_tokens ?? 0;
@@ -400,14 +401,14 @@ export const createColumns = (
 			accessorKey: "cost",
 			header: ({ column }) => (
 				<Button variant="ghost" data-testid="logs-cost-sort-btn" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}>
-					Cost
+					{i18n.t("workspace.logs.colCost")}
 					<ArrowUpDown className="ml-2 h-4 w-4" />
 				</Button>
 			),
 			size: 120,
 			cell: ({ row }) => {
 				if (row.original.cost == null) {
-					return <div className="pl-4 font-mono text-[12px]">N/A</div>;
+					return <div className="pl-4 font-mono text-[12px]">{i18n.t("workspace.mcpLogs.na")}</div>;
 				}
 				return <div className="pl-4 font-mono text-sm tabular-nums">{formatCost(row.original.cost)}</div>;
 			},

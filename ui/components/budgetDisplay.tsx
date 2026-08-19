@@ -4,6 +4,7 @@ import { resetDurationLabels, supportsCalendarAlignment } from "@/lib/constants/
 import { Budget } from "@/lib/types/governance";
 import { cn } from "@/lib/utils";
 import { formatCurrency, getEffectiveBudgetLimit, hasActiveBudgetOverride } from "@/lib/utils/governance";
+import i18n from "@/lib/i18n";
 
 interface BudgetDisplayProps {
 	budgets: Budget[] | null | undefined;
@@ -60,7 +61,7 @@ export function BudgetDisplay({ budgets, calendarAligned }: BudgetDisplayProps) 
 								</p>
 							) : null}
 							{b.reset_duration ? (
-								<p className="text-primary-foreground/80 text-xs">Resets {formatResetDuration(b.reset_duration, calendarAligned)}</p>
+								<p className="text-primary-foreground/80 text-xs">{i18n.t("supplemental.resets")} {formatResetDuration(b.reset_duration, calendarAligned)}</p>
 							) : null}
 						</TooltipContent>
 					</Tooltip>

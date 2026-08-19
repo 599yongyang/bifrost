@@ -68,6 +68,7 @@ import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
+import i18n from "@/lib/i18n";
 
 interface VirtualKeySheetProps {
 	virtualKey?: VirtualKey | null;
@@ -492,7 +493,7 @@ export default function VirtualKeySheet({ virtualKey, defaultTeamId, onSave, onC
 	const handleAddProvider = (provider: string) => {
 		const existingConfig = providerConfigs.find((config) => config.provider === provider);
 		if (existingConfig) {
-			toast.error("This provider is already configured");
+			toast.error(i18n.t("workspace.virtualKeys.providerAlreadyConfigured"));
 			return;
 		}
 
@@ -519,7 +520,7 @@ export default function VirtualKeySheet({ virtualKey, defaultTeamId, onSave, onC
 	const handleAddMCPClient = (mcpClientName: string) => {
 		const existingConfig = mcpConfigs.find((config) => config.mcp_client_name === mcpClientName);
 		if (existingConfig) {
-			toast.error("This MCP client is already configured");
+			toast.error(i18n.t("workspace.virtualKeys.mcpClientAlreadyConfigured"));
 			return;
 		}
 
@@ -821,7 +822,7 @@ export default function VirtualKeySheet({ virtualKey, defaultTeamId, onSave, onC
 						description: data.description,
 					},
 				}).unwrap();
-				toast.success("Virtual key updated");
+				toast.success(i18n.t("workspace.virtualKeys.virtualKeyUpdated"));
 				onSave();
 				return;
 			}
@@ -904,7 +905,7 @@ export default function VirtualKeySheet({ virtualKey, defaultTeamId, onSave, onC
 					vkId: virtualKey.id,
 					data: updateData,
 				}).unwrap();
-				toast.success("Virtual key updated successfully");
+				toast.success(i18n.t("workspace.virtualKeys.virtualKeyUpdatedSuccess"));
 			} else {
 				// Create new virtual key
 				const createData: CreateVirtualKeyRequest = {
@@ -943,7 +944,7 @@ export default function VirtualKeySheet({ virtualKey, defaultTeamId, onSave, onC
 				}
 
 				await createVirtualKey(createData).unwrap();
-				toast.success("Virtual key created successfully");
+				toast.success(i18n.t("workspace.virtualKeys.virtualKeyCreatedSuccess"));
 			}
 
 			onSave();
@@ -1023,7 +1024,7 @@ export default function VirtualKeySheet({ virtualKey, defaultTeamId, onSave, onC
 							{/* Assigned User */}
 							{assignedUsers.length > 0 && (
 								<div className="space-y-1">
-									<Label className="text-sm font-medium">Assigned To</Label>
+									<Label className="text-sm font-medium">{i18n.t("workspace.virtualKeys.assignedTo")}</Label>
 									<div className="flex items-center gap-2">
 										<Users className="text-muted-foreground h-4 w-4" />
 										<span className="text-sm">{assignedUsers.map((u) => u.name || u.email).join(", ")}</span>
@@ -1038,9 +1039,9 @@ export default function VirtualKeySheet({ virtualKey, defaultTeamId, onSave, onC
 									name="name"
 									render={({ field }) => (
 										<FormItem>
-											<FormLabel>Name *</FormLabel>
+											<FormLabel>{i18n.t("workspace.virtualKeys.nameLabel")}</FormLabel>
 											<FormControl>
-												<Input placeholder="e.g., Production API Key" data-testid="vk-name-input" {...field} />
+												<Input placeholder={i18n.t("workspace.virtualKeys.namePlaceholder")} data-testid="vk-name-input" {...field} />
 											</FormControl>
 											<FormMessage />
 										</FormItem>
@@ -1052,9 +1053,9 @@ export default function VirtualKeySheet({ virtualKey, defaultTeamId, onSave, onC
 									name="description"
 									render={({ field }) => (
 										<FormItem>
-											<FormLabel>Description</FormLabel>
+											<FormLabel>{i18n.t("workspace.virtualKeys.description")}</FormLabel>
 											<FormControl>
-												<Textarea placeholder="This key is used for..." data-testid="vk-description-input" {...field} rows={3} />
+												<Textarea placeholder={i18n.t("workspace.virtualKeys.descriptionPlaceholder")} data-testid="vk-description-input" {...field} rows={3} />
 											</FormControl>
 											<FormMessage />
 										</FormItem>
@@ -1086,7 +1087,7 @@ export default function VirtualKeySheet({ virtualKey, defaultTeamId, onSave, onC
 								{/* Provider Configurations */}
 								<div className="space-y-2">
 									<div className="flex items-center gap-2">
-										<Label className="text-sm font-medium">Provider Configurations</Label>
+										<Label className="text-sm font-medium">{i18n.t("workspace.virtualKeys.providerConfigurations")}</Label>
 										<TooltipProvider>
 											<Tooltip>
 												<TooltipTrigger asChild>
@@ -1096,8 +1097,7 @@ export default function VirtualKeySheet({ virtualKey, defaultTeamId, onSave, onC
 												</TooltipTrigger>
 												<TooltipContent>
 													<p>
-														Configure which providers this virtual key can use and their specific settings. Leave empty to block all
-														providers. Add providers to allow them.
+														{i18n.t("workspace.virtualKeys.providerConfigurationsTooltip")}
 													</p>
 												</TooltipContent>
 											</Tooltip>
@@ -1119,7 +1119,7 @@ export default function VirtualKeySheet({ virtualKey, defaultTeamId, onSave, onC
 											}}
 										>
 											<SelectTrigger className="flex-1" data-testid="vk-provider-select">
-												<SelectValue placeholder="Select a provider to add" />
+												<SelectValue placeholder={i18n.t("workspace.virtualKeys.selectProviderToAdd")} />
 											</SelectTrigger>
 											<SelectContent>
 												{(() => {
@@ -1136,7 +1136,7 @@ export default function VirtualKeySheet({ virtualKey, defaultTeamId, onSave, onC
 																data-testid="vk-provider-config-link"
 															>
 																<span>
-																	No providers left to configure. <span className="text-primary font-medium underline">Click to add</span>
+																	{i18n.t("workspace.virtualKeys.noProvidersLeftToConfigure")} <span className="text-primary font-medium underline">{i18n.t("workspace.virtualKeys.clickToAdd")}</span>
 																</span>
 															</SelectItem>
 														);
@@ -1248,7 +1248,7 @@ export default function VirtualKeySheet({ virtualKey, defaultTeamId, onSave, onC
 								{((mcpClientsData && mcpClientsData.length > 0) || (mcpConfigs && mcpConfigs.length > 0)) && (
 									<div className="mt-6 space-y-2">
 										<div className="flex items-center gap-2">
-											<Label className="text-sm font-medium">MCP Client Configurations</Label>
+											<Label className="text-sm font-medium">{i18n.t("workspace.virtualKeys.mcpClientConfigurations")}</Label>
 											<TooltipProvider>
 												<Tooltip>
 													<TooltipTrigger asChild>
@@ -1260,7 +1260,7 @@ export default function VirtualKeySheet({ virtualKey, defaultTeamId, onSave, onC
 														<p>
 															Configure which MCP clients this virtual key can use and their allowed tools. Leaving this section empty
 															blocks all MCP tools. After adding an MCP client, you must select specific tools or choose{" "}
-															<span className="font-medium">Allow All Tools</span> to grant tool access.
+															<span className="font-medium">{i18n.t("workspace.virtualKeys.allowAllTools")}</span> {i18n.t("workspace.virtualKeys.toGrantToolAccess")}
 														</p>
 													</TooltipContent>
 												</Tooltip>
@@ -1299,7 +1299,7 @@ export default function VirtualKeySheet({ virtualKey, defaultTeamId, onSave, onC
 													}}
 												>
 													<SelectTrigger className="flex-1">
-														<SelectValue placeholder="Select an MCP client to add" />
+														<SelectValue placeholder={i18n.t("workspace.virtualKeys.selectAnMcpClientToAdd")} />
 													</SelectTrigger>
 													<SelectContent>
 														{mcpClientsData.filter((client) => !mcpConfigs.some((config) => config.mcp_client_name === client.config.name))
@@ -1326,7 +1326,7 @@ export default function VirtualKeySheet({ virtualKey, defaultTeamId, onSave, onC
 																	);
 																})
 														) : (
-															<div className="text-muted-foreground px-2 py-1.5 text-sm">All MCP clients configured</div>
+															<div className="text-muted-foreground px-2 py-1.5 text-sm">{i18n.t("workspace.virtualKeys.allMcpClientsConfigured")}</div>
 														)}
 													</SelectContent>
 												</Select>
@@ -1339,8 +1339,8 @@ export default function VirtualKeySheet({ virtualKey, defaultTeamId, onSave, onC
 												<Table>
 													<TableHeader>
 														<TableRow>
-															<TableHead>MCP Client</TableHead>
-															<TableHead>Allowed Tools</TableHead>
+															<TableHead>{i18n.t("workspace.virtualKeys.mcpClient")}</TableHead>
+															<TableHead>{i18n.t("workspace.virtualKeys.allowedTools")}</TableHead>
 															<TableHead className="w-[50px]"></TableHead>
 														</TableRow>
 													</TableHeader>
@@ -1505,7 +1505,7 @@ export default function VirtualKeySheet({ virtualKey, defaultTeamId, onSave, onC
 											</AlertDialogHeader>
 											<AlertDialogFooter>
 												<AlertDialogCancel data-testid="virtual-key-reassign-cancel" onClick={() => setPendingTeamId(null)}>
-													Cancel
+													{i18n.t("common.cancel")}
 												</AlertDialogCancel>
 												<AlertDialogAction
 													data-testid="virtual-key-reassign-confirm"
@@ -1539,7 +1539,7 @@ export default function VirtualKeySheet({ virtualKey, defaultTeamId, onSave, onC
 												data-testid="vk-rate-limit-reset-button"
 											>
 												<RotateCcw className="h-4 w-4" />
-												Reset
+												{i18n.t("workspace.plugins.reset")}
 											</Button>
 										)}
 									</div>
@@ -1601,11 +1601,10 @@ export default function VirtualKeySheet({ virtualKey, defaultTeamId, onSave, onC
 									<div className="flex items-center justify-between gap-4 rounded-md border px-3 py-2">
 										<div className="space-y-0.5">
 											<Label htmlFor="vk-budget-calendar-aligned-toggle" className="text-sm font-normal">
-												Align to calendar cycle
+												{i18n.t("workspace.virtualKeys.alignToCalendarCycle")}
 											</Label>
 											<p id="vk-budget-calendar-aligned-description" className="text-muted-foreground text-xs">
-												Reset budgets and rate limits at the start of each period (e.g. 1st of month) instead of rolling from creation date.
-												Applies to durations of a day or longer.
+												{i18n.t("supplemental.calendarBudgetReset")}
 											</p>
 										</div>
 										<Switch
@@ -1622,7 +1621,7 @@ export default function VirtualKeySheet({ virtualKey, defaultTeamId, onSave, onC
 								<AlertDialog open={showCalendarAlignWarning} onOpenChange={setShowCalendarAlignWarning}>
 									<AlertDialogContent>
 										<AlertDialogHeader>
-											<AlertDialogTitle>Reset budget and rate-limit usage?</AlertDialogTitle>
+											<AlertDialogTitle>{i18n.t("supplemental.resetBudgetUsage")}</AlertDialogTitle>
 											<AlertDialogDescription>
 												Enabling calendar alignment will reset budget usage to <span className="font-semibold">$0.00</span> and
 												token/request rate-limit counters to <span className="font-semibold">0</span> for this virtual key, then snap each
@@ -1631,7 +1630,7 @@ export default function VirtualKeySheet({ virtualKey, defaultTeamId, onSave, onC
 											</AlertDialogDescription>
 										</AlertDialogHeader>
 										<AlertDialogFooter>
-											<AlertDialogCancel data-testid="vk-calendar-align-cancel-btn">Cancel</AlertDialogCancel>
+											<AlertDialogCancel data-testid="vk-calendar-align-cancel-btn">{i18n.t("common.cancel")}</AlertDialogCancel>
 											<AlertDialogAction
 												data-testid="vk-calendar-align-enable-btn"
 												onClick={() => {
@@ -1641,7 +1640,7 @@ export default function VirtualKeySheet({ virtualKey, defaultTeamId, onSave, onC
 													setShowCalendarAlignWarning(false);
 												}}
 											>
-												Enable Calendar Alignment
+												{i18n.t("workspace.virtualKeys.enableCalendarAlignment")}
 											</AlertDialogAction>
 										</AlertDialogFooter>
 									</AlertDialogContent>
@@ -1650,7 +1649,7 @@ export default function VirtualKeySheet({ virtualKey, defaultTeamId, onSave, onC
 
 								{/* Entity Assignment */}
 								<div className="space-y-4">
-									<Label className="text-sm font-medium">Entity Assignment</Label>
+									<Label className="text-sm font-medium">{i18n.t("workspace.virtualKeys.entityAssignment")}</Label>
 
 									<div className="grid grid-cols-1 items-start gap-2 md:grid-cols-2">
 										<FormField
@@ -1658,7 +1657,7 @@ export default function VirtualKeySheet({ virtualKey, defaultTeamId, onSave, onC
 											name="entityType"
 											render={({ field }) => (
 												<FormItem>
-													<FormLabel className="font-normal">Assignment Type</FormLabel>
+													<FormLabel className="font-normal">{i18n.t("workspace.virtualKeys.assignmentType")}</FormLabel>
 													<ComboboxSelect
 														options={[
 															{ value: "none", label: "No Assignment" },
@@ -1701,7 +1700,7 @@ export default function VirtualKeySheet({ virtualKey, defaultTeamId, onSave, onC
 												name="teamId"
 												render={({ field }) => (
 													<FormItem>
-														<FormLabel className="font-normal">Select Team</FormLabel>
+														<FormLabel className="font-normal">{i18n.t("workspace.virtualKeys.selectTeam")}</FormLabel>
 														<TeamSelector
 															value={field.value || ""}
 															onChange={(newVal) => {
@@ -1741,7 +1740,7 @@ export default function VirtualKeySheet({ virtualKey, defaultTeamId, onSave, onC
 												name="customerId"
 												render={({ field }) => (
 													<FormItem>
-														<FormLabel className="font-normal">Select Customer</FormLabel>
+														<FormLabel className="font-normal">{i18n.t("workspace.virtualKeys.selectCustomer")}</FormLabel>
 														<CustomerSelector
 															value={field.value || ""}
 															onChange={(val) => {
@@ -1780,7 +1779,7 @@ export default function VirtualKeySheet({ virtualKey, defaultTeamId, onSave, onC
 									</AlertDialogDescription>
 								</AlertDialogHeader>
 								<AlertDialogFooter>
-									<AlertDialogCancel data-testid="vk-rotate-cancel-btn">Cancel</AlertDialogCancel>
+									<AlertDialogCancel data-testid="vk-rotate-cancel-btn">{i18n.t("common.cancel")}</AlertDialogCancel>
 									<AlertDialogAction onClick={handleRotateVirtualKey} disabled={isRotating} data-testid="vk-rotate-confirm-btn">
 										{isRotating ? "Rotating..." : "Rotate Key"}
 									</AlertDialogAction>
@@ -1837,7 +1836,7 @@ export default function VirtualKeySheet({ virtualKey, defaultTeamId, onSave, onC
 								)}
 								<div className="flex justify-end gap-2">
 									<Button type="button" variant="outline" onClick={handleClose} data-testid="vk-cancel-btn">
-										Cancel
+										{i18n.t("common.cancel")}
 									</Button>
 									<TooltipProvider>
 										<Tooltip>

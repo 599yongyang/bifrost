@@ -14,6 +14,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useForm, type Resolver } from "react-hook-form";
 import { toast } from "sonner";
+import i18n from "@/lib/i18n";
 
 // Known beta headers with their prefixes, descriptions, and default support per provider.
 // This mirrors the Go ProviderFeatures map in core/providers/anthropic/types.go.
@@ -186,11 +187,11 @@ export function BetaHeadersFormFragment({ provider }: BetaHeadersFormFragmentPro
 		)
 			.unwrap()
 			.then(() => {
-				toast.success("Beta header configuration updated successfully");
+				toast.success(i18n.t("workspace.providers.betaHeaderConfigurationUpdated"));
 				form.reset(data);
 			})
 			.catch((err) => {
-				toast.error("Failed to update beta header configuration", {
+				toast.error(i18n.t("workspace.providers.betaHeaderConfigurationUpdateFailed"), {
 					description: getErrorMessage(err),
 				});
 			});
@@ -269,9 +270,9 @@ export function BetaHeadersFormFragment({ provider }: BetaHeadersFormFragmentPro
 						<table className="w-full text-sm">
 							<thead>
 								<tr className="border-b">
-									<th className="px-3 py-2 text-left font-medium">Beta Header</th>
-									<th className="px-3 py-2 text-left font-medium">Default</th>
-									<th className="w-[180px] px-3 py-2 text-left font-medium">Override</th>
+									<th className="px-3 py-2 text-left font-medium">{i18n.t("workspace.providers.betaHeader")}</th>
+									<th className="px-3 py-2 text-left font-medium">{i18n.t("workspace.providers.default")}</th>
+									<th className="w-[180px] px-3 py-2 text-left font-medium">{i18n.t("workspace.providers.override")}</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -301,9 +302,9 @@ export function BetaHeadersFormFragment({ provider }: BetaHeadersFormFragmentPro
 													<SelectValue />
 												</SelectTrigger>
 												<SelectContent>
-													<SelectItem value="default">Default</SelectItem>
-													<SelectItem value="enabled">Supported</SelectItem>
-													<SelectItem value="disabled">Unsupported</SelectItem>
+													<SelectItem value="default">{i18n.t("workspace.providers.default")}</SelectItem>
+													<SelectItem value="enabled">{i18n.t("workspace.providers.supported")}</SelectItem>
+													<SelectItem value="disabled">{i18n.t("workspace.providers.unsupported")}</SelectItem>
 												</SelectContent>
 											</Select>
 										</td>
@@ -314,12 +315,12 @@ export function BetaHeadersFormFragment({ provider }: BetaHeadersFormFragmentPro
 										<td className="px-3 py-2">
 											<div className="flex flex-col gap-0.5">
 												<span className="font-mono text-xs">{prefix}*</span>
-												<span className="text-muted-foreground text-xs">Custom header</span>
+												<span className="text-muted-foreground text-xs">{i18n.t("workspace.providers.customHeader")}</span>
 											</div>
 										</td>
 										<td className="px-3 py-2">
 											<Badge variant="outline" className="text-xs">
-												Custom
+												{i18n.t("supplemental.custom")}
 											</Badge>
 										</td>
 										<td className="w-[180px] px-3 py-2">
@@ -336,8 +337,8 @@ export function BetaHeadersFormFragment({ provider }: BetaHeadersFormFragmentPro
 														<SelectValue />
 													</SelectTrigger>
 													<SelectContent>
-														<SelectItem value="enabled">Supported</SelectItem>
-														<SelectItem value="disabled">Unsupported</SelectItem>
+														<SelectItem value="enabled">{i18n.t("workspace.providers.supported")}</SelectItem>
+														<SelectItem value="disabled">{i18n.t("workspace.providers.unsupported")}</SelectItem>
 													</SelectContent>
 												</Select>
 												<Button
@@ -363,7 +364,7 @@ export function BetaHeadersFormFragment({ provider }: BetaHeadersFormFragmentPro
 					<div className="flex items-start gap-2 pt-2">
 						<div className="flex-1">
 							<Input
-								placeholder="Add custom beta header prefix (e.g. new-feature-)"
+								placeholder={i18n.t("workspace.providers.addCustomPrefix")}
 								value={newPrefix}
 								onChange={(e) => {
 									setNewPrefix(e.target.value);
@@ -378,7 +379,7 @@ export function BetaHeadersFormFragment({ provider }: BetaHeadersFormFragmentPro
 								disabled={!hasUpdateProviderAccess}
 								className="h-8 text-xs"
 								data-testid="provider-beta-custom-prefix-input"
-								aria-label="Custom beta header prefix"
+								aria-label={i18n.t("workspace.providers.customPrefixAriaLabel")}
 								aria-describedby={newPrefixError ? "custom-prefix-error" : undefined}
 							/>
 							{newPrefixError && (
@@ -397,7 +398,7 @@ export function BetaHeadersFormFragment({ provider }: BetaHeadersFormFragmentPro
 							data-testid="provider-beta-add-prefix-btn"
 						>
 							<Plus className="mr-1 h-3.5 w-3.5" />
-							Add
+							{i18n.t("common.add")}
 						</Button>
 					</div>
 				</div>
@@ -409,7 +410,7 @@ export function BetaHeadersFormFragment({ provider }: BetaHeadersFormFragmentPro
 						isLoading={isUpdatingProvider}
 						data-testid="provider-beta-save-btn"
 					>
-						Save Beta Header Configuration
+						{i18n.t("workspace.providers.saveBetaHeaderConfiguration")}
 					</Button>
 				</div>
 			</form>

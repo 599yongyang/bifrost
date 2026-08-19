@@ -4,6 +4,7 @@ import { toOptionalSecretVarPayload } from "@/lib/utils/secretVarForm";
 import { useMemo } from "react";
 import { toast } from "sonner";
 import { PrometheusFormFragment } from "../../fragments/prometheusFormFragment";
+import i18n from "@/lib/i18n";
 
 interface PushGatewayConfig {
 	enabled?: boolean;
@@ -75,10 +76,10 @@ export default function PrometheusView({ onDelete, isDeleting }: PrometheusViewP
 				.unwrap()
 				.then(() => {
 					resolve();
-					toast.success("Prometheus configuration updated successfully");
+					toast.success(i18n.t("workspace.observability.prometheusForm.configurationUpdated"));
 				})
 				.catch((err) => {
-					toast.error("Failed to update Prometheus configuration", {
+					toast.error(i18n.t("workspace.observability.prometheusForm.configurationUpdateFailed"), {
 						description: getErrorMessage(err),
 					});
 					reject(err);

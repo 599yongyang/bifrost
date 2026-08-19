@@ -8,6 +8,7 @@ import type { FeatureFlagStatus } from "@/lib/types/featureFlag";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { Crown, Lock } from "lucide-react";
 import { toast } from "sonner";
+import i18n from "@/lib/i18n";
 
 export default function FeatureFlagsView() {
 	const hasUpdateAccess = useRbac(RbacResource.FeatureFlags, RbacOperation.Update);
@@ -28,7 +29,7 @@ export default function FeatureFlagsView() {
 	return (
 		<div className="w-full space-y-4">
 			<div>
-				<h2 className="text-lg font-semibold tracking-tight">Feature Flags</h2>
+				<h2 className="text-lg font-semibold tracking-tight">{i18n.t("sidebar.sub.featureFlags")}</h2>
 				<p className="text-muted-foreground text-sm">
 					Toggle in-process feature flags. Flags are declared in code; values can also be set via{" "}
 					<code className="text-xs">config.json</code> or Helm, in which case they appear here as locked.
@@ -140,7 +141,7 @@ function EnterpriseBadge() {
 			<TooltipTrigger asChild>
 				<Badge variant="secondary" className="flex items-center gap-1 text-xs">
 					<Crown className="size-3" />
-					Enterprise
+					{i18n.t("workspace.config.proxy.enterprise")}
 				</Badge>
 			</TooltipTrigger>
 			<TooltipContent>This flag gates an enterprise-only feature. Upgrade to enable it.</TooltipContent>

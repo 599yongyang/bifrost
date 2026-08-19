@@ -29,6 +29,7 @@ import { FieldSelector } from "./fieldSelector";
 import { OperatorSelector } from "./operatorSelector";
 import { QueryBuilderWrapper } from "./queryBuilderWrapper";
 import { ValueEditor } from "./valueEditor";
+import i18n from "@/lib/i18n";
 
 export interface CELFieldDefinition {
 	name: string;
@@ -193,7 +194,7 @@ export function CELRuleBuilder({
 		return (
 			<div className="flex items-center justify-center space-x-2 rounded-md border p-8">
 				<Loader2 className="h-5 w-5 animate-spin" />
-				<span className="text-muted-foreground text-sm">Loading CEL builder...</span>
+				<span className="text-muted-foreground text-sm">{i18n.t("common.loadingCelBuilder")}</span>
 			</div>
 		);
 	}
@@ -285,12 +286,12 @@ export function CELRuleBuilder({
 							{copied ? (
 								<>
 									<Check className="h-4 w-4" />
-									Copied
+									{i18n.t("common.copied")}
 								</>
 							) : (
 								<>
 									<Copy className="h-4 w-4" />
-									Copy
+									{i18n.t("common.copy")}
 								</>
 							)}
 						</Button>
@@ -311,7 +312,7 @@ export function CELRuleBuilder({
 									{celError}
 								</p>
 							) : (
-								<p className="text-muted-foreground text-xs">Leave empty to match all requests.</p>
+								<p className="text-muted-foreground text-xs">{i18n.t("supplemental.leaveEmptyMatchAll")}</p>
 							)}
 						</>
 					) : (
@@ -323,14 +324,14 @@ export function CELRuleBuilder({
 			<AlertDialog open={confirmSwitchToBuilder} onOpenChange={setConfirmSwitchToBuilder}>
 				<AlertDialogContent>
 					<AlertDialogHeader>
-						<AlertDialogTitle>Switch to the visual builder?</AlertDialogTitle>
+						<AlertDialogTitle>{i18n.t("supplemental.switchVisualBuilder")}</AlertDialogTitle>
 						<AlertDialogDescription>
 							The visual builder can&apos;t import a hand-written CEL expression, so your current CEL will be discarded and the builder
 							will start empty. Copy it first if you want to keep it.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>
-						<AlertDialogCancel>Cancel</AlertDialogCancel>
+						<AlertDialogCancel>{i18n.t("common.cancel")}</AlertDialogCancel>
 						<AlertDialogAction
 							onClick={() => {
 								setConfirmSwitchToBuilder(false);

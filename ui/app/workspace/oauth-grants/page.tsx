@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import GrantsFilterBar from "./views/grantsFilterBar";
 import GrantsTable from "./views/grantsTable";
 import RevokeGrantDialog from "./views/revokeGrantDialog";
+import i18n from "@/lib/i18n";
 
 const PAGE_SIZE = 50;
 
@@ -61,9 +62,9 @@ export default function OAuthGrantsPage() {
 		setPendingActionRowId(row.id);
 		try {
 			await revokeGrant(row.id).unwrap();
-			toast.success("Grant revoked");
+			toast.success(i18n.t("supplemental.grantRevoked"));
 		} catch (err) {
-			toast.error("Failed to revoke grant", { description: getErrorMessage(err) });
+			toast.error(i18n.t("supplemental.grantRevokeFailed"), { description: getErrorMessage(err) });
 		} finally {
 			setPendingActionRowId(null);
 		}
@@ -79,10 +80,9 @@ export default function OAuthGrantsPage() {
 
 			<div className="mb-4 flex items-center justify-between gap-4">
 				<div>
-					<h2 className="text-lg font-semibold tracking-tight">OAuth Grants</h2>
+					<h2 className="text-lg font-semibold tracking-tight">{i18n.t("sidebar.sub.oauthGrants")}</h2>
 					<p className="text-muted-foreground text-sm">
-						Active downstream OAuth grants issued to MCP clients that connected
-						via the OAuth consent flow.
+						{i18n.t("supplemental.activeOauthGrants")}
 					</p>
 				</div>
 			</div>
@@ -104,7 +104,7 @@ export default function OAuthGrantsPage() {
 				</div>
 			) : isError ? (
 				<div className="rounded-lg border border-destructive bg-destructive/10 p-6 text-sm text-destructive">
-					Failed to load OAuth grants: {getErrorMessage(error)}
+					{i18n.t("supplemental.loadOauthGrantsFailed")} {getErrorMessage(error)}
 				</div>
 			) : (
 				<GrantsTable

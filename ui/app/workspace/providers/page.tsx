@@ -28,6 +28,7 @@ import ConfirmDeleteProviderDialog from "./dialogs/confirmDeleteProviderDialog";
 import ConfirmRedirectionDialog from "./dialogs/confirmRedirection";
 import { AddProviderDropdown } from "./views/addProviderDropdown";
 import { ProvidersEmptyState } from "./views/providersEmptyState";
+import i18n from "@/lib/i18n";
 
 export default function Providers() {
 	const dispatch = useAppDispatch();
@@ -91,7 +92,7 @@ export default function Providers() {
 					);
 					return;
 				}
-				toast.error("Something went wrong", {
+				toast.error(i18n.t("error.title"), {
 					description: `We encountered an error while getting provider config: ${getErrorMessage(err)}`,
 				});
 			});
@@ -129,7 +130,7 @@ export default function Providers() {
 				setProvider(name);
 				return;
 			}
-			toast.error("Failed to add provider", {
+			toast.error(i18n.t("workspace.providers.failedToAdd"), {
 				description: getErrorMessage(err),
 			});
 		}
@@ -198,7 +199,7 @@ export default function Providers() {
 							{/* Configured Providers (standard with keys + custom) */}
 							{configuredProviders.length > 0 && (
 								<div className="mb-4">
-									<div className="text-muted-foreground mb-2 text-xs font-medium">Configured Providers</div>
+									<div className="text-muted-foreground mb-2 text-xs font-medium">{i18n.t("workspace.providers.configuredProviders")}</div>
 									{configuredProviders.map((p) => {
 										const isCustom = !ProviderNames.includes(p.name as KnownProvider);
 										const label = isCustom ? p.name : ProviderLabels[p.name as keyof typeof ProviderLabels];
@@ -233,7 +234,7 @@ export default function Providers() {
 												<ProviderStatusBadge status={p.provider_status} />
 												{isCustom && (
 													<Badge variant="secondary" className="text-muted-foreground ml-auto shrink-0 px-1.5 py-0.5 text-[10px] font-bold">
-														CUSTOM
+														{i18n.t("workspace.providers.custom")}
 													</Badge>
 												)}
 											</div>
@@ -263,7 +264,7 @@ export default function Providers() {
 			)}
 			{!selectedProvider && (
 				<div className="bg-muted/10 flex w-full items-center justify-center rounded-md" style={{ maxHeight: "calc(100vh - 300px)" }}>
-					<div className="text-muted-foreground text-sm">Select a provider</div>
+					<div className="text-muted-foreground text-sm">{i18n.t("workspace.providers.selectProvider")}</div>
 				</div>
 			)}
 			{!isLoadingProvider && selectedProvider && (

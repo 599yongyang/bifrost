@@ -26,6 +26,7 @@ import { ProviderFilterSelect } from "./charts/providerFilterSelect";
 import { ProviderLatencyChart } from "./charts/providerLatencyChart";
 import { ProviderThroughputChart } from "./charts/providerThroughputChart";
 import { ProviderTokenChart } from "./charts/providerTokenChart";
+import i18n from "@/lib/i18n";
 
 export interface ProviderUsageTabProps {
 	// Data
@@ -169,7 +170,7 @@ function ProviderUsageTabImpl({
 		<div className="grid grid-cols-1 gap-2 lg:grid-cols-2 2xl:grid-cols-3">
 			{/* Provider Cost Chart */}
 			<ChartCard
-				title="Provider Cost"
+				title={i18n.t("supplemental.providerCost")}
 				loading={loadingProviderCost}
 				testId="chart-provider-cost"
 				totalLabel="Total"
@@ -265,7 +266,7 @@ function ProviderUsageTabImpl({
 
 			{/* Provider Token Usage Chart */}
 			<ChartCard
-				title="Provider Token Usage"
+				title={i18n.t("supplemental.providerTokenUsage")}
 				loading={loadingProviderTokens}
 				testId="chart-provider-tokens"
 				totalLabel="Total"
@@ -354,7 +355,7 @@ function ProviderUsageTabImpl({
 
 			{/* Provider Latency Chart */}
 			<ChartCard
-				title="Provider Latency"
+				title={i18n.t("supplemental.providerLatency")}
 				loading={loadingProviderLatency}
 				testId="chart-provider-latency"
 				totalLabel="Avg"
@@ -454,7 +455,7 @@ function ProviderUsageTabImpl({
 
 			{/* Provider Throughput (tokens/sec) Chart */}
 			<ChartCard
-				title="Provider Throughput"
+				title={i18n.t("supplemental.providerThroughput")}
 				loading={loadingProviderThroughput}
 				testId="chart-provider-throughput"
 				totalLabel="Avg"

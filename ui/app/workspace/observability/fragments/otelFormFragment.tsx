@@ -17,6 +17,7 @@ import { ChevronDown, Info, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useFieldArray, useForm, type Control, type Resolver, type UseFormReturn } from "react-hook-form";
 import { useTranslation } from "react-i18next";
+import i18n from "@/lib/i18n";
 
 // ProfileForm is a single profile's form shape, derived from the form schema.
 type ProfileForm = OtelFormSchema["profiles"][number];
@@ -339,7 +340,7 @@ export function OtelFormFragment({
 							}}
 							disabled={!hasOtelAccess || isLoading || !form.formState.isDirty}
 						>
-							Reset
+							{i18n.t("workspace.plugins.reset")}
 						</Button>
 						<TooltipProvider>
 							<Tooltip>
@@ -843,8 +844,8 @@ function OtelProfileSection({ form, control, index, hasOtelAccess, canRemove, op
 						<div className="flex min-w-0 flex-col">
 							<span className="flex items-center gap-2 truncate text-sm font-medium">
 								{serviceName || `Profile ${index + 1}`}
-								{!enabled && <Badge variant="secondary">Disabled</Badge>}
-								{hasError && <Badge variant="destructive">Error</Badge>}
+								{!enabled && <Badge variant="secondary">{i18n.t("workspace.mcp.disabled")}</Badge>}
+								{hasError && <Badge variant="destructive">{i18n.t("workspace.mcp.errorTitle")}</Badge>}
 							</span>
 							{collectorPreview && <span className="text-muted-foreground truncate text-xs">{collectorPreview}</span>}
 						</div>
@@ -877,8 +878,8 @@ function OtelProfileSection({ form, control, index, hasOtelAccess, canRemove, op
 						onClick={onRemove}
 						disabled={!hasOtelAccess}
 						data-testid={`otel-profile-${index}-remove-btn`}
-						title="Remove profile"
-						aria-label="Remove profile"
+						title={i18n.t("workspace.observability.otelForm.removeProfile")}
+						aria-label={i18n.t("workspace.observability.otelForm.removeProfile")}
 					>
 						<Trash2 className="size-4" />
 					</Button>
@@ -895,7 +896,7 @@ function OtelProfileSection({ form, control, index, hasOtelAccess, canRemove, op
 								<FormLabel>{t("workspace.observability.otelForm.serviceName")}</FormLabel>
 								<FormDescription>{t("workspace.observability.otelForm.serviceNameDescription")}</FormDescription>
 								<FormControl>
-									<Input placeholder="bifrost" disabled={!hasOtelAccess} {...field} />
+									<Input placeholder={i18n.t("workspace.observability.otelForm.serviceNamePlaceholder")} disabled={!hasOtelAccess} {...field} />
 								</FormControl>
 								<FormMessage />
 							</FormItem>
@@ -1167,7 +1168,7 @@ function OtelProfileSection({ form, control, index, hasOtelAccess, canRemove, op
 										<FormLabel>{t("workspace.observability.otelForm.tlsCaCertPath")}</FormLabel>
 										<FormDescription>{t("workspace.observability.otelForm.tlsCaCertPathDescription")}</FormDescription>
 										<FormControl>
-											<Input placeholder="/path/to/ca.crt" disabled={!hasOtelAccess} {...field} />
+											<Input placeholder={i18n.t("workspace.observability.otelForm.tlsCaCertPathPlaceholder")} disabled={!hasOtelAccess} {...field} />
 										</FormControl>
 										<FormMessage />
 									</FormItem>

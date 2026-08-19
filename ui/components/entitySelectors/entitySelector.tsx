@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import type { Option } from "@/components/ui/multiselectUtils";
 import { SearchSelect } from "@/components/ui/searchSelect";
 import { cn } from "@/lib/utils";
+import i18n from "@/lib/i18n";
 
 export const ENTITY_SEARCH_DEBOUNCE_MS = 300;
 export const ENTITY_SELECTOR_PAGE_SIZE = 20;
@@ -331,7 +332,7 @@ export function EntitySelector(props: EntitySelectorProps) {
 								>
 									<div className="flex items-center justify-between">
 										<span className="text-content-primary font-medium">{data.label}</span>
-										{optionProps.isSelected && <span className="text-primary text-xs">Selected</span>}
+										{optionProps.isSelected && <span className="text-primary text-xs">{i18n.t("supplemental.selected")}</span>}
 									</div>
 									{data.meta?.description && data.meta.description !== data.label && (
 										<span className="text-content-tertiary line-clamp-1 text-xs">{data.meta.description}</span>

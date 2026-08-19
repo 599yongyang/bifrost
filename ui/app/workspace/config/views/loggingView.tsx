@@ -9,6 +9,7 @@ import { parseArrayFromText } from "@/lib/utils/array";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import i18n from "@/lib/i18n";
 
 export default function LoggingView() {
 	const hasSettingsUpdateAccess = useRbac(RbacResource.Settings, RbacOperation.Update);
@@ -56,7 +57,7 @@ export default function LoggingView() {
 
 	const handleSave = useCallback(async () => {
 		if (!bifrostConfig) {
-			toast.error("Configuration not loaded");
+			toast.error(i18n.t("loggingDisabled.configNotLoaded"));
 			return;
 		}
 
@@ -77,7 +78,7 @@ export default function LoggingView() {
 	return (
 		<div className="mx-auto w-full max-w-4xl space-y-4 py-6">
 			<div>
-				<h2 className="text-lg font-semibold tracking-tight">Logs Settings</h2>
+				<h2 className="text-lg font-semibold tracking-tight">{i18n.t("sidebar.sub.logsSettings")}</h2>
 				<p className="text-muted-foreground text-sm">Configure logging settings for requests and responses.</p>
 			</div>
 
@@ -203,11 +204,11 @@ export default function LoggingView() {
 				<div className="flex items-center justify-between space-x-2 rounded-sm border p-4">
 					<div className="space-y-0.5">
 						<label htmlFor="allow-per-request-raw-override" className="text-sm font-medium">
-							Allow Per-Request Raw Override
+							{i18n.t("workspace.config.logging.perRequestRawOverride")}
 						</label>
 						<p className="text-muted-foreground text-sm">
 							When enabled, individual requests can send raw provider request/response bytes back to the caller using the{" "}
-							<code className="text-xs">x-bf-send-back-raw-request</code> and <code className="text-xs">x-bf-send-back-raw-response</code>{" "}
+							<code className="text-xs">x-bf-send-back-raw-request</code> {i18n.t("workspace.config.security.and")} <code className="text-xs">x-bf-send-back-raw-response</code>{" "}
 							headers. Does not affect log storage; raw-byte persistence in logs is controlled by Allow Per-Request Content Storage
 							Override.
 						</p>
@@ -268,7 +269,7 @@ export default function LoggingView() {
 				{localConfig.enable_logging && bifrostConfig?.is_logs_connected && (
 					<div className="space-y-2 rounded-sm border p-4">
 						<label htmlFor="logging-headers" className="text-sm font-medium">
-							Logging Headers
+							{i18n.t("workspace.config.logging.loggingHeaders")}
 						</label>
 						<p className="text-muted-foreground text-sm">
 							Comma-separated list of request headers to capture in log metadata. Supports exact names and wildcard patterns (e.g.{" "}
@@ -299,5 +300,5 @@ export default function LoggingView() {
 }
 
 const RestartWarning = () => {
-	return <div className="text-muted-foreground mt-2 pl-4 text-xs font-semibold">Need to restart Bifrost to apply changes.</div>;
+	return <div className="text-muted-foreground mt-2 pl-4 text-xs font-semibold">{i18n.t("workspace.config.security.restartRequired")}</div>;
 };

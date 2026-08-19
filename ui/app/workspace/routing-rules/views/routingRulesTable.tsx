@@ -30,6 +30,7 @@ import { getPriorityBadgeClass, truncateCELExpression } from "@/lib/utils/routin
 import { ChevronLeft, ChevronRight, Edit, MoreHorizontal, Search, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import i18n from "@/lib/i18n";
 
 function RoutingRuleActionsMenu({
 	rule,
@@ -71,7 +72,7 @@ function RoutingRuleActionsMenu({
 					}}
 				>
 					<Edit className="h-4 w-4" />
-					Edit
+					{i18n.t("common.edit")}
 				</DropdownMenuItem>
 				<DropdownMenuItem
 					variant="destructive"
@@ -85,7 +86,7 @@ function RoutingRuleActionsMenu({
 					}}
 				>
 					<Trash2 className="h-4 w-4" />
-					Delete
+					{i18n.t("common.delete")}
 				</DropdownMenuItem>
 			</DropdownMenuContent>
 		</DropdownMenu>
@@ -132,7 +133,7 @@ export function RoutingRulesTable({
 
 		try {
 			await deleteRoutingRule(deleteRuleId).unwrap();
-			toast.success("Routing rule deleted successfully");
+			toast.success(i18n.t("workspace.routingRules.deletedSuccess"));
 			setDeleteRuleId(null);
 		} catch (error: unknown) {
 			toast.error(getErrorMessage(error));
@@ -145,13 +146,13 @@ export function RoutingRulesTable({
 				<Table>
 					<TableHeader>
 						<TableRow>
-							<TableHead>Name</TableHead>
-							<TableHead>Targets</TableHead>
-							<TableHead>Scope</TableHead>
-							<TableHead className="text-right">Priority</TableHead>
-							<TableHead>Expression</TableHead>
+							<TableHead>{i18n.t("workspace.mcp.name")}</TableHead>
+							<TableHead>{i18n.t("workspace.routingRules.targets")}</TableHead>
+							<TableHead>{i18n.t("workspace.routingRules.scope")}</TableHead>
+							<TableHead className="text-right">{i18n.t("workspace.routingRules.priority")}</TableHead>
+							<TableHead>{i18n.t("workspace.routingRules.expression")}</TableHead>
 							<TableHead>Enabled</TableHead>
-							<TableHead className="text-right">Actions</TableHead>
+							<TableHead className="text-right">{i18n.t("workspace.routingRules.actions")}</TableHead>
 						</TableRow>
 					</TableHeader>
 					<TableBody>
@@ -178,8 +179,8 @@ export function RoutingRulesTable({
 				<div className="relative max-w-sm flex-1">
 					<Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
 					<Input
-						aria-label="Search routing rules by name"
-						placeholder="Search by name..."
+						aria-label={i18n.t("workspace.routingRules.searchAriaLabel")}
+						placeholder={i18n.t("workspace.mcp.searchPlaceholder")}
 						value={search}
 						onChange={(e) => onSearchChange(e.target.value)}
 						className="pl-9"
@@ -192,14 +193,14 @@ export function RoutingRulesTable({
 				<Table containerClassName="h-full overflow-auto">
 					<TableHeader className="bg-muted sticky top-0 z-10">
 						<TableRow className="bg-muted/50">
-							<TableHead className="font-semibold">Name</TableHead>
-							<TableHead className="font-semibold">Targets</TableHead>
-							<TableHead className="font-semibold">Scope</TableHead>
-							<TableHead className="text-right font-semibold">Priority</TableHead>
-							<TableHead className="font-semibold">Expression</TableHead>
-							<TableHead className="font-semibold">Status</TableHead>
+							<TableHead className="font-semibold">{i18n.t("workspace.mcp.name")}</TableHead>
+							<TableHead className="font-semibold">{i18n.t("workspace.routingRules.targets")}</TableHead>
+							<TableHead className="font-semibold">{i18n.t("workspace.routingRules.scope")}</TableHead>
+							<TableHead className="text-right font-semibold">{i18n.t("workspace.routingRules.priority")}</TableHead>
+							<TableHead className="font-semibold">{i18n.t("workspace.routingRules.expression")}</TableHead>
+							<TableHead className="font-semibold">{i18n.t("workspace.virtualKeys.status")}</TableHead>
 							<TableHead className={`bg-muted sticky right-0 z-30 w-[50px] text-right font-semibold ${PIN_SHADOW_RIGHT}`}>
-								Actions
+								{i18n.t("workspace.routingRules.actions")}
 							</TableHead>
 						</TableRow>
 					</TableHeader>
@@ -207,7 +208,7 @@ export function RoutingRulesTable({
 						{sortedRules.length === 0 ? (
 							<TableRow>
 								<TableCell colSpan={7} className="h-24 text-center">
-									<span className="text-muted-foreground text-sm">No matching routing rules found.</span>
+									<span className="text-muted-foreground text-sm">{i18n.t("workspace.routingRules.noMatching")}</span>
 								</TableCell>
 							</TableRow>
 						) : (
@@ -257,7 +258,7 @@ export function RoutingRulesTable({
 														toast.success(`Rule ${checked ? "enabled" : "disabled"} successfully`);
 													})
 													.catch((err) => {
-														toast.error("Failed to update rule", {
+														toast.error(i18n.t("workspace.routingRules.failedToUpdate"), {
 															description: getErrorMessage(err),
 														});
 													});
@@ -289,7 +290,7 @@ export function RoutingRulesTable({
 			{totalCount > 0 && (
 				<div className="flex shrink-0 items-center justify-between text-xs" data-testid="pagination">
 					<div className="text-muted-foreground flex items-center gap-2">
-						{(offset + 1).toLocaleString()}-{Math.min(offset + limit, totalCount).toLocaleString()} of {totalCount.toLocaleString()} entries
+						{(offset + 1).toLocaleString()}-{Math.min(offset + limit, totalCount).toLocaleString()} of {totalCount.toLocaleString()} {i18n.t("workspace.virtualKeys.entries")}
 					</div>
 
 					<div className="flex items-center gap-2">
@@ -299,7 +300,7 @@ export function RoutingRulesTable({
 							onClick={() => onOffsetChange(Math.max(0, offset - limit))}
 							disabled={offset === 0}
 							data-testid="routing-rules-pagination-prev-btn"
-							aria-label="Previous page"
+							aria-label={i18n.t("supplemental.previousPage")}
 						>
 							<ChevronLeft className="size-3" />
 						</Button>
@@ -316,7 +317,7 @@ export function RoutingRulesTable({
 							onClick={() => onOffsetChange(offset + limit)}
 							disabled={offset + limit >= totalCount}
 							data-testid="routing-rules-pagination-next-btn"
-							aria-label="Next page"
+							aria-label={i18n.t("supplemental.nextPage")}
 						>
 							<ChevronRight className="size-3" />
 						</Button>
@@ -327,13 +328,13 @@ export function RoutingRulesTable({
 			<AlertDialog open={!!deleteRuleId} onOpenChange={(open) => !open && setDeleteRuleId(null)}>
 				<AlertDialogContent>
 					<AlertDialogHeader>
-						<AlertDialogTitle>Delete Routing Rule</AlertDialogTitle>
+						<AlertDialogTitle>{i18n.t("workspace.routingRules.deleteTitle")}</AlertDialogTitle>
 						<AlertDialogDescription>
 							Are you sure you want to delete &quot;{ruleToDelete?.name}&quot;? This action cannot be undone.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>
-						<AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+						<AlertDialogCancel disabled={isDeleting}>{i18n.t("common.cancel")}</AlertDialogCancel>
 						<AlertDialogAction onClick={handleDelete} disabled={isDeleting} className="bg-destructive hover:bg-destructive/90">
 							{isDeleting ? "Deleting..." : "Delete"}
 						</AlertDialogAction>

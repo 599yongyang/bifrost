@@ -15,6 +15,7 @@ import {
 } from "../../utils/chartUtils";
 import { ChartErrorBoundary } from "./chartErrorBoundary";
 import type { ChartType } from "./chartTypeToggle";
+import i18n from "@/lib/i18n";
 
 interface ProviderTokenChartProps {
 	data: ProviderTokenHistogramResponse | null;
@@ -81,7 +82,7 @@ function SingleProviderTooltip({ active, payload, provider }: any) {
 					<span className="font-medium">{formatCompactNumber(stats.completion_tokens || 0)}</span>
 				</div>
 				<div className="flex items-center justify-between gap-4 border-t border-zinc-200 pt-1 dark:border-zinc-700">
-					<span className="text-zinc-600 dark:text-zinc-400">Total</span>
+					<span className="text-zinc-600 dark:text-zinc-400">{i18n.t("supplemental.total")}</span>
 					<span className="font-medium">{formatCompactNumber(stats.total_tokens || 0)}</span>
 				</div>
 			</div>

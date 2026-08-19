@@ -28,6 +28,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import PricingOverrideSheet from "./pricingOverrideSheet";
 import { PricingOverridesEmptyState } from "./pricingOverridesEmptyState";
+import i18n from "@/lib/i18n";
 
 function PricingOverrideActionsMenu({
 	row,
@@ -64,7 +65,7 @@ function PricingOverrideActionsMenu({
 					}}
 				>
 					<Edit className="h-4 w-4" />
-					Edit
+					{i18n.t("common.edit")}
 				</DropdownMenuItem>
 				<DropdownMenuItem
 					data-testid={`pricing-override-delete-btn-${row.id}`}
@@ -77,7 +78,7 @@ function PricingOverrideActionsMenu({
 					}}
 				>
 					<Trash2 className="h-4 w-4" />
-					Delete
+					{i18n.t("common.delete")}
 				</DropdownMenuItem>
 			</DropdownMenuContent>
 		</DropdownMenu>
@@ -287,10 +288,10 @@ export default function ScopedPricingOverridesView() {
 		if (!deleteTarget) return;
 		try {
 			await deleteOverride(deleteTarget.id).unwrap();
-			toast.success("Pricing override deleted");
+			toast.success(i18n.t("workspace.customPricing.overrideSheet.overrideDeleted"));
 			setDeleteTarget(null);
 		} catch (deleteError) {
-			toast.error("Failed to delete pricing override", { description: getErrorMessage(deleteError) });
+			toast.error(i18n.t("workspace.customPricing.overrideSheet.deleteFailed"), { description: getErrorMessage(deleteError) });
 		}
 	};
 
@@ -321,14 +322,14 @@ export default function ScopedPricingOverridesView() {
 		<div className="flex flex-col overflow-y-auto">
 			<div className="mb-4 flex items-center justify-between gap-4">
 				<div>
-					<h2 className="text-lg font-semibold tracking-tight">Pricing Overrides</h2>
+					<h2 className="text-lg font-semibold tracking-tight">{i18n.t("sidebar.sub.pricingOverrides")}</h2>
 					<p className="text-muted-foreground text-sm">
 						Set custom rates for any model across global, virtual key, or user scopes, optionally narrowed to a specific provider or key
 					</p>
 				</div>
 				<Button data-testid="pricing-override-create-btn" onClick={openCreateDrawer} className="gap-2">
 					<Plus className="h-4 w-4" />
-					<span className="hidden sm:inline">New Override</span>
+					<span className="hidden sm:inline">{i18n.t("workspace.customPricing.overrides.newOverride")}</span>
 				</Button>
 			</div>
 
@@ -338,7 +339,7 @@ export default function ScopedPricingOverridesView() {
 					<Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
 					<Input
 						aria-label="Search pricing overrides by name"
-						placeholder="Search by name..."
+						placeholder={i18n.t("workspace.mcp.searchPlaceholder")}
 						value={search}
 						onChange={(e) => setSearch(e.target.value)}
 						className="pl-9"
@@ -372,20 +373,20 @@ export default function ScopedPricingOverridesView() {
 
 			<div className="mb-2 overflow-hidden rounded-sm border">
 				{isLoading ? (
-					<div className="p-4 text-sm">Loading overrides...</div>
+					<div className="p-4 text-sm">{i18n.t("workspace.customPricing.overrides.loading")}</div>
 				) : error ? (
-					<div className="p-4 text-sm text-red-500">Failed to load pricing overrides. Please try refreshing the page.</div>
+					<div className="p-4 text-sm text-red-500">{i18n.t("workspace.customPricing.overrides.loadFailed")}</div>
 				) : (
 					<Table containerClassName="h-full overflow-auto">
 						<TableHeader className="bg-muted sticky top-0 z-10">
 							<TableRow className="bg-muted/50">
-								<TableHead className="font-semibold">Name</TableHead>
-								<TableHead className="font-semibold">Scope</TableHead>
-								<TableHead className="font-semibold">Provider</TableHead>
+								<TableHead className="font-semibold">{i18n.t("workspace.mcp.name")}</TableHead>
+								<TableHead className="font-semibold">{i18n.t("workspace.routingRules.scope")}</TableHead>
+								<TableHead className="font-semibold">{i18n.t("workspace.logs.colProvider")}</TableHead>
 								<TableHead className="font-semibold">Key</TableHead>
-								<TableHead className="font-semibold">Model</TableHead>
+								<TableHead className="font-semibold">{i18n.t("workspace.logs.colModel")}</TableHead>
 								<TableHead className={`bg-muted sticky right-0 z-30 w-[50px] text-right font-semibold ${PIN_SHADOW_RIGHT}`}>
-									Actions
+									{i18n.t("workspace.routingRules.actions")}
 								</TableHead>
 							</TableRow>
 						</TableHeader>
@@ -393,7 +394,7 @@ export default function ScopedPricingOverridesView() {
 							{rows.length === 0 ? (
 								<TableRow>
 									<TableCell colSpan={6} className="h-24 text-center">
-										<span className="text-muted-foreground text-sm">No matching pricing overrides found.</span>
+										<span className="text-muted-foreground text-sm">{i18n.t("workspace.customPricing.overrides.noMatching")}</span>
 									</TableCell>
 								</TableRow>
 							) : (
@@ -438,7 +439,7 @@ export default function ScopedPricingOverridesView() {
 				<div className="flex shrink-0 items-center justify-between text-xs" data-testid="pagination">
 					<div className="text-muted-foreground flex items-center gap-2">
 						{(offset + 1).toLocaleString()}-{Math.min(offset + PAGE_SIZE, totalCount).toLocaleString()} of {totalCount.toLocaleString()}{" "}
-						entries
+						{i18n.t("workspace.virtualKeys.entries")}
 					</div>
 
 					<div className="flex items-center gap-2">
@@ -448,7 +449,7 @@ export default function ScopedPricingOverridesView() {
 							onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
 							disabled={offset === 0}
 							data-testid="pricing-overrides-pagination-prev-btn"
-							aria-label="Previous page"
+							aria-label={i18n.t("supplemental.previousPage")}
 						>
 							<ChevronLeft className="size-3" />
 						</Button>
@@ -465,7 +466,7 @@ export default function ScopedPricingOverridesView() {
 							onClick={() => setOffset(offset + PAGE_SIZE)}
 							disabled={offset + PAGE_SIZE >= totalCount}
 							data-testid="pricing-overrides-pagination-next-btn"
-							aria-label="Next page"
+							aria-label={i18n.t("supplemental.nextPage")}
 						>
 							<ChevronRight className="size-3" />
 						</Button>
@@ -483,14 +484,14 @@ export default function ScopedPricingOverridesView() {
 			<AlertDialog open={!!deleteTarget} onOpenChange={(open) => (!open ? setDeleteTarget(null) : undefined)}>
 				<AlertDialogContent>
 					<AlertDialogHeader>
-						<AlertDialogTitle>Delete Pricing Override</AlertDialogTitle>
+						<AlertDialogTitle>{i18n.t("workspace.customPricing.overrides.deleteTitle")}</AlertDialogTitle>
 						<AlertDialogDescription>
 							Are you sure you want to delete &quot;{deleteTarget?.name}&quot;? This action cannot be undone.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>
 						<AlertDialogCancel data-testid="pricing-override-delete-cancel-btn" disabled={isDeleting}>
-							Cancel
+							{i18n.t("common.cancel")}
 						</AlertDialogCancel>
 						<AlertDialogAction
 							data-testid="pricing-override-delete-confirm-btn"

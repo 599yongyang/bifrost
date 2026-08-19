@@ -6,6 +6,7 @@ import { SecretVar } from "@/lib/types/mcp";
 import { cn } from "@/lib/utils";
 import { Trash } from "lucide-react";
 import React, { useRef, useState } from "react";
+import i18n from "@/lib/i18n";
 
 // Support both plain string values and SecretVar objects
 type HeaderValue = string | SecretVar;
@@ -214,11 +215,11 @@ export function HeadersTable<T extends HeaderValue>({
 				<Table className="table-fixed">
 					<TableHeader>
 						<TableRow>
-							<TableHead className="w-[40%] px-4 py-2">Name</TableHead>
-							<TableHead className="px-4 py-2">Value</TableHead>
+							<TableHead className="w-[40%] px-4 py-2">{i18n.t("workspace.mcp.name")}</TableHead>
+							<TableHead className="px-4 py-2">{i18n.t("workspace.promptRepository.variables.value")}</TableHead>
 							{!isFixedKeys && (
 								<TableHead className="w-10 p-0">
-									<span className="sr-only">Actions</span>
+									<span className="sr-only">{i18n.t("workspace.routingRules.actions")}</span>
 								</TableHead>
 							)}
 						</TableRow>

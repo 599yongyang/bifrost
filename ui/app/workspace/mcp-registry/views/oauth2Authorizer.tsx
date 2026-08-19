@@ -5,6 +5,7 @@ import { useCompleteOAuthFlowMutation, useLazyGetOAuthConfigStatusQuery } from "
 import { cn } from "@/lib/utils";
 import { AlertTriangle, CheckCircle2, ExternalLink, KeyRound, Loader2, RefreshCw, ShieldCheck, XCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import i18n from "@/lib/i18n";
 
 interface OAuth2AuthorizerProps {
 	open: boolean;
@@ -345,11 +346,11 @@ export const OAuth2Authorizer: React.FC<OAuth2AuthorizerProps> = ({
 							</InfoBox>
 							<div className="flex justify-end gap-2">
 								<Button size="sm" variant="outline" onClick={handleCancel} data-testid="per-user-oauth-cancel">
-									Cancel
+									{i18n.t("common.cancel")}
 								</Button>
 								<Button size="sm" onClick={openPopup} data-testid="per-user-oauth-confirm">
 									<ExternalLink className="size-3.5" />
-									Continue
+									{i18n.t("workspace.providers.redirectDialog.continue")}
 								</Button>
 							</div>
 						</>
@@ -365,7 +366,7 @@ export const OAuth2Authorizer: React.FC<OAuth2AuthorizerProps> = ({
 							<div className="flex items-center justify-between">
 								<StepDots active={2} total={3} />
 								<Button size="sm" variant="outline" onClick={handleCancel} data-testid="oauth-polling-cancel-btn">
-									Cancel
+									{i18n.t("common.cancel")}
 								</Button>
 							</div>
 						</>
@@ -380,7 +381,7 @@ export const OAuth2Authorizer: React.FC<OAuth2AuthorizerProps> = ({
 							</InfoBox>
 							<div className="flex justify-end gap-2">
 								<Button size="sm" variant="outline" onClick={handleCancel} data-testid="oauth-pending-cancel-btn">
-									Cancel
+									{i18n.t("common.cancel")}
 								</Button>
 								<Button size="sm" onClick={openPopup} data-testid="oauth-open-window-btn">
 									<ExternalLink className="size-3.5" />
@@ -407,11 +408,11 @@ export const OAuth2Authorizer: React.FC<OAuth2AuthorizerProps> = ({
 							</InfoBox>
 							<div className="flex justify-end gap-2">
 								<Button size="sm" variant="outline" onClick={handleCancel} data-testid="oauth-failed-close-btn">
-									Close
+									{i18n.t("common.close")}
 								</Button>
 								<Button size="sm" onClick={handleRetry} data-testid="oauth-failed-retry-btn">
 									<RefreshCw className="size-3.5" />
-									Retry
+									{i18n.t("workspace.oauth.retry")}
 								</Button>
 							</div>
 						</>

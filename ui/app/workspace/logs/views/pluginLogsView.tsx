@@ -2,6 +2,7 @@ import { PluginLogEntry } from "@/lib/types/logs";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { format } from "date-fns";
 import { useState } from "react";
+import i18n from "@/lib/i18n";
 
 const levelColors: Record<string, string> = {
 	debug: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
@@ -32,7 +33,7 @@ export default function PluginLogsView({ pluginLogs }: PluginLogsViewProps) {
 
 	return (
 		<div>
-			<div className="py-3 text-sm font-semibold">Plugin Logs</div>
+			<div className="py-3 text-sm font-semibold">{i18n.t("supplemental.pluginLogs")}</div>
 			<div className="flex flex-col gap-2 pb-3">
 				{pluginNames.map((name) => (
 					<PluginSection key={name} name={name} entries={parsed[name]} />

@@ -15,6 +15,7 @@ import { RoutingRuleInfoSheet } from "./routingRuleInfoSheet";
 import { RoutingRuleSheet } from "./routingRuleSheet";
 import { RoutingRulesEmptyState } from "./routingRulesEmptyState";
 import { RoutingRulesTable } from "./routingRulesTable";
+import i18n from "@/lib/i18n";
 
 const POLLING_INTERVAL = 5000;
 const PAGE_SIZE = 25;
@@ -117,20 +118,20 @@ export function RoutingRulesView() {
 			{/* Header */}
 			<div className="mb-4 flex items-center justify-between">
 				<div>
-					<h1 className="text-foreground text-lg font-semibold">Routing Rules</h1>
-					<p className="text-muted-foreground text-sm">Manage CEL-based routing rules for intelligent request routing across providers</p>
+					<h1 className="text-foreground text-lg font-semibold">{i18n.t("sidebar.sub.routingRules")}</h1>
+					<p className="text-muted-foreground text-sm">{i18n.t("workspace.routingRules.description")}</p>
 				</div>
 				<div className="flex items-center gap-2">
 					<Button variant="outline" size="sm" asChild className="gap-2">
 						<Link to="/workspace/routing-rules/tree">
 							<GitBranch className="h-4 w-4" />
-							<span className="hidden sm:inline">View Tree</span>
+							<span className="hidden sm:inline">{i18n.t("workspace.routingRules.viewTree")}</span>
 						</Link>
 					</Button>
 					{canCreate && (
 						<Button data-testid="create-routing-rule-btn" onClick={handleCreateNew} disabled={isLoading} className="gap-2">
 							<Plus className="h-4 w-4" />
-							<span className="hidden sm:inline">New Rule</span>
+							<span className="hidden sm:inline">{i18n.t("workspace.routingRules.newRule")}</span>
 						</Button>
 					)}
 				</div>

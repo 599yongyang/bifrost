@@ -8,6 +8,7 @@ import { Check, ExternalLink, Loader2, PencilLine, Play, RefreshCw, Send, Shield
 import { useRef, useState } from "react";
 import { MCPAuthRequiredError } from "../../utils/executor";
 import MessageRoleSwitcher from "./messageRoleSwitcher";
+import i18n from "@/lib/i18n";
 
 export default function ToolCallMessageView({
 	message,
@@ -272,7 +273,7 @@ export default function ToolCallMessageView({
 					{!disabled && onRemove && (
 						<button
 							type="button"
-							aria-label="Delete message"
+							aria-label={i18n.t("workspace.promptRepository.messages.deleteMessageAriaLabel")}
 							data-testid="tool-call-msg-delete"
 							onClick={onRemove}
 							className="hover:bg-destructive/10 focus:bg-destructive/10 rounded-md p-1 opacity-0 transition group-focus-within:opacity-100 group-hover:opacity-100 focus:opacity-100"
@@ -329,13 +330,13 @@ export default function ToolCallMessageView({
 
 										{isResponded && (
 											<span className="animate-in fade-in-0 zoom-in-90 shrink-0 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-medium text-emerald-600 duration-200 motion-reduce:animate-none dark:text-emerald-400">
-												Responded
+												{i18n.t("supplemental.responded")}
 											</span>
 										)}
 										{!isResponded && isMultiple && hasResult && (
 											<span className="animate-in fade-in-0 zoom-in-90 flex shrink-0 items-center gap-0.5 rounded-full bg-blue-500/10 px-1.5 py-0.5 text-[9px] font-medium text-blue-600 duration-200 motion-reduce:animate-none dark:text-blue-400">
 												<Check className="size-2.5" />
-												Ready
+												{i18n.t("supplemental.ready")}
 											</span>
 										)}
 									</div>
@@ -347,7 +348,7 @@ export default function ToolCallMessageView({
 							{/* Arguments */}
 							{formattedArgs && (
 								<div className="border-t px-3 py-2">
-									<div className="text-muted-foreground mb-1.5 text-[10px] font-semibold tracking-wide uppercase">Arguments</div>
+									<div className="text-muted-foreground mb-1.5 text-[10px] font-semibold tracking-wide uppercase">{i18n.t("workspace.mcpLogs.details.arguments")}</div>
 
 									{argsIsJson ? (
 										<div className="bg-background overflow-hidden rounded-md border">
@@ -403,13 +404,13 @@ export default function ToolCallMessageView({
 												onClick={() => hideManualEntry(tc.id)}
 												disabled={isBusy}
 											>
-												Cancel
+												{i18n.t("common.cancel")}
 											</Button>
 										)}
 									</div>
 									<Textarea
 										autoFocus={isManualEntryOpen && !isResolved}
-										placeholder="Paste tool result..."
+										placeholder={i18n.t("supplemental.pasteToolResult")}
 										value={responses[tc.id] ?? ""}
 										onChange={(e) => handleResponseChange(tc.id, e.target.value)}
 										data-testid="tool-call-response-textarea"
@@ -429,7 +430,7 @@ export default function ToolCallMessageView({
 												onClick={() => handleSubmitResponse(tc.id)}
 											>
 												<Send className="size-3.5" />
-												Submit result
+												{i18n.t("supplemental.submitResult")}
 											</Button>
 										</div>
 									)}
@@ -446,9 +447,9 @@ export default function ToolCallMessageView({
 											</div>
 											<div className="min-w-0">
 												<div className="text-foreground text-xs font-medium">
-													Authentication required for {authErrors[tc.id].mcpClientName}
+													{i18n.t("supplemental.authenticationRequired")} {authErrors[tc.id].mcpClientName}
 												</div>
-												<div className="text-muted-foreground text-[10px]">Connect your account to execute this tool.</div>
+												<div className="text-muted-foreground text-[10px]">{i18n.t("supplemental.connectAccount")}</div>
 											</div>
 										</div>
 										<div className="ml-auto flex items-center gap-1.5">
@@ -459,7 +460,7 @@ export default function ToolCallMessageView({
 													onClick={() => window.open(authErrors[tc.id].authorizeUrl, "_blank", "noopener,noreferrer")}
 												>
 													<ExternalLink className="size-3.5" />
-													Authenticate
+													{i18n.t("supplemental.authenticate")}
 												</Button>
 											)}
 											<Button
@@ -470,7 +471,7 @@ export default function ToolCallMessageView({
 												disabled={isBusy}
 											>
 												<RefreshCw className="size-3.5" />
-												Retry
+												{i18n.t("workspace.oauth.retry")}
 											</Button>
 										</div>
 									</div>
@@ -483,8 +484,8 @@ export default function ToolCallMessageView({
 									<div className="flex flex-wrap items-center gap-2">
 										{!isMultiple && (
 											<div className="min-w-0">
-												<div className="text-foreground text-xs font-medium">Awaiting tool result</div>
-												<div className="text-muted-foreground text-[10px]">Execute the call or add the result manually.</div>
+												<div className="text-foreground text-xs font-medium">{i18n.t("supplemental.awaitingToolResult")}</div>
+												<div className="text-muted-foreground text-[10px]">{i18n.t("supplemental.executeOrAddResult")}</div>
 											</div>
 										)}
 										<div className={cn("flex items-center gap-1.5", !isMultiple && "ml-auto")}>
@@ -510,7 +511,7 @@ export default function ToolCallMessageView({
 												onClick={() => showManualEntry(tc.id)}
 											>
 												<PencilLine className="size-3.5" />
-												Add manually
+												{i18n.t("supplemental.addManually")}
 											</Button>
 										</div>
 									</div>

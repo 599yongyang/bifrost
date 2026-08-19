@@ -40,6 +40,7 @@ import { ChevronDown, ChevronRight, Info, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { OAuth2Authorizer } from "./oauth2Authorizer";
+import i18n from "@/lib/i18n";
 
 interface MCPClientSheetProps {
 	mcpClient: MCPClient;
@@ -469,14 +470,14 @@ export default function MCPClientSheet({
 							<div className="gap-6 space-y-6 px-8">
 								{/* Name and Header Section */}
 								<div className="space-y-4">
-									<h3 className="font-semibold">Basic Information</h3>
+									<h3 className="font-semibold">{i18n.t("workspace.virtualKeys.basicInformation")}</h3>
 									<FormField
 										control={form.control}
 										name="name"
 										render={({ field }) => (
 											<FormItem className="flex flex-col gap-3">
 												<div className="flex items-center gap-2">
-													<FormLabel>Name</FormLabel>
+													<FormLabel>{i18n.t("workspace.mcp.name")}</FormLabel>
 													<TooltipProvider>
 														<Tooltip>
 															<TooltipTrigger asChild>
@@ -551,7 +552,7 @@ export default function MCPClientSheet({
 										render={({ field }) => (
 											<FormItem className="flex items-center justify-between rounded-lg border p-4">
 												<div className="flex items-center gap-2">
-													<FormLabel>Code Mode Server</FormLabel>
+													<FormLabel>{i18n.t("workspace.mcpForm.codeModeServer")}</FormLabel>
 													<TooltipProvider>
 														<Tooltip>
 															<TooltipTrigger asChild>
@@ -561,7 +562,7 @@ export default function MCPClientSheet({
 																	rel="noopener noreferrer"
 																	data-testid="code-mode-link-help"
 																	className="text-muted-foreground hover:text-foreground focus-visible:ring-ring rounded focus-visible:ring-2 focus-visible:outline-none"
-																	aria-label="Learn more about Code Mode"
+																	aria-label={i18n.t("workspace.mcpForm.learnMoreCodeMode")}
 																>
 																	<Info className="h-4 w-4 cursor-help" />
 																</a>
@@ -585,7 +586,7 @@ export default function MCPClientSheet({
 										render={({ field }) => (
 											<FormItem className="flex items-center justify-between rounded-lg border p-4">
 												<div className="flex items-center gap-2">
-													<FormLabel>Ping Available for Health Check</FormLabel>
+													<FormLabel>{i18n.t("workspace.mcpClientSheet.pingAvailableForHealthCheck")}</FormLabel>
 													<TooltipProvider>
 														<Tooltip>
 															<TooltipTrigger asChild>
@@ -612,7 +613,7 @@ export default function MCPClientSheet({
 										render={({ field }) => (
 											<FormItem className="flex items-center justify-between rounded-lg border p-4">
 												<div className="flex items-center gap-2">
-													<FormLabel>Allow on All Virtual Keys</FormLabel>
+													<FormLabel>{i18n.t("workspace.mcpClientSheet.allowOnAllVirtualKeys")}</FormLabel>
 													<TooltipProvider>
 														<Tooltip>
 															<TooltipTrigger asChild>
@@ -678,7 +679,7 @@ export default function MCPClientSheet({
 										<Accordion type="single" collapsible className="w-full">
 											<AccordionItem value="tls-config" className="border-b-0">
 												<AccordionTrigger className="py-0" data-testid="tls-config-trigger">
-													<span className="text-sm font-medium">TLS / Certificate</span>
+													<span className="text-sm font-medium">{i18n.t("workspace.providers.tlsCertificate")}</span>
 												</AccordionTrigger>
 												<AccordionContent className="space-y-4 pt-4 pb-0">
 													<FormField
@@ -687,7 +688,7 @@ export default function MCPClientSheet({
 														render={({ field }) => (
 															<FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
 																<div className="space-y-0.5">
-																	<FormLabel>Skip TLS verification</FormLabel>
+																	<FormLabel>{i18n.t("workspace.providers.skipTlsVerification")}</FormLabel>
 																	<p className="text-muted-foreground text-sm">
 																		Disable TLS certificate verification. Use only in trusted isolated environments. Takes priority over CA
 																		certificate.
@@ -709,7 +710,7 @@ export default function MCPClientSheet({
 														name="tls_config.ca_cert_pem"
 														render={({ field }) => (
 															<FormItem>
-																<FormLabel>CA Certificate (PEM) (Optional)</FormLabel>
+																<FormLabel>{i18n.t("workspace.providers.caCertificatePemOptional")}</FormLabel>
 																<FormControl>
 																	<SecretVarInput
 																		variant="textarea"
@@ -745,7 +746,7 @@ export default function MCPClientSheet({
 													<div className="flex flex-col items-start gap-0.5">
 														<div className="flex items-start gap-2">
 															<div>
-																<FormLabel>Tool Sync Interval (minutes)</FormLabel>
+																<FormLabel>{i18n.t("workspace.mcpSettings.toolSyncInterval")}</FormLabel>
 															</div>
 															<TooltipProvider>
 																<Tooltip>
@@ -761,7 +762,7 @@ export default function MCPClientSheet({
 																</Tooltip>
 															</TooltipProvider>
 														</div>
-														<div>{isUsingGlobal && <p className="text-muted-foreground text-xs">Using global setting</p>}</div>
+														<div>{isUsingGlobal && <p className="text-muted-foreground text-xs">{i18n.t("workspace.mcpClientSheet.usingGlobalSetting")}</p>}</div>
 													</div>
 													<FormControl>
 														<Input
@@ -790,7 +791,7 @@ export default function MCPClientSheet({
 													<div className="flex flex-col items-start gap-0.5">
 														<div className="flex items-start gap-2">
 															<div>
-																<FormLabel>Tool Execution Timeout (seconds)</FormLabel>
+																<FormLabel>{i18n.t("workspace.mcpSettings.toolExecutionTimeout")}</FormLabel>
 															</div>
 															<TooltipProvider>
 																<Tooltip>
@@ -806,7 +807,7 @@ export default function MCPClientSheet({
 																</Tooltip>
 															</TooltipProvider>
 														</div>
-														<div>{isUsingGlobal && <p className="text-muted-foreground text-xs">Using global setting</p>}</div>
+														<div>{isUsingGlobal && <p className="text-muted-foreground text-xs">{i18n.t("workspace.mcpClientSheet.usingGlobalSetting")}</p>}</div>
 													</div>
 													<FormControl>
 														<Input
@@ -859,7 +860,7 @@ export default function MCPClientSheet({
 												<FormItem className="space-y-1">
 													<div className="space-y-0.5">
 														<div className="flex items-center gap-2">
-															<FormLabel>Required Headers</FormLabel>
+															<FormLabel>{i18n.t("workspace.config.security.requiredHeaders")}</FormLabel>
 															<TooltipProvider>
 																<Tooltip>
 																	<TooltipTrigger asChild>
@@ -910,7 +911,7 @@ export default function MCPClientSheet({
 										render={({ field }) => (
 											<FormItem className="flex flex-col gap-2">
 												<div className="flex items-center gap-2">
-													<FormLabel>Allowed Extra Headers</FormLabel>
+													<FormLabel>{i18n.t("workspace.mcpClientSheet.allowedExtraHeaders")}</FormLabel>
 													<TooltipProvider>
 														<Tooltip>
 															<TooltipTrigger asChild>
@@ -954,15 +955,15 @@ export default function MCPClientSheet({
 								</div>
 								{supportsOAuthCredentialUpdate ? (
 									<div className="space-y-4">
-										<h3 className="font-semibold">OAuth Credentials</h3>
+										<h3 className="font-semibold">{i18n.t("workspace.mcpClientSheet.oauthCredentials")}</h3>
 										{isDisabled ? (
 											<div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
 												<Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-												<p>OAuth credentials cannot be rotated while the client is disabled. Re-enable the client to update credentials.</p>
+												<p>{i18n.t("workspace.mcpClientSheet.oauthCredentialsDisabledNotice")}</p>
 											</div>
 										) : (
 											<p className="text-muted-foreground text-sm">
-												Update OAuth client credentials only. Connection type, auth type, and connection URL cannot be changed.
+												{i18n.t("workspace.mcpClientSheet.oauthCredentialsDescription")}
 											</p>
 										)}
 										<div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -971,18 +972,18 @@ export default function MCPClientSheet({
 												name="oauth_config.client_id"
 												render={({ field }) => (
 													<FormItem className="flex flex-col gap-2">
-														<FormLabel>Client ID</FormLabel>
+														<FormLabel>{i18n.t("workspace.mcpClientSheet.clientId")}</FormLabel>
 														<FormControl>
 															<SecretVarInput
 																data-testid="mcpclient-input-oauth-client-id"
-																placeholder="Enter new OAuth client ID"
+																placeholder={i18n.t("workspace.mcpClientSheet.clientIdPlaceholder")}
 																disabled={isDisabled}
 																value={field.value}
 																onChange={field.onChange}
 															/>
 														</FormControl>
 														{!isDisabled && (
-															<p className="text-muted-foreground text-xs">Leave empty to keep existing credentials unchanged.</p>
+															<p className="text-muted-foreground text-xs">{i18n.t("workspace.mcpClientSheet.leaveEmptyKeepCredentials")}</p>
 														)}
 														<FormMessage />
 													</FormItem>
@@ -993,11 +994,11 @@ export default function MCPClientSheet({
 												name="oauth_config.client_secret"
 												render={({ field }) => (
 													<FormItem className="flex flex-col gap-2">
-														<FormLabel>Client Secret</FormLabel>
+														<FormLabel>{i18n.t("workspace.mcpClientSheet.clientSecret")}</FormLabel>
 														<FormControl>
 															<SecretVarInput
 																data-testid="mcpclient-input-oauth-client-secret"
-																placeholder="Enter new OAuth client secret"
+																placeholder={i18n.t("workspace.mcpClientSheet.clientSecretPlaceholder")}
 																disabled={isDisabled}
 																hideValueWhenEnv
 																maskNonEnvValue
@@ -1119,7 +1120,7 @@ export default function MCPClientSheet({
 												<TableHeader>
 													<TableRow>
 														<TableHead className="w-10"></TableHead>
-														<TableHead className="max-w-[300px]">Tool Name</TableHead>
+														<TableHead className="max-w-[300px]">{i18n.t("workspace.mcpClientSheet.toolName")}</TableHead>
 														<TableHead className="w-24 text-center">Enabled</TableHead>
 														<TableHead className="w-28 text-center">
 															<div className="flex items-center justify-center gap-1.5">
@@ -1148,7 +1149,7 @@ export default function MCPClientSheet({
 																</TooltipProvider>
 															</div>
 														</TableHead>
-														<TableHead className="w-32 text-center">Cost (USD)</TableHead>
+														<TableHead className="w-32 text-center">{i18n.t("workspace.mcpClientSheet.costUsd")}</TableHead>
 													</TableRow>
 												</TableHeader>
 												<TableBody>
@@ -1227,7 +1228,7 @@ export default function MCPClientSheet({
 																							type="number"
 																							step="0.000001"
 																							min="0"
-																							placeholder="0.00"
+																							placeholder={i18n.t("workspace.mcpClientSheet.toolPricePlaceholder")}
 																							className="h-8 w-24"
 																							disabled={!isToolEnabled}
 																							value={field.value?.[tool.name] ?? ""}
@@ -1252,7 +1253,7 @@ export default function MCPClientSheet({
 																	<tr>
 																		<td colSpan={5} className="p-0">
 																			<div className="bg-muted/30 border-b px-4 py-3">
-																				<div className="text-muted-foreground mb-2 text-xs font-medium">Parameters Schema</div>
+																				<div className="text-muted-foreground mb-2 text-xs font-medium">{i18n.t("workspace.mcpClientSheet.parametersSchema")}</div>
 																				{tool.parameters ? (
 																					<CodeEditor
 																						className="z-0 w-full rounded-sm border"
@@ -1270,7 +1271,7 @@ export default function MCPClientSheet({
 																						}}
 																					/>
 																				) : (
-																					<div className="text-muted-foreground text-sm">No parameters defined</div>
+																					<div className="text-muted-foreground text-sm">{i18n.t("workspace.mcpClientSheet.noParametersDefined")}</div>
 																				)}
 																			</div>
 																		</td>
@@ -1293,7 +1294,7 @@ export default function MCPClientSheet({
 											<div className="flex flex-col gap-2">
 												<div className="flex items-center justify-between">
 													<div className="flex items-center gap-2">
-														<div className="text-md font-semibold">Virtual Key Access</div>
+														<div className="text-md font-semibold">{i18n.t("workspace.mcpClientSheet.virtualKeyAccess")}</div>
 														<TooltipProvider>
 															<Tooltip>
 																<TooltipTrigger asChild>
@@ -1318,7 +1319,7 @@ export default function MCPClientSheet({
 																data-testid="mcpclient-virtualkey-add-trigger"
 															>
 																<Plus className="h-4 w-4" />
-																Add Virtual Key
+																{i18n.t("workspace.virtualKeys.addVirtualKey")}
 															</Button>
 														}
 													/>
@@ -1327,7 +1328,7 @@ export default function MCPClientSheet({
 													<p className="text-muted-foreground flex items-center gap-1 text-xs">
 														<Info className="h-3 w-3 shrink-0" />
 														Configuring access for a virtual key here overrides the{" "}
-														<span className="font-medium">Allow on All Virtual Keys</span>&nbsp;setting for that key.
+														<span className="font-medium">{i18n.t("workspace.mcpClientSheet.allowOnAllVirtualKeys")}</span>&nbsp;setting for that key.
 													</p>
 												)}
 											</div>
@@ -1337,8 +1338,8 @@ export default function MCPClientSheet({
 													<Table>
 														<TableHeader>
 															<TableRow>
-																<TableHead>Virtual Key</TableHead>
-																<TableHead>Allowed Tools</TableHead>
+																<TableHead>{i18n.t("workspace.routingRules.virtualKey")}</TableHead>
+																<TableHead>{i18n.t("workspace.virtualKeys.allowedTools")}</TableHead>
 																<TableHead className="w-12"></TableHead>
 															</TableRow>
 														</TableHeader>
@@ -1409,14 +1410,14 @@ export default function MCPClientSheet({
 
 							<div className="bg-card sticky bottom-0 z-10 flex justify-end gap-2 border-t px-8 py-4">
 								<Button type="button" variant="outline" onClick={onClose}>
-									Cancel
+									{i18n.t("common.cancel")}
 								</Button>
 								<Button
 									type="submit"
 									disabled={isUpdating || (!form.formState.isDirty && !vkConfigsDirty) || !hasUpdateMCPClientAccess}
 									isLoading={isUpdating}
 								>
-									Save Changes
+									{i18n.t("workspace.config.saveChanges")}
 								</Button>
 							</div>
 						</form>
@@ -1450,7 +1451,7 @@ export default function MCPClientSheet({
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>
-						<AlertDialogCancel onClick={() => setPendingNavDirection(null)}>Cancel</AlertDialogCancel>
+						<AlertDialogCancel onClick={() => setPendingNavDirection(null)}>{i18n.t("common.cancel")}</AlertDialogCancel>
 						<AlertDialogAction
 							onClick={() => {
 								const dir = pendingNavDirection;

@@ -2,6 +2,7 @@ import { TRIAL_EXPIRY } from "@/lib/constants/config";
 import { cn } from "@/lib/utils";
 import { differenceInDays } from "date-fns";
 import { AlertTriangle } from "lucide-react";
+import i18n from "@/lib/i18n";
 
 export default function TrialExpiryBanner() {
 	if (!TRIAL_EXPIRY) return null;
@@ -26,19 +27,19 @@ export default function TrialExpiryBanner() {
 			<AlertTriangle className="h-3.5 w-3.5" strokeWidth={2} />
 			{expired ? (
 				<span>
-					Your Bifrost Enterprise Trial has expired.{" "}
+					{i18n.t("supplemental.trialExpired")}{" "}
 					<a href={supportHref} className="font-semibold underline underline-offset-2">
-						Contact us
+						{i18n.t("supplemental.contactUs")}
 					</a>{" "}
-					if you need any assistance.
+					{i18n.t("supplemental.assistanceSuffix")}
 				</span>
 			) : (
 				<span>
-					Your Bifrost Enterprise Trial expires in {daysRemaining} {daysRemaining === 1 ? "day" : "days"}.{" "}
+					{i18n.t("supplemental.trialExpiresIn")} {daysRemaining} {daysRemaining === 1 ? i18n.t("common.day") : i18n.t("common.days")}.{" "}
 					<a href={supportHref} className="font-semibold underline underline-offset-2">
-						Contact us
+						{i18n.t("supplemental.contactUs")}
 					</a>{" "}
-					if you need any assistance.
+					{i18n.t("supplemental.assistanceSuffix")}
 				</span>
 			)}
 		</div>

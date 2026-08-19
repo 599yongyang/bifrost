@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { ArrowUpRight, Check, Copy } from "lucide-react";
+import i18n from "@/lib/i18n";
 
 const WEBHOOKS_VERIFICATION_DOCS_URL = "https://docs.getbifrost.ai/features/webhooks?utm_source=bfd#verifying-deliveries";
 
@@ -54,7 +55,7 @@ export function WebhookSecretDialog({ reveal, onClose }: WebhookSecretDialogProp
 							window.open(WEBHOOKS_VERIFICATION_DOCS_URL, "_blank", "noopener,noreferrer");
 						}}
 					>
-						Read more <ArrowUpRight className="text-muted-foreground h-3 w-3" />
+						{i18n.t("common.readMore")} <ArrowUpRight className="text-muted-foreground h-3 w-3" />
 					</Button>
 					<Button onClick={onClose} data-testid="webhook-secret-done-btn">
 						I&apos;ve stored the secret

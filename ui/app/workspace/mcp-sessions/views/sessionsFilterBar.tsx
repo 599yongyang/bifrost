@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { ComboboxSelect } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Fingerprint, KeyRound, Search, UserRound, X } from "lucide-react";
+import i18n from "@/lib/i18n";
 
 // Labels mirror the Type column's TypeBadge ("OAuth" / "Headers") so the
 // filter vocabulary matches what the user sees in the table.
@@ -55,8 +56,8 @@ export default function SessionsFilterBar(props: SessionsFilterBarProps) {
 			<div className="relative max-w-sm min-w-[200px] flex-1">
 				<Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
 				<Input
-					aria-label="Search sessions"
-					placeholder="Search MCP, user, VK, session..."
+					aria-label={i18n.t("supplemental.searchSessions")}
+					placeholder={i18n.t("supplemental.searchSessionPlaceholder")}
 					value={props.search}
 					onChange={(e) => props.onSearchChange(e.target.value)}
 					className="pl-9"
@@ -71,7 +72,7 @@ export default function SessionsFilterBar(props: SessionsFilterBarProps) {
 				options={KIND_OPTIONS}
 				value={props.kindFilter}
 				onValueChange={props.onKindFilterChange}
-				placeholder="All types"
+				placeholder={i18n.t("supplemental.allTypes")}
 				className="h-9 w-[180px]"
 			/>
 			<ComboboxSelect
@@ -82,7 +83,7 @@ export default function SessionsFilterBar(props: SessionsFilterBarProps) {
 				options={STATUS_OPTIONS}
 				value={props.statusFilter}
 				onValueChange={props.onStatusFilterChange}
-				placeholder="All statuses"
+				placeholder={i18n.t("supplemental.allStatuses")}
 				className="h-9 w-[180px]"
 			/>
 			<ComboboxSelect
@@ -93,13 +94,13 @@ export default function SessionsFilterBar(props: SessionsFilterBarProps) {
 				options={AUTH_MODE_OPTIONS}
 				value={props.authModeFilter}
 				onValueChange={props.onAuthModeFilterChange}
-				placeholder="All identities"
+				placeholder={i18n.t("supplemental.allIdentities")}
 				className="h-9 w-[180px]"
 			/>
 			{props.hasActiveFilters && (
 				<Button variant="ghost" size="sm" onClick={props.onClearFilters} data-testid="mcp-sessions-clear-filters-btn" className="h-9">
 					<X className="h-4 w-4" />
-					Clear filters
+					{i18n.t("supplemental.clearFilters")}
 				</Button>
 			)}
 		</div>

@@ -10,6 +10,7 @@ import { getModelColor } from "../utils/chartUtils";
 import { ChartCard } from "./charts/chartCard";
 import { ChartErrorBoundary } from "./charts/chartErrorBoundary";
 import { formatCost, SortableHeader, TrendBadge } from "./rankingsShared";
+import i18n from "@/lib/i18n";
 
 type SortField = "total_requests" | "total_tokens" | "total_cost";
 type SortOrder = "asc" | "desc";
@@ -29,7 +30,7 @@ function TopDimensionTooltip({ active, payload }: any) {
 	return (
 		<div className="rounded-sm border border-zinc-200 bg-white px-3 py-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
 			<div className="mb-1 text-xs text-zinc-500">{data.displayName}</div>
-			<div className="text-sm font-medium">{data.total_requests.toLocaleString()} requests</div>
+			<div className="text-sm font-medium">{data.total_requests.toLocaleString()} {i18n.t("workspace.governance.teams.requestsUnit")}</div>
 		</div>
 	);
 }
@@ -160,7 +161,7 @@ function TopDimensionChart({
 						</ResponsiveContainer>
 					</ChartErrorBoundary>
 				) : (
-					<div className="text-muted-foreground flex h-full items-center justify-center text-sm">No data available</div>
+					<div className="text-muted-foreground flex h-full items-center justify-center text-sm">{i18n.t("common.noDataAvailable")}</div>
 				)}
 			</div>
 			<div className="py-2">

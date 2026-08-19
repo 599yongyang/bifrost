@@ -16,6 +16,7 @@ import { ArrowDown, ArrowUp, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { LogMessageCell } from "../views/columns";
+import i18n from "@/lib/i18n";
 
 const SESSION_LOG_PAGE_SIZE = 500;
 
@@ -130,7 +131,7 @@ export function SessionDetailsSheet({
 					pagination: { limit: SESSION_LOG_PAGE_SIZE, offset, order: sortOrder },
 				});
 				if (result.error) {
-					toast.error("Failed to load session logs", {
+					toast.error(i18n.t("supplemental.loadSessionFailed"), {
 						description: getErrorMessage(result.error),
 					});
 					return;
@@ -195,7 +196,7 @@ export function SessionDetailsSheet({
 										{sessionId}
 									</code>
 								</TooltipTrigger>
-								<TooltipContent sideOffset={6}>Filter this session</TooltipContent>
+								<TooltipContent sideOffset={6}>{i18n.t("supplemental.filterSession")}</TooltipContent>
 							</Tooltip>
 						) : (
 							<code className="text-sm break-all">{sessionId}</code>
@@ -245,11 +246,11 @@ export function SessionDetailsSheet({
 						<TableHeader className="sticky top-0 z-10 bg-[#f9f9f9] dark:bg-[#27272a]">
 							<TableRow>
 								<TableHead className="w-2"></TableHead>
-								<TableHead>Time</TableHead>
-								<TableHead>Type</TableHead>
-								<TableHead>Message</TableHead>
-								<TableHead>Provider</TableHead>
-								<TableHead>Model</TableHead>
+								<TableHead>{i18n.t("workspace.logs.colTime")}</TableHead>
+								<TableHead>{i18n.t("workspace.logs.colType")}</TableHead>
+								<TableHead>{i18n.t("workspace.logs.colMessage")}</TableHead>
+								<TableHead>{i18n.t("workspace.logs.colProvider")}</TableHead>
+								<TableHead>{i18n.t("workspace.logs.colModel")}</TableHead>
 							</TableRow>
 						</TableHeader>
 						<TableBody>
@@ -258,7 +259,7 @@ export function SessionDetailsSheet({
 									<TableCell colSpan={6} className="h-24 text-center">
 										<div className="flex items-center justify-center gap-2">
 											<Loader2 className="h-4 w-4 animate-spin" />
-											Loading session...
+											{i18n.t("supplemental.loadingSession")}
 										</div>
 									</TableCell>
 								</TableRow>
@@ -300,7 +301,7 @@ export function SessionDetailsSheet({
 							) : (
 								<TableRow>
 									<TableCell colSpan={6} className="text-muted-foreground h-24 text-center">
-										No logs found for this session.
+										{i18n.t("supplemental.noSessionLogs")}
 									</TableCell>
 								</TableRow>
 							)}
@@ -317,7 +318,7 @@ export function SessionDetailsSheet({
 							disabled={loadingSession}
 						>
 							{loadingSession ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-							Load More
+							{i18n.t("supplemental.loadMore")}
 						</Button>
 					</div>
 				) : null}

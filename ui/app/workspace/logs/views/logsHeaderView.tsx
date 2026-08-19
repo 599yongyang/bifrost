@@ -15,6 +15,7 @@ import { Calculator, MoreVertical, Radio, RefreshCw, Search } from "lucide-react
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { RecalculateCostDialog, type RecalculateCostMode } from "./recalculateCostDialog";
+import i18n from "@/lib/i18n";
 
 interface LogsHeaderViewProps {
 	filters: LogFiltersType;
@@ -117,7 +118,7 @@ export function LogsHeaderView({
 				}
 				setActiveRecalcJobId(status.id);
 			} catch (err) {
-				toast.error("Cost recalculation failed", { id: toastId, description: getErrorMessage(err) });
+				toast.error(i18n.t("supplemental.costRecalculationFailed"), { id: toastId, description: getErrorMessage(err) });
 			}
 		},
 		[filters],
@@ -127,7 +128,7 @@ export function LogsHeaderView({
 	// user isn't left with a loading toast that never resolves.
 	useEffect(() => {
 		if (!activeRecalcJobId || !recalcJobStatusError) return;
-		toast.error("Cost recalculation failed", {
+		toast.error(i18n.t("supplemental.costRecalculationFailed"), {
 			id: "logs-recalculate-costs",
 			description: "Lost track of the recalculation job status. Please refresh and try again.",
 		});
@@ -150,12 +151,12 @@ export function LogsHeaderView({
 
 		if (recalcJobStatus.status === "completed" || recalcJobStatus.status === "failed") {
 			if (recalcJobStatus.status === "failed") {
-				toast.error("Cost recalculation failed", {
+				toast.error(i18n.t("supplemental.costRecalculationFailed"), {
 					id: toastId,
 					description: recalcJobStatus.last_error || recalcJobStatus.message || "The job did not complete",
 				});
 			} else {
-				toast.success("Cost recalculation complete", {
+				toast.success(i18n.t("supplemental.costRecalculationComplete"), {
 					id: toastId,
 					description: recalcJobStatus.message || `${recalcJobStatus.updated} updated, ${recalcJobStatus.skipped} skipped`,
 					duration: 5000,
@@ -204,7 +205,7 @@ export function LogsHeaderView({
 				disabled={loading}
 			>
 				<RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-				Refresh
+				{i18n.t("workspace.mcpLogs.refresh")}
 			</Button>
 			<Button
 				data-testid="logs-live-btn"
@@ -214,14 +215,14 @@ export function LogsHeaderView({
 				onClick={() => onPollToggle(!polling)}
 			>
 				{polling ? <Radio className="h-4 w-4 animate-pulse" /> : <Radio className="h-4 w-4" />}
-				Live
+				{i18n.t("workspace.mcpLogs.live")}
 			</Button>
 			<div className="border-input flex h-7.5 flex-1 items-center gap-2 rounded-sm border">
 				<Search className="mr-0.5 ml-2 size-4" />
 				<Input
 					type="text"
 					className="!h-7 rounded-tl-none rounded-tr-sm rounded-br-sm rounded-bl-none border-none bg-slate-50 shadow-none outline-none focus-visible:ring-0"
-					placeholder="Search logs"
+					placeholder={i18n.t("supplemental.searchLogs")}
 					value={localSearch}
 					onChange={(e) => handleSearchChange(e.target.value)}
 				/>

@@ -6,6 +6,7 @@ import { formatCompactNumber } from "@/lib/utils/numbers";
 import { CHART_COLORS, formatFullTimestamp, formatTimestamp } from "../../utils/chartUtils";
 import { ChartErrorBoundary } from "./chartErrorBoundary";
 import type { ChartType } from "./chartTypeToggle";
+import i18n from "@/lib/i18n";
 
 interface MCPVolumeChartProps {
 	data: MCPHistogramResponse | null;
@@ -27,19 +28,19 @@ function CustomTooltip({ active, payload }: any) {
 				<div className="flex items-center justify-between gap-4">
 					<span className="flex items-center gap-1.5">
 						<span className="h-2 w-2 rounded-full bg-emerald-500" />
-						<span className="text-zinc-600 dark:text-zinc-400">Success</span>
+						<span className="text-zinc-600 dark:text-zinc-400">{i18n.t("workspace.mcpForm.successTitle")}</span>
 					</span>
 					<span className="font-medium text-emerald-600 dark:text-emerald-400">{data.success.toLocaleString()}</span>
 				</div>
 				<div className="flex items-center justify-between gap-4">
 					<span className="flex items-center gap-1.5">
 						<span className="h-2 w-2 rounded-full bg-red-500" />
-						<span className="text-zinc-600 dark:text-zinc-400">Error</span>
+						<span className="text-zinc-600 dark:text-zinc-400">{i18n.t("workspace.mcp.errorTitle")}</span>
 					</span>
 					<span className="font-medium text-red-600 dark:text-red-400">{data.error.toLocaleString()}</span>
 				</div>
 				<div className="flex items-center justify-between gap-4 border-t border-zinc-200 pt-1 dark:border-zinc-700">
-					<span className="text-zinc-600 dark:text-zinc-400">Total</span>
+					<span className="text-zinc-600 dark:text-zinc-400">{i18n.t("supplemental.total")}</span>
 					<span className="font-medium">{data.count.toLocaleString()}</span>
 				</div>
 			</div>

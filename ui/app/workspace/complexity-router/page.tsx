@@ -34,6 +34,7 @@ import { type ChangeEvent, type ClipboardEvent, type DragEvent, type KeyboardEve
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
+import i18n from "@/lib/i18n";
 
 type TierBoundaryKey = keyof TierBoundaries;
 
@@ -283,7 +284,7 @@ export default function ComplexityRouterPage() {
 			.unwrap()
 			.then((defaults) => {
 				reset(defaults);
-				toast.success("Reset to defaults", { position: "top-right" });
+				toast.success(i18n.t("supplemental.resetDefaults"), { position: "top-right" });
 			})
 			.catch((err) => {
 				setSubmitError(getErrorMessage(err));
@@ -297,7 +298,7 @@ export default function ComplexityRouterPage() {
 			.unwrap()
 			.then((res) => {
 				reset(res);
-				toast.success("Configuration saved", { position: "top-right" });
+				toast.success(i18n.t("supplemental.configurationSaved"), { position: "top-right" });
 			})
 			.catch((err) => {
 				setSubmitError(getErrorMessage(err));
@@ -313,7 +314,7 @@ export default function ComplexityRouterPage() {
 			<div className="mx-auto w-full max-w-7xl space-y-4 px-14 pt-8">
 				<p className="text-destructive font-mono text-sm">{getErrorMessage(error)}</p>
 				<Button data-testid="complexity-router-fetch-retry-button" type="button" variant="outline" size="sm" onClick={() => refetch()}>
-					Retry
+					{i18n.t("workspace.oauth.retry")}
 				</Button>
 			</div>
 		);
@@ -322,9 +323,9 @@ export default function ComplexityRouterPage() {
 	if (!data) {
 		return (
 			<div className="mx-auto w-full max-w-7xl space-y-4 px-14 pt-8">
-				<p className="text-muted-foreground font-mono text-sm">No complexity router configuration is available.</p>
+				<p className="text-muted-foreground font-mono text-sm">{i18n.t("supplemental.noComplexityConfig")}</p>
 				<Button data-testid="complexity-router-fetch-retry-button" type="button" variant="outline" size="sm" onClick={() => refetch()}>
-					Retry
+					{i18n.t("workspace.oauth.retry")}
 				</Button>
 			</div>
 		);
@@ -340,7 +341,7 @@ export default function ComplexityRouterPage() {
 				{/* ── Page header ── */}
 				<div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
 					<div className="space-y-1.5">
-						<h1 className="text-2xl font-semibold tracking-tight">Complexity Router</h1>
+						<h1 className="text-2xl font-semibold tracking-tight">{i18n.t("sidebar.sub.complexityRouter")}</h1>
 						<p className="text-muted-foreground max-w-2xl text-sm leading-relaxed">
 							Tune how incoming requests are classified into four tiers. Thresholds and keyword lists feed the{" "}
 							<code className="bg-muted rounded-sm px-1 py-0.5 font-mono text-xs">complexity_tier</code> field that routing rules can
@@ -358,7 +359,7 @@ export default function ComplexityRouterPage() {
 				{/* ── Complexity Spectrum ── */}
 				<div className="bg-card space-y-4 rounded-sm border p-5">
 					<div className="flex items-center justify-between">
-						<p className="text-muted-foreground font-mono text-xs font-semibold tracking-widest uppercase">Complexity Spectrum</p>
+						<p className="text-muted-foreground font-mono text-xs font-semibold tracking-widest uppercase">{i18n.t("supplemental.complexitySpectrum")}</p>
 						<div className="flex items-center gap-4">
 							{Object.values(TIER_PALETTE).map(({ color, name }) => (
 								<div key={name} className="flex items-center gap-1.5">
@@ -373,7 +374,7 @@ export default function ComplexityRouterPage() {
 
 				{/* ── Tier Boundaries ── */}
 				<div className="space-y-3">
-					<h2 className="text-sm font-semibold">Tier Boundaries</h2>
+					<h2 className="text-sm font-semibold">{i18n.t("supplemental.tierBoundaries")}</h2>
 
 					<div className="grid gap-3 md:grid-cols-3">
 						{BOUNDARY_FIELDS.map(({ key, label, description, fromTier, toTier, fromColor, toColor }) => {
@@ -460,7 +461,7 @@ export default function ComplexityRouterPage() {
 				{/* ── Keyword Lists ── */}
 				<div className="space-y-3">
 					<div className="flex items-baseline gap-2.5">
-						<h2 className="text-sm font-semibold">Keyword Lists</h2>
+						<h2 className="text-sm font-semibold">{i18n.t("supplemental.keywordLists")}</h2>
 						<span className="text-muted-foreground text-xs">
 							Lowercased and deduplicated on save. Each list requires at least one entry.
 						</span>
@@ -531,7 +532,7 @@ export default function ComplexityRouterPage() {
 						disabled={!canUpdate || isSaving || isResetting}
 					>
 						{isResetting ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
-						Restore defaults
+						{i18n.t("supplemental.restoreDefaults")}
 					</Button>
 					<Button
 						data-testid="complexity-router-discard-changes-button"
@@ -541,7 +542,7 @@ export default function ComplexityRouterPage() {
 						onClick={handleDiscard}
 						disabled={!isDirty || isSaving || isResetting || isFetching}
 					>
-						Discard changes
+						{i18n.t("supplemental.discardChanges")}
 					</Button>
 					<Button
 						data-testid="complexity-router-save-changes-button"
@@ -558,7 +559,7 @@ export default function ComplexityRouterPage() {
 			<AlertDialog open={restoreDialogOpen} onOpenChange={setRestoreDialogOpen}>
 				<AlertDialogContent>
 					<AlertDialogHeader>
-						<AlertDialogTitle>Restore defaults</AlertDialogTitle>
+						<AlertDialogTitle>{i18n.t("supplemental.restoreDefaults")}</AlertDialogTitle>
 						<AlertDialogDescription>
 							This will reset all tier boundaries and keyword lists to the factory defaults. Your current configuration will be lost. This
 							action cannot be undone.
@@ -570,7 +571,7 @@ export default function ComplexityRouterPage() {
 							onClick={() => setRestoreDialogOpen(false)}
 							disabled={isResetting}
 						>
-							Cancel
+							{i18n.t("common.cancel")}
 						</AlertDialogCancel>
 						<AlertDialogAction
 							data-testid="complexity-router-restore-confirm-button"
@@ -580,7 +581,7 @@ export default function ComplexityRouterPage() {
 							}}
 							disabled={!canUpdate || isResetting}
 						>
-							Restore defaults
+							{i18n.t("supplemental.restoreDefaults")}
 						</AlertDialogAction>
 					</AlertDialogFooter>
 				</AlertDialogContent>

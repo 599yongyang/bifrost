@@ -8,6 +8,7 @@ import { isRequestTypeDisabled } from "@/lib/utils/validation";
 import { Settings2 } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { Control, useFormContext } from "react-hook-form";
+import i18n from "@/lib/i18n";
 
 interface AllowedRequestsFieldsProps {
 	control: Control<any>;
@@ -145,14 +146,14 @@ export function AllowedRequestsFields({
 												<button
 													type="button"
 													className="text-muted-foreground hover:text-foreground transition-colors"
-													aria-label="Customize endpoint path"
+													aria-label={i18n.t("common.customizeEndpointPath")}
 												>
 													<Settings2 className="h-4 w-4" />
 												</button>
 											</PopoverTrigger>
 											<PopoverContent className="w-80" align="end" onOpenAutoFocus={(e) => e.preventDefault()}>
 												<div className="space-y-2">
-													<h4 className="text-sm font-medium">Custom Path or URL</h4>
+													<h4 className="text-sm font-medium">{i18n.t("common.customPathOrUrl")}</h4>
 													<p className="text-muted-foreground text-xs">
 														Override with a path (e.g., /v1/chat) or a full URL (e.g., https://api.example.com/chat) to bypass base_url
 													</p>
@@ -192,9 +193,9 @@ export function AllowedRequestsFields({
 	return (
 		<div className="space-y-4">
 			<div>
-				<div className="text-sm font-medium">Allowed Request Types</div>
+				<div className="text-sm font-medium">{i18n.t("common.allowedRequestTypes")}</div>
 				<p className="text-muted-foreground text-xs">
-					Select which request types this custom provider can handle.{" "}
+					{i18n.t("common.selectRequestTypes")}{" "}
 					{!isPathOverrideDisabled ? "Click the settings icon to customize endpoint paths or use full URLs." : ""}
 				</p>
 			</div>

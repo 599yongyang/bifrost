@@ -11,6 +11,7 @@ import { SecretVar } from "@/lib/types/schemas";
 import { cn } from "@/lib/utils";
 import { ChevronDown, ChevronRight, Trash } from "lucide-react";
 import { useId, useMemo, useRef, useState } from "react";
+import i18n from "@/lib/i18n";
 
 type DeploymentsValue = Record<string, AliasConfig> | undefined | null;
 
@@ -163,7 +164,7 @@ function TriStateOverrideRow({
 				<SelectContent>
 					<SelectItem value="inherit">Use key setting</SelectItem>
 					<SelectItem value="on">On</SelectItem>
-					<SelectItem value="off">Off</SelectItem>
+					<SelectItem value="off">{i18n.t("workspace.routingRules.off")}</SelectItem>
 				</SelectContent>
 			</Select>
 		</div>
@@ -197,7 +198,7 @@ function AzureSection({ config, onChange, disabled }: ProviderSectionProps) {
 				<SecretVarField
 					value={config.endpoint}
 					onChange={(v) => onChange({ endpoint: v })}
-					placeholder="https://your-resource.openai.azure.com or env.AZURE_ENDPOINT"
+					placeholder={i18n.t("workspace.providers.apiKeyForm.azureEndpointPlaceholder")}
 					disabled={disabled}
 				/>
 			</FieldRow>
@@ -232,7 +233,7 @@ function VertexSection({ config, onChange, disabled }: ProviderSectionProps) {
 				<SecretVarField
 					value={config.region}
 					onChange={(v) => onChange({ region: v })}
-					placeholder="us-central1 or env.VERTEX_REGION"
+					placeholder={i18n.t("workspace.providers.apiKeyForm.vertexRegionPlaceholder")}
 					disabled={disabled}
 				/>
 			</FieldRow>
@@ -410,7 +411,7 @@ function ExpandedConfigPanel({
 							<SelectValue placeholder="Select a model family" />
 						</SelectTrigger>
 						<SelectContent>
-							<SelectItem value="__none__">None</SelectItem>
+							<SelectItem value="__none__">{i18n.t("workspace.mcpForm.none")}</SelectItem>
 							{ModelFamilyValues.map((f) => (
 								<SelectItem key={f} value={f}>
 									{f}
@@ -561,7 +562,7 @@ export function DeploymentsTable({ value, onChange, providerName, disabled = fal
 				<div />
 				<div>Deployment name</div>
 				<div>Model ID</div>
-				<span className="sr-only">Actions</span>
+				<span className="sr-only">{i18n.t("workspace.routingRules.actions")}</span>
 			</div>
 			<div className="divide-y">
 				{rowsWithIds.map((row) => {
@@ -586,7 +587,7 @@ export function DeploymentsTable({ value, onChange, providerName, disabled = fal
 										<Input
 											value={pending ?? row.name}
 											onChange={(e) => renameRow(row.rowId, row.name, e.target.value)}
-											placeholder="Request model name"
+											placeholder={i18n.t("workspace.providers.apiKeyForm.requestModelNamePlaceholder")}
 											disabled={disabled}
 											data-testid={`deployment-name-${row.name}`}
 										/>
@@ -601,7 +602,7 @@ export function DeploymentsTable({ value, onChange, providerName, disabled = fal
 										provider={providerName}
 										value={row.config.model_id}
 										onChange={(v) => patchConfig(row.name, { model_id: typeof v === "string" ? v : "" })}
-										placeholder="Deployment / profile / resource ID"
+										placeholder={i18n.t("workspace.providers.apiKeyForm.deploymentProfilePlaceholder")}
 										disabled={disabled}
 										unfiltered={true}
 										data-testid={`deployment-model-${row.name}`}
@@ -648,7 +649,7 @@ export function DeploymentsTable({ value, onChange, providerName, disabled = fal
 										commitDraftIfReady();
 									}
 								}}
-								placeholder="Request model name"
+								placeholder={i18n.t("workspace.providers.apiKeyForm.requestModelNamePlaceholder")}
 								disabled={disabled}
 								data-testid="draft-deployment-name"
 							/>
@@ -662,7 +663,7 @@ export function DeploymentsTable({ value, onChange, providerName, disabled = fal
 									setDraftRow(nextDraft);
 									commitDraftIfReady(nextDraft);
 								}}
-								placeholder="Deployment / profile / resource ID"
+								placeholder={i18n.t("workspace.providers.apiKeyForm.deploymentProfilePlaceholder")}
 								disabled={disabled}
 								unfiltered={true}
 								data-testid="draft-deployment-model"

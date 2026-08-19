@@ -33,6 +33,7 @@ import { LogVolumeChart } from "./charts/logVolumeChart";
 import { ModelFilterSelect } from "./charts/modelFilterSelect";
 import { ModelUsageChart } from "./charts/modelUsageChart";
 import { TokenUsageChart } from "./charts/tokenUsageChart";
+import i18n from "@/lib/i18n";
 
 export interface OverviewTabProps {
 	// Data
@@ -189,7 +190,7 @@ function OverviewTabImpl({
 			<div className="grid grid-cols-1 gap-2 lg:grid-cols-2 2xl:grid-cols-3">
 				{/* Log Volume Chart */}
 				<ChartCard
-					title="Request Volume"
+					title={i18n.t("supplemental.requestVolume")}
 					loading={loadingHistogram}
 					testId="chart-log-volume"
 					totalLabel="Total"
@@ -199,15 +200,15 @@ function OverviewTabImpl({
 						<div className={CHART_HEADER_LEGEND_CLASS}>
 							<span className="flex items-center gap-1">
 								<span className="h-2 w-2 rounded-full" style={{ backgroundColor: CHART_COLORS.success }} />
-								<span className="text-muted-foreground">Success</span>
+								<span className="text-muted-foreground">{i18n.t("workspace.mcpForm.successTitle")}</span>
 							</span>
 							<span className="flex items-center gap-1">
 								<span className="h-2 w-2 rounded-full" style={{ backgroundColor: CHART_COLORS.error }} />
-								<span className="text-muted-foreground">Error</span>
+								<span className="text-muted-foreground">{i18n.t("workspace.mcp.errorTitle")}</span>
 							</span>
 							<span className="flex items-center gap-1">
 								<span className="h-2 w-2 rounded-full" style={{ backgroundColor: CHART_COLORS.cancelled }} />
-								<span className="text-muted-foreground">Cancelled</span>
+								<span className="text-muted-foreground">{i18n.t("supplemental.cancelled")}</span>
 							</span>
 						</div>
 					}
@@ -220,7 +221,7 @@ function OverviewTabImpl({
 
 				{/* Token Usage Chart */}
 				<ChartCard
-					title="Token Usage"
+					title={i18n.t("workspace.providers.tokenUsage")}
 					loading={loadingTokens}
 					testId="chart-token-usage"
 					totalLabel="Total"
@@ -259,7 +260,7 @@ function OverviewTabImpl({
 
 				{/* Cost Chart */}
 				<ChartCard
-					title="Cost"
+					title={i18n.t("workspace.logs.colCost")}
 					loading={loadingCost}
 					testId="chart-cost-total"
 					totalLabel="Total"
@@ -393,15 +394,15 @@ function OverviewTabImpl({
 								<>
 									<span className="flex items-center gap-1">
 										<span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: CHART_COLORS.success }} />
-										<span className="text-muted-foreground">Success</span>
+										<span className="text-muted-foreground">{i18n.t("workspace.mcpForm.successTitle")}</span>
 									</span>
 									<span className="flex items-center gap-1">
 										<span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: CHART_COLORS.error }} />
-										<span className="text-muted-foreground">Error</span>
+										<span className="text-muted-foreground">{i18n.t("workspace.mcp.errorTitle")}</span>
 									</span>
 									<span className="flex items-center gap-1">
 										<span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: CHART_COLORS.cancelled }} />
-										<span className="text-muted-foreground">Cancelled</span>
+										<span className="text-muted-foreground">{i18n.t("supplemental.cancelled")}</span>
 									</span>
 								</>
 							)}
@@ -424,7 +425,7 @@ function OverviewTabImpl({
 
 				{/* Latency Chart */}
 				<ChartCard
-					title="Latency"
+					title={i18n.t("workspace.logs.colLatency")}
 					loading={loadingLatency}
 					testId="chart-latency"
 					totalLabel="Avg"

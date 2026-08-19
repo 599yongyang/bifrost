@@ -20,6 +20,7 @@ import {
 import { ChartCard } from "./charts/chartCard";
 import { ChartErrorBoundary } from "./charts/chartErrorBoundary";
 import { formatCost, SortableHeader, TrendBadge } from "./rankingsShared";
+import i18n from "@/lib/i18n";
 
 type SortField = "total_requests" | "success_rate" | "total_tokens" | "total_cost" | "avg_latency" | "throughput";
 type SortOrder = "asc" | "desc";
@@ -206,7 +207,7 @@ function TopModelsChart({
 						</ResponsiveContainer>
 					</ChartErrorBoundary>
 				) : (
-					<div className="text-muted-foreground flex h-full items-center justify-center text-sm">No data available</div>
+					<div className="text-muted-foreground flex h-full items-center justify-center text-sm">{i18n.t("common.noDataAvailable")}</div>
 				)}
 			</div>
 			<div className="py-2">
@@ -292,12 +293,12 @@ function ModelRankingsTabImpl({ rankingsData, loading, modelData, loadingModels,
 				</Card>
 			) : (
 				<Card className="rounded-sm p-2 shadow-none" data-testid="dashboard-model-rankings-table">
-					<span className="text-primary pl-2 text-sm font-medium">Model Rankings</span>
+					<span className="text-primary pl-2 text-sm font-medium">{i18n.t("workspace.dashboard.modelRankings")}</span>
 					<Table>
 						<TableHeader>
 							<TableRow>
 								<TableHead className="w-12">#</TableHead>
-								<TableHead>Model</TableHead>
+								<TableHead>{i18n.t("workspace.logs.colModel")}</TableHead>
 								<TableHead className="text-right">
 									<SortableHeader
 										label="Requests"

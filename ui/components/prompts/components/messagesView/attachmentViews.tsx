@@ -1,6 +1,7 @@
 import { MessageContent } from "@/lib/message";
 import { Mic, FileIcon, XIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import i18n from "@/lib/i18n";
 
 /**
  * Renders a compact badge for a single attachment with an inline remove control.
@@ -23,7 +24,7 @@ export function AttachmentBadge({ attachment, onRemove }: { attachment: MessageC
 		<div className="group/att bg-muted/50 relative flex items-center gap-1.5 rounded-sm border px-2 py-1 text-xs">
 			{isImage && attachment.image_url?.url ? (
 				<>
-					<img src={attachment.image_url.url} alt="attachment" className="h-8 w-8 rounded object-cover" />
+					<img src={attachment.image_url.url} alt={i18n.t("supplemental.attachment")} className="h-8 w-8 rounded object-cover" />
 					<span className="text-muted-foreground max-w-[100px] truncate">{t("workspace.promptRepository.messages.image")}</span>
 				</>
 			) : isAudio ? (
@@ -88,7 +89,7 @@ export function AttachmentDisplay({
 							{/* eslint-disable-next-line jsx-a11y/alt-text */}
 							<img
 								src={att.image_url.url}
-								alt="attached image"
+								alt={i18n.t("supplemental.attachedImage")}
 								className="max-h-48 max-w-full rounded-sm border object-contain sm:max-w-xs"
 							/>
 							{editable && onRemoveAttachment && (

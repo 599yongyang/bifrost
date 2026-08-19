@@ -29,6 +29,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { CustomersEmptyState } from "./customersEmptyState";
 import CustomerSheet from "./customerSheet";
+import i18n from "@/lib/i18n";
 
 // Helper to format reset duration for display
 const formatResetDuration = (duration: string) => {
@@ -77,7 +78,7 @@ function CustomerActionsMenu({ customer, canUpdate, canDelete, onEdit, onDelete 
 					onPointerDown={(e) => e.stopPropagation()}
 				>
 					<Edit className="h-4 w-4" />
-					Edit
+					{i18n.t("common.edit")}
 				</DropdownMenuItem>
 				<DropdownMenuItem asChild className="cursor-pointer" data-testid={`customer-button-view-logs-${customer.id}`}>
 					<Link
@@ -90,7 +91,7 @@ function CustomerActionsMenu({ customer, canUpdate, canDelete, onEdit, onDelete 
 						onPointerDown={(e) => e.stopPropagation()}
 					>
 						<ScrollText className="h-4 w-4" />
-						View logs
+						{i18n.t("supplemental.viewLogs")}
 					</Link>
 				</DropdownMenuItem>
 				<DropdownMenuItem
@@ -106,7 +107,7 @@ function CustomerActionsMenu({ customer, canUpdate, canDelete, onEdit, onDelete 
 					onPointerDown={(e) => e.stopPropagation()}
 				>
 					<Trash2 className="h-4 w-4" />
-					Delete
+					{i18n.t("common.delete")}
 				</DropdownMenuItem>
 			</DropdownMenuContent>
 		</DropdownMenu>
@@ -152,7 +153,7 @@ export default function CustomersTable({
 	const handleDelete = async (customerId: string) => {
 		try {
 			await deleteCustomer(customerId).unwrap();
-			toast.success("Customer deleted successfully");
+			toast.success(i18n.t("workspace.governance.customers.deleteSuccess"));
 		} catch (error) {
 			toast.error(getErrorMessage(error));
 		} finally {
@@ -225,12 +226,12 @@ export default function CustomersTable({
 				<div className="flex grow flex-col">
 					<div className="mb-4 flex items-center justify-between">
 						<div>
-							<h2 className="text-lg font-semibold">Customers</h2>
-							<p className="text-muted-foreground text-sm">Manage customer accounts with their own teams, budgets, and access controls.</p>
+							<h2 className="text-lg font-semibold">{i18n.t("sidebar.sub.customers")}</h2>
+							<p className="text-muted-foreground text-sm">{i18n.t("workspace.governance.customers.description")}</p>
 						</div>
 						<Button data-testid="customer-button-create" onClick={handleAddCustomer} disabled={!hasCreateAccess}>
 							<Plus className="h-4 w-4" />
-							Add Customer
+							{i18n.t("workspace.governance.customers.addCustomer")}
 						</Button>
 					</div>
 
@@ -238,8 +239,8 @@ export default function CustomersTable({
 						<div className="relative max-w-sm flex-1">
 							<Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
 							<Input
-								aria-label="Search customers by name"
-								placeholder="Search by name..."
+								aria-label={i18n.t("workspace.governance.customers.searchAriaLabel")}
+								placeholder={i18n.t("workspace.mcp.searchPlaceholder")}
 								value={search}
 								onChange={(e) => onSearchChange(e.target.value)}
 								className="pl-9"
@@ -252,11 +253,11 @@ export default function CustomersTable({
 						<Table className="min-w-[1100px]">
 							<TableHeader>
 								<TableRow>
-									<TableHead>Name</TableHead>
-									<TableHead>Teams</TableHead>
-									<TableHead>Budget</TableHead>
-									<TableHead>Rate Limit</TableHead>
-									<TableHead>Virtual Keys</TableHead>
+									<TableHead>{i18n.t("workspace.mcp.name")}</TableHead>
+									<TableHead>{i18n.t("sidebar.sub.teams")}</TableHead>
+									<TableHead>{i18n.t("workspace.modelLimits.budget")}</TableHead>
+									<TableHead>{i18n.t("workspace.modelLimits.rateLimit")}</TableHead>
+									<TableHead>{i18n.t("sidebar.sub.virtualKeys")}</TableHead>
 									<TableHead className={`bg-muted ${ACTIONS_COLUMN_CLASS}`}></TableHead>
 								</TableRow>
 							</TableHeader>
@@ -264,7 +265,7 @@ export default function CustomersTable({
 								{customers.length === 0 ? (
 									<TableRow>
 										<TableCell colSpan={6} className="h-24 text-center">
-											<span className="text-muted-foreground text-sm">No matching customers found.</span>
+											<span className="text-muted-foreground text-sm">{i18n.t("workspace.governance.customers.noMatching")}</span>
 										</TableCell>
 									</TableRow>
 								) : (
@@ -321,7 +322,7 @@ export default function CustomersTable({
 														<span className="truncate font-medium">{customer.name}</span>
 														{isExhausted && (
 															<Badge variant="destructive" className="w-fit text-xs">
-																Limit Reached
+																{i18n.t("workspace.modelLimits.limitReached")}
 															</Badge>
 														)}
 													</div>
@@ -376,7 +377,7 @@ export default function CustomersTable({
 																				{formatCurrency(budget.current_usage)} / {formatCurrency(budget.max_limit)}
 																			</p>
 																			<p className="text-primary-foreground/80 text-xs">
-																				Resets {formatResetDuration(budget.reset_duration)}
+																				{i18n.t("supplemental.resets")} {formatResetDuration(budget.reset_duration)}
 																			</p>
 																		</TooltipContent>
 																	</Tooltip>
@@ -395,7 +396,7 @@ export default function CustomersTable({
 																	<TooltipTrigger asChild>
 																		<div className="space-y-1.5">
 																			<div className="flex items-center justify-between gap-4 text-xs">
-																				<span className="font-medium">{customer.rate_limit.token_max_limit.toLocaleString()} tokens</span>
+																				<span className="font-medium">{customer.rate_limit.token_max_limit.toLocaleString()} {i18n.t("workspace.governance.teams.tokensUnit")}</span>
 																				<span className="text-muted-foreground">
 																					{formatResetDuration(customer.rate_limit.token_reset_duration || "1h")}
 																				</span>
@@ -416,10 +417,10 @@ export default function CustomersTable({
 																	<TooltipContent>
 																		<p className="font-medium">
 																			{customer.rate_limit.token_current_usage.toLocaleString()} /{" "}
-																			{customer.rate_limit.token_max_limit.toLocaleString()} tokens
+																			{customer.rate_limit.token_max_limit.toLocaleString()} {i18n.t("workspace.governance.teams.tokensUnit")}
 																		</p>
 																		<p className="text-primary-foreground/80 text-xs">
-																			Resets {formatResetDuration(customer.rate_limit.token_reset_duration || "1h")}
+																			{i18n.t("supplemental.resets")} {formatResetDuration(customer.rate_limit.token_reset_duration || "1h")}
 																		</p>
 																	</TooltipContent>
 																</Tooltip>
@@ -429,7 +430,7 @@ export default function CustomersTable({
 																	<TooltipTrigger asChild>
 																		<div className="space-y-1.5">
 																			<div className="flex items-center justify-between gap-4 text-xs">
-																				<span className="font-medium">{customer.rate_limit.request_max_limit.toLocaleString()} req</span>
+																				<span className="font-medium">{customer.rate_limit.request_max_limit.toLocaleString()} {i18n.t("workspace.governance.teams.requestUnitShort")}</span>
 																				<span className="text-muted-foreground">
 																					{formatResetDuration(customer.rate_limit.request_reset_duration || "1h")}
 																				</span>
@@ -450,10 +451,10 @@ export default function CustomersTable({
 																	<TooltipContent>
 																		<p className="font-medium">
 																			{customer.rate_limit.request_current_usage.toLocaleString()} /{" "}
-																			{customer.rate_limit.request_max_limit.toLocaleString()} requests
+																			{customer.rate_limit.request_max_limit.toLocaleString()} {i18n.t("workspace.governance.teams.requestsUnit")}
 																		</p>
 																		<p className="text-primary-foreground/80 text-xs">
-																			Resets {formatResetDuration(customer.rate_limit.request_reset_duration || "1h")}
+																			{i18n.t("supplemental.resets")} {formatResetDuration(customer.rate_limit.request_reset_duration || "1h")}
 																		</p>
 																	</TooltipContent>
 																</Tooltip>
@@ -500,7 +501,7 @@ export default function CustomersTable({
 						<div className="flex shrink-0 items-center justify-between text-xs" data-testid="pagination">
 							<div className="text-muted-foreground flex items-center gap-2">
 								{(offset + 1).toLocaleString()}-{Math.min(offset + limit, totalCount).toLocaleString()} of {totalCount.toLocaleString()}{" "}
-								entries
+								{i18n.t("workspace.virtualKeys.entries")}
 							</div>
 
 							<div className="flex items-center gap-2">
@@ -510,7 +511,7 @@ export default function CustomersTable({
 									onClick={() => onOffsetChange(Math.max(0, offset - limit))}
 									disabled={offset === 0}
 									data-testid="customers-pagination-prev-btn"
-									aria-label="Previous page"
+									aria-label={i18n.t("supplemental.previousPage")}
 								>
 									<ChevronLeft className="size-3" />
 								</Button>
@@ -527,7 +528,7 @@ export default function CustomersTable({
 									onClick={() => onOffsetChange(offset + limit)}
 									disabled={offset + limit >= totalCount}
 									data-testid="customers-pagination-next-btn"
-									aria-label="Next page"
+									aria-label={i18n.t("supplemental.nextPage")}
 								>
 									<ChevronRight className="size-3" />
 								</Button>
@@ -539,14 +540,14 @@ export default function CustomersTable({
 				<AlertDialog open={!!confirmDeleteCustomer} onOpenChange={(open) => !open && setConfirmDeleteCustomer(null)}>
 					<AlertDialogContent>
 						<AlertDialogHeader>
-							<AlertDialogTitle>Delete Customer</AlertDialogTitle>
+							<AlertDialogTitle>{i18n.t("workspace.governance.customers.deleteTitle")}</AlertDialogTitle>
 							<AlertDialogDescription>
 								Are you sure you want to delete &quot;{confirmDeleteCustomer?.name}&quot;? This will also delete all associated teams and
 								unassign any virtual keys. This action cannot be undone.
 							</AlertDialogDescription>
 						</AlertDialogHeader>
 						<AlertDialogFooter>
-							<AlertDialogCancel data-testid="customer-button-delete-cancel">Cancel</AlertDialogCancel>
+							<AlertDialogCancel data-testid="customer-button-delete-cancel">{i18n.t("common.cancel")}</AlertDialogCancel>
 							<AlertDialogAction
 								data-testid="customer-button-delete-confirm"
 								onClick={() => confirmDeleteCustomer && handleDelete(confirmDeleteCustomer.id)}

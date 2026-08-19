@@ -6,6 +6,7 @@ import { isJson } from "@/lib/utils/validation";
 import { PencilIcon, XIcon } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import MessageRoleSwitcher from "./messageRoleSwitcher";
+import i18n from "@/lib/i18n";
 
 const LazyMarkdown = lazy(() => import("@/components/ui/markdown").then((m) => ({ default: m.Markdown })));
 const Markdown = (props: ComponentProps<typeof LazyMarkdown>) => (
@@ -117,7 +118,7 @@ export function SystemMessageView({
 					{!disabled && (
 						<button
 							type="button"
-							aria-label="Edit message"
+							aria-label={i18n.t("workspace.promptRepository.messages.editMessageAriaLabel")}
 							data-testid="system-msg-edit"
 							onClick={() => setEditMode(true)}
 							className="hover:bg-muted focus:bg-muted rounded-sm p-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 focus:opacity-100"
@@ -128,7 +129,7 @@ export function SystemMessageView({
 					{!disabled && onRemove && (
 						<button
 							type="button"
-							aria-label="Delete message"
+							aria-label={i18n.t("workspace.promptRepository.messages.deleteMessageAriaLabel")}
 							data-testid="system-msg-delete"
 							onClick={onRemove}
 							className="hover:bg-muted focus:bg-muted rounded-sm p-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 focus:opacity-100"
@@ -164,7 +165,7 @@ export function SystemMessageView({
 						highlightPatterns={JINJA_VAR_HIGHLIGHT_PATTERNS}
 					/>
 				) : isEmpty ? (
-					<div className="text-muted-foreground min-h-[20px] text-sm italic">Enter system message...</div>
+					<div className="text-muted-foreground min-h-[20px] text-sm italic">{i18n.t("workspace.promptRepository.messages.enterSystemMessage")}</div>
 				) : contentIsJson ? (
 					<CodeEditor
 						wrap

@@ -11,6 +11,7 @@ import { Download, Loader2, RefreshCw, X } from "lucide-react";
 import { toast } from "sonner";
 import { composeFrontmatter } from "../components/helpers";
 import { SkillHeader, SkillReadOnlyContent } from "../components/shared";
+import i18n from "@/lib/i18n";
 
 // ---------- VersionDetailDialog ----------
 
@@ -88,7 +89,7 @@ export function VersionDetailDialog({
 			>
 				<div className="flex items-center justify-between border-b pr-2 pl-6">
 					<DialogHeader className="p-0">
-						<DialogTitle>Version {version}</DialogTitle>
+						<DialogTitle>{i18n.t("supplemental.version")} {version}</DialogTitle>
 					</DialogHeader>
 					<div className="flex items-center gap-1.5">
 						{downloadUrl && (
@@ -98,18 +99,18 @@ export function VersionDetailDialog({
 								className="h-8 w-8"
 								asChild
 								data-testid="skill-version-download-zip"
-								aria-label="Download ZIP"
+								aria-label={i18n.t("supplemental.downloadZip")}
 							>
 								<a href={downloadUrl} download>
 									<Download className="h-4 w-4" />
-									<span className="sr-only">Download ZIP</span>
+									<span className="sr-only">{i18n.t("supplemental.downloadZip")}</span>
 								</a>
 							</Button>
 						)}
 						<DialogClose asChild>
-							<Button variant="ghost" size="icon" className="h-8 w-8" data-testid="skill-version-dialog-close" aria-label="Close">
+							<Button variant="ghost" size="icon" className="h-8 w-8" data-testid="skill-version-dialog-close" aria-label={i18n.t("common.close")}>
 								<X className="h-4 w-4" />
-								<span className="sr-only">Close</span>
+								<span className="sr-only">{i18n.t("common.close")}</span>
 							</Button>
 						</DialogClose>
 					</div>
@@ -138,7 +139,7 @@ export function VersionDetailDialog({
 													variant="secondary"
 													className="bg-emerald-100 text-xs text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
 												>
-													Serving
+													{i18n.t("supplemental.serving")}
 												</Badge>
 											)}
 										</>
@@ -154,7 +155,7 @@ export function VersionDetailDialog({
 												) : (
 													<>
 														<RefreshCw className="h-3.5 w-3.5" />
-														Shift to this version
+														{i18n.t("supplemental.shiftVersion")}
 													</>
 												)}
 											</Button>
@@ -175,9 +176,9 @@ export function VersionDetailDialog({
 							</div>
 						</>
 					) : isError ? (
-						<p className="text-muted-foreground flex flex-1 items-center justify-center text-sm">Failed to load version</p>
+						<p className="text-muted-foreground flex flex-1 items-center justify-center text-sm">{i18n.t("supplemental.failedLoadVersion")}</p>
 					) : (
-						<p className="text-muted-foreground flex flex-1 items-center justify-center text-sm">Version data not found</p>
+						<p className="text-muted-foreground flex flex-1 items-center justify-center text-sm">{i18n.t("supplemental.versionNotFound")}</p>
 					)}
 				</div>
 			</DialogContent>

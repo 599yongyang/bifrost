@@ -4,6 +4,7 @@ import { buildCursorConfig, buildCursorDeeplink } from "../commandBuilders";
 import { HarnessCommandSection } from "../harnessCommandSection";
 import type { CursorConfigScope, HarnessInstallProps } from "../types";
 import { getRegistrationLabel, getUserHomePrefix } from "../utils";
+import i18n from "@/lib/i18n";
 
 export function CursorHarnessInstall({
 	canGenerateCommand,
@@ -46,7 +47,7 @@ export function CursorHarnessInstall({
 						<SelectValue />
 					</SelectTrigger>
 					<SelectContent>
-						<SelectItem value="global">Global</SelectItem>
+						<SelectItem value="global">{i18n.t("workspace.customPricing.overrideSheet.global")}</SelectItem>
 						<SelectItem value="project">Project</SelectItem>
 					</SelectContent>
 				</Select>

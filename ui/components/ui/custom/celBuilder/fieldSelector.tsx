@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useCallback, useMemo } from "react";
 import { FieldSelectorProps, RuleGroupType, RuleType } from "react-querybuilder";
+import i18n from "@/lib/i18n";
 
 /**
  * Recursively find and update a rule's value by path in the query tree.
@@ -72,7 +73,7 @@ export function FieldSelector({ value, handleOnChange, options, rule, path, sche
 		<div className="flex items-center gap-2">
 			<Select value={value || ""} onValueChange={handleOnChange}>
 				<SelectTrigger className="w-[180px]" data-testid="cel-builder-field-selector-select">
-					<SelectValue placeholder="Select field..." />
+					<SelectValue placeholder={i18n.t("supplemental.selectField")} />
 				</SelectTrigger>
 				<SelectContent>
 					{options.map((option) => {

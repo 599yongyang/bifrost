@@ -449,7 +449,7 @@ export function RoutingTreeView() {
 							data-testid="routing-tree-reset-layout-btn"
 						>
 							<RotateCcw className="h-3.5 w-3.5" />
-							Reset layout
+							{i18n.t("workspace.routingRules.resetLayout")}
 						</Button>
 					</div>
 					{/* Scope + edge legend — floats below */}
@@ -481,7 +481,7 @@ export function RoutingTreeView() {
 								/>
 								<polygon points="20,6 14,2.5 14,9.5" fill="var(--muted-foreground)" />
 							</svg>
-							<span className="text-muted-foreground text-[10px] font-medium">Static chain</span>
+							<span className="text-muted-foreground text-[10px] font-medium">{i18n.t("workspace.routingRules.staticChain")}</span>
 							<Tooltip>
 								<TooltipTrigger asChild>
 									<Info
@@ -516,7 +516,7 @@ export function RoutingTreeView() {
 									strokeLinejoin="round"
 								/>
 							</svg>
-							<span className="text-muted-foreground text-[10px] font-medium">Dynamic chain</span>
+							<span className="text-muted-foreground text-[10px] font-medium">{i18n.t("workspace.routingRules.dynamicChain")}</span>
 							<Tooltip>
 								<TooltipTrigger asChild>
 									<Info

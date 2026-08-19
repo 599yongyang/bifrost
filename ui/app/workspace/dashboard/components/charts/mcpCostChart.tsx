@@ -5,6 +5,7 @@ import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Too
 import { CHART_COLORS, formatCost, formatFullTimestamp, formatTimestamp } from "../../utils/chartUtils";
 import { ChartErrorBoundary } from "./chartErrorBoundary";
 import type { ChartType } from "./chartTypeToggle";
+import i18n from "@/lib/i18n";
 
 interface MCPCostChartProps {
 	data: MCPCostHistogramResponse | null;
@@ -26,7 +27,7 @@ function CustomTooltip({ active, payload }: any) {
 				<div className="flex items-center justify-between gap-4">
 					<span className="flex items-center gap-1.5">
 						<span className="h-2 w-2 rounded-full" style={{ backgroundColor: CHART_COLORS.cost }} />
-						<span className="text-zinc-600 dark:text-zinc-400">Cost</span>
+						<span className="text-zinc-600 dark:text-zinc-400">{i18n.t("workspace.logs.colCost")}</span>
 					</span>
 					<span className="font-medium">{formatCost(data.total_cost)}</span>
 				</div>

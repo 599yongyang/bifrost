@@ -20,6 +20,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiKeySelectorView } from "../components/apiKeySelectorView";
 import { VariablesTableView } from "../components/variablesTableView";
 import { usePromptContext } from "../context";
+import i18n from "@/lib/i18n";
 
 const VIRTUAL_KEY_PAGE_SIZE = 20;
 
@@ -201,7 +202,7 @@ export function SettingsPanel() {
 							data-testid="prompts-configuration-trigger"
 							className="text-muted-foreground shrink-0 py-3 pr-1 text-xs font-medium uppercase hover:no-underline"
 						>
-							<span className="min-w-0 flex-1 text-left font-semibold">Configuration</span>
+							<span className="min-w-0 flex-1 text-left font-semibold">{i18n.t("workspace.observability.maximForm.configuration")}</span>
 						</AccordionTrigger>
 						<AccordionContent
 							containerClassName="data-[state=open]:flex data-[state=open]:min-h-0 data-[state=open]:flex-1 data-[state=open]:flex-col"
@@ -209,18 +210,18 @@ export function SettingsPanel() {
 						>
 							<div className="space-y-6">
 								<div className="flex flex-col gap-2" data-testid="settings-provider">
-									<Label className="text-muted-foreground text-xs font-medium uppercase">Provider</Label>
+									<Label className="text-muted-foreground text-xs font-medium uppercase">{i18n.t("workspace.logs.colProvider")}</Label>
 									<ComboboxSelect
 										options={providerOptions}
 										value={provider}
 										onValueChange={(v) => v && onProviderChange(v)}
-										placeholder="Select provider"
+										placeholder={i18n.t("workspace.config.caching.selectProvider")}
 										hideClear
 									/>
 								</div>
 
 								<div className="flex flex-col gap-2" data-testid="settings-model">
-									<Label className="text-muted-foreground text-xs font-medium uppercase">Model</Label>
+									<Label className="text-muted-foreground text-xs font-medium uppercase">{i18n.t("workspace.logs.colModel")}</Label>
 									<ModelMultiselect
 										provider={provider}
 										keys={filterKeys && filterKeys.length > 0 ? filterKeys : undefined}
@@ -258,9 +259,9 @@ export function SettingsPanel() {
 									<>
 										<Separator />
 										<div className="flex flex-col gap-2" data-testid="settings-required-headers">
-											<Label className="text-muted-foreground text-xs font-medium uppercase">Required Headers</Label>
+											<Label className="text-muted-foreground text-xs font-medium uppercase">{i18n.t("workspace.config.security.requiredHeaders")}</Label>
 											<p className="text-muted-foreground text-xs">
-												These headers are required by the server. Provide a value for each to send requests from the playground.
+												{i18n.t("supplemental.requiredHeadersDescription")}
 											</p>
 											<div className="flex flex-col gap-2">
 												{requiredHeaders.map((name) => (
@@ -272,7 +273,7 @@ export function SettingsPanel() {
 															id={`required-header-${name}`}
 															value={customHeaders[name] ?? ""}
 															onChange={(e) => setCustomHeaders((prev) => ({ ...prev, [name]: e.target.value }))}
-															placeholder="value"
+															placeholder={i18n.t("workspace.promptRepository.variables.valuePlaceholder")}
 															className="h-8 flex-1"
 														/>
 													</div>

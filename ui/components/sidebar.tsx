@@ -85,6 +85,7 @@ import { LanguageSwitcher } from "./languageSwitcher";
 import { ThemeToggle } from "./themeToggle";
 import { Badge } from "./ui/badge";
 import { PromoCardStack } from "./ui/promoCardStack";
+import i18n from "@/lib/i18n";
 
 // Cookie name for dismissing production setup card
 const PRODUCTION_SETUP_DISMISSED_COOKIE = "bifrost_production_setup_dismissed";
@@ -146,7 +147,7 @@ const productionSetupHelpCard = {
 	title: "Need help with production setup?",
 	description: (
 		<>
-			We offer help with production setup including custom integrations and dedicated support.
+			{i18n.t("sidebar.productionSetup.description")}
 			<br />
 			<br />
 			Book a demo with our team{" "}
@@ -1417,7 +1418,7 @@ export default function AppSidebar() {
 							data-testid="onboarding-resume-btn"
 							className="text-primary mt-auto self-start pb-1 font-medium underline"
 						>
-							Resume setup
+							{i18n.t("supplemental.resumeSetup")}
 						</button>
 					</div>
 				),
@@ -1438,7 +1439,7 @@ export default function AppSidebar() {
 							rel="noopener noreferrer"
 							className="text-primary mt-auto pb-1 font-medium underline"
 						>
-							View release notes
+							{i18n.t("common.viewReleaseNotes")}
 						</a>
 					</div>
 				),
@@ -1691,7 +1692,7 @@ export default function AppSidebar() {
 									type="button"
 									data-testid="sidebar-expand-btn"
 									className="text-muted-foreground hover:text-foreground hover:bg-sidebar-accent flex cursor-pointer items-center justify-center rounded-md transition-colors"
-									aria-label="Expand sidebar"
+									aria-label={i18n.t("supplemental.expandSidebar")}
 								>
 									<PanelLeftOpen className="h-4 w-4" />
 								</button>

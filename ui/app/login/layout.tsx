@@ -5,6 +5,7 @@ import { getApiBaseUrl } from "@/lib/utils/port";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { NuqsAdapter } from "nuqs/adapters/tanstack-router";
 import LoginPage from "./page";
+import i18n from "@/lib/i18n";
 
 function RouteComponent() {
 	return (
@@ -30,7 +31,7 @@ function PendingComponent() {
 							<img src="/bifrost-logo.webp" alt="Bifrost" width={160} height={26} />
 						</div>
 						<div className="flex items-center justify-center py-6">
-							<div className="text-muted-foreground text-sm">Checking authentication...</div>
+							<div className="text-muted-foreground text-sm">{i18n.t("login.checkingAuth")}</div>
 						</div>
 					</div>
 				</div>

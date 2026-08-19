@@ -35,6 +35,7 @@ import { WebhookDetailsSheet } from "./webhookDetailsSheet";
 import { WebhookSheet } from "./webhookSheet";
 import { WebhooksEmptyState } from "./webhooksEmptyState";
 import WebhooksFilterBar from "./webhooksFilterBar";
+import i18n from "@/lib/i18n";
 
 const POLLING_INTERVAL = 5000;
 const PAGE_SIZE = 25;
@@ -90,7 +91,7 @@ function WebhookActionsMenu({
 					variant="ghost"
 					size="icon"
 					className="h-8 w-8"
-					aria-label="Webhook actions"
+					aria-label={i18n.t("supplemental.webhookActions")}
 					data-testid={`webhook-actions-btn-${endpoint.name}`}
 				>
 					<MoreHorizontal className="h-4 w-4" />
@@ -114,7 +115,7 @@ function WebhookActionsMenu({
 							onEdit(endpoint);
 						}}
 					>
-						<PencilIcon className="h-4 w-4" /> Edit
+						<PencilIcon className="h-4 w-4" /> {i18n.t("common.edit")}
 					</DropdownMenuItem>
 				)}
 				{hasUpdateAccess && (
@@ -127,7 +128,7 @@ function WebhookActionsMenu({
 							onRotate(endpoint);
 						}}
 					>
-						<RotateCcw className="h-4 w-4" /> Rotate secret
+						<RotateCcw className="h-4 w-4" /> {i18n.t("supplemental.rotateSecret")}
 					</DropdownMenuItem>
 				)}
 				{hasDeleteAccess && (
@@ -141,7 +142,7 @@ function WebhookActionsMenu({
 							onDelete(endpoint);
 						}}
 					>
-						<Trash2 className="h-4 w-4" /> Delete
+						<Trash2 className="h-4 w-4" /> {i18n.t("common.delete")}
 					</DropdownMenuItem>
 				)}
 			</DropdownMenuContent>
@@ -276,7 +277,7 @@ export default function WebhooksView() {
 		if (!deleteTarget) return;
 		try {
 			await deleteWebhookEndpoint(deleteTarget.id).unwrap();
-			toast.success("Webhook endpoint deleted successfully");
+			toast.success(i18n.t("supplemental.webhookDeleted"));
 			if (detailsEndpoint?.id === deleteTarget.id) setDetailsEndpoint(null);
 		} catch (err) {
 			toast.error(getErrorMessage(err));
@@ -289,7 +290,7 @@ export default function WebhooksView() {
 		if (!rotateTarget) return;
 		try {
 			const response = await rotateWebhookEndpointSecret(rotateTarget.id).unwrap();
-			toast.success("Signing secret rotated successfully");
+			toast.success(i18n.t("supplemental.signingSecretRotated"));
 			setSecretReveal({ endpointName: response.endpoint.name, secret: response.secret });
 		} catch (err) {
 			toast.error(getErrorMessage(err));
@@ -309,10 +310,10 @@ export default function WebhooksView() {
 	if (isError && !data) {
 		return (
 			<div className="flex flex-col items-center justify-center gap-3 py-16 text-center" data-testid="webhooks-load-error">
-				<p className="text-sm font-medium">Failed to load webhook endpoints.</p>
+				<p className="text-sm font-medium">{i18n.t("supplemental.loadWebhooksFailed")}</p>
 				<p className="text-muted-foreground max-w-md text-sm">{getErrorMessage(error)}</p>
 				<Button variant="outline" size="sm" onClick={() => void refetch()}>
-					Retry
+					{i18n.t("workspace.oauth.retry")}
 				</Button>
 			</div>
 		);
@@ -326,7 +327,7 @@ export default function WebhooksView() {
 				<>
 					<div className="flex items-center justify-between">
 						<div>
-							<h2 className="text-lg font-semibold tracking-tight">Webhooks</h2>
+							<h2 className="text-lg font-semibold tracking-tight">{i18n.t("sidebar.nav.webhooks")}</h2>
 							<p className="text-muted-foreground text-sm">
 								Register endpoints to receive signed notifications when async inference jobs complete or fail. Pass the endpoint's name in
 								the <code>x-bf-async-webhook</code> header when submitting a job.
@@ -334,7 +335,7 @@ export default function WebhooksView() {
 						</div>
 						<Button onClick={handleAdd} disabled={!hasCreateAccess} data-testid="create-webhook-btn">
 							<Plus className="h-4 w-4" />
-							Add Endpoint
+							{i18n.t("supplemental.addEndpoint")}
 						</Button>
 					</div>
 
@@ -353,7 +354,7 @@ export default function WebhooksView() {
 						<Table data-testid="webhooks-table">
 							<TableHeader className="bg-muted sticky top-0 z-10">
 								<TableRow>
-									<TableHead>Name</TableHead>
+									<TableHead>{i18n.t("workspace.mcp.name")}</TableHead>
 									<TableHead>URL</TableHead>
 									<TableHead>Events</TableHead>
 									<TableHead>Enabled</TableHead>
@@ -364,7 +365,7 @@ export default function WebhooksView() {
 								{endpoints.length === 0 ? (
 									<TableRow>
 										<TableCell colSpan={5} className="text-muted-foreground h-24 text-center">
-											No matching webhook endpoints found.
+											{i18n.t("supplemental.noMatchingWebhooks")}
 										</TableCell>
 									</TableRow>
 								) : (
@@ -420,7 +421,7 @@ export default function WebhooksView() {
 						<div className="flex shrink-0 items-center justify-between text-xs" data-testid="pagination">
 							<div className="text-muted-foreground flex items-center gap-2">
 								{(offset + 1).toLocaleString()}-{Math.min(offset + PAGE_SIZE, totalCount).toLocaleString()} of {totalCount.toLocaleString()}{" "}
-								entries
+								{i18n.t("workspace.virtualKeys.entries")}
 							</div>
 							<div className="flex items-center gap-2">
 								<Button
@@ -429,7 +430,7 @@ export default function WebhooksView() {
 									onClick={() => setUrlState({ offset: Math.max(0, offset - PAGE_SIZE) || null })}
 									disabled={offset === 0}
 									data-testid="webhooks-pagination-prev-btn"
-									aria-label="Previous page"
+									aria-label={i18n.t("supplemental.previousPage")}
 								>
 									<ChevronLeft className="size-3" />
 								</Button>
@@ -444,7 +445,7 @@ export default function WebhooksView() {
 									onClick={() => setUrlState({ offset: offset + PAGE_SIZE })}
 									disabled={offset + PAGE_SIZE >= totalCount}
 									data-testid="webhooks-pagination-next-btn"
-									aria-label="Next page"
+									aria-label={i18n.t("supplemental.nextPage")}
 								>
 									<ChevronRight className="size-3" />
 								</Button>
@@ -477,21 +478,21 @@ export default function WebhooksView() {
 			<AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
 				<AlertDialogContent>
 					<AlertDialogHeader>
-						<AlertDialogTitle>Delete webhook endpoint</AlertDialogTitle>
+						<AlertDialogTitle>{i18n.t("supplemental.deleteWebhook")}</AlertDialogTitle>
 						<AlertDialogDescription>
 							Are you sure you want to delete <b>{deleteTarget?.name}</b>? Pending deliveries to it will be dropped and jobs referencing it
 							will be rejected. This action cannot be undone.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>
-						<AlertDialogCancel data-testid="webhook-delete-cancel-btn">Cancel</AlertDialogCancel>
+						<AlertDialogCancel data-testid="webhook-delete-cancel-btn">{i18n.t("common.cancel")}</AlertDialogCancel>
 						<AlertDialogAction
 							className="bg-destructive hover:bg-destructive/90"
 							onClick={() => void handleDelete()}
 							disabled={isDeleting}
 							data-testid="webhook-delete-confirm-btn"
 						>
-							Delete
+							{i18n.t("common.delete")}
 						</AlertDialogAction>
 					</AlertDialogFooter>
 				</AlertDialogContent>
@@ -500,16 +501,16 @@ export default function WebhooksView() {
 			<AlertDialog open={!!rotateTarget} onOpenChange={(open) => !open && setRotateTarget(null)}>
 				<AlertDialogContent>
 					<AlertDialogHeader>
-						<AlertDialogTitle>Rotate signing secret</AlertDialogTitle>
+						<AlertDialogTitle>{i18n.t("supplemental.rotateSigningSecret")}</AlertDialogTitle>
 						<AlertDialogDescription>
 							The current secret for <b>{rotateTarget?.name}</b> stops working immediately and deliveries are signed with the new one from
 							now on. Update your receiver right after rotating.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>
-						<AlertDialogCancel data-testid="webhook-rotate-cancel-btn">Cancel</AlertDialogCancel>
+						<AlertDialogCancel data-testid="webhook-rotate-cancel-btn">{i18n.t("common.cancel")}</AlertDialogCancel>
 						<AlertDialogAction onClick={() => void handleRotate()} disabled={isRotating} data-testid="webhook-rotate-confirm-btn">
-							Rotate
+							{i18n.t("supplemental.rotate")}
 						</AlertDialogAction>
 					</AlertDialogFooter>
 				</AlertDialogContent>

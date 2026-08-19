@@ -14,6 +14,7 @@ import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import { WebhookSecretReveal } from "../dialogs/webhookSecretDialog";
+import i18n from "@/lib/i18n";
 
 const webhookFormSchema = z
 	.object({
@@ -178,11 +179,11 @@ export function WebhookSheet({ open, endpoint, onClose, onSecret }: WebhookSheet
 		try {
 			if (isEditing) {
 				await updateWebhookEndpoint({ id: endpoint.id, data: request }).unwrap();
-				toast.success("Webhook endpoint updated successfully");
+				toast.success(i18n.t("supplemental.webhookUpdated"));
 				onClose();
 			} else {
 				const response = await createWebhookEndpoint(request).unwrap();
-				toast.success("Webhook endpoint created successfully");
+				toast.success(i18n.t("supplemental.webhookCreated"));
 				onClose();
 				onSecret({ endpointName: response.endpoint.name, secret: response.secret });
 			}
@@ -206,7 +207,7 @@ export function WebhookSheet({ open, endpoint, onClose, onSecret }: WebhookSheet
 				<form onSubmit={handleSubmit(onSubmit)} className="flex min-h-0 flex-1 flex-col">
 					<div className="flex-1 space-y-4 overflow-y-auto px-8">
 						<div className="space-y-2">
-							<Label htmlFor="webhook-name">Name</Label>
+							<Label htmlFor="webhook-name">{i18n.t("workspace.mcp.name")}</Label>
 							<Input
 								id="webhook-name"
 								placeholder="e.g., billing-service"
@@ -253,7 +254,7 @@ export function WebhookSheet({ open, endpoint, onClose, onSecret }: WebhookSheet
 						<div className="flex items-center justify-between gap-4 rounded-md border px-3 py-2">
 							<div className="space-y-0.5">
 								<Label htmlFor="webhook-include-response" className="text-sm font-normal">
-									Include response payload
+									{i18n.t("supplemental.includeResponsePayload")}
 								</Label>
 								<p className="text-muted-foreground text-xs">
 									Inline the job's result in the notification. Oversized or already-expired results are delivered as a thin payload instead.
@@ -270,10 +271,10 @@ export function WebhookSheet({ open, endpoint, onClose, onSecret }: WebhookSheet
 						<div className="flex items-center justify-between gap-4 rounded-md border px-3 py-2">
 							<div className="space-y-0.5">
 								<Label htmlFor="webhook-private-network" className="text-sm font-normal">
-									Allow private network
+									{i18n.t("supplemental.allowPrivateNetwork")}
 								</Label>
 								<p className="text-muted-foreground text-xs">
-									Permit deliveries to private IP ranges. Only enable this for receivers inside your own network.
+									{i18n.t("supplemental.allowPrivateNetworkHelp")}
 								</p>
 							</div>
 							<Switch
@@ -305,7 +306,7 @@ export function WebhookSheet({ open, endpoint, onClose, onSecret }: WebhookSheet
 
 						<div className="space-y-4">
 							<h3 className="text-sm leading-none font-medium" data-testid="webhook-tuning-heading">
-								Delivery Tuning
+								{i18n.t("supplemental.deliveryTuning")}
 							</h3>
 							{TUNING_FIELDS.map((field) => {
 								const fieldValue = watch(field.key);
@@ -317,7 +318,7 @@ export function WebhookSheet({ open, endpoint, onClose, onSecret }: WebhookSheet
 												{field.label}
 											</Label>
 											<p className="text-muted-foreground text-xs">{field.description}</p>
-											{isUsingDefault && <p className="text-muted-foreground text-xs">Using delivery worker default</p>}
+											{isUsingDefault && <p className="text-muted-foreground text-xs">{i18n.t("supplemental.workerDefault")}</p>}
 										</div>
 										<Input
 											id={`webhook-${field.key}`}
@@ -346,7 +347,7 @@ export function WebhookSheet({ open, endpoint, onClose, onSecret }: WebhookSheet
 					<div className="dark:bg-card border-border border-t bg-white px-8 py-4">
 						<div className="flex justify-end gap-2">
 							<Button type="button" variant="outline" onClick={onClose} disabled={isSaving} data-testid="webhook-cancel-btn">
-								Cancel
+								{i18n.t("common.cancel")}
 							</Button>
 							<Button type="submit" disabled={isSaving || !hasChanges} data-testid="webhook-save-btn">
 								{isSaving ? "Saving..." : isEditing ? "Update Endpoint" : "Create Endpoint"}

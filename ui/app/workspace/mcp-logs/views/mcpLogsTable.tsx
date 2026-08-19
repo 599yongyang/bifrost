@@ -15,6 +15,7 @@ import type { ColumnOrderState, ColumnPinningState, VisibilityState } from "@tan
 import { ColumnDef, flexRender, getCoreRowModel, SortingState, useReactTable } from "@tanstack/react-table";
 import { ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
+import i18n from "@/lib/i18n";
 
 interface DataTableProps {
 	columns: ColumnDef<MCPToolLogEntry>[];
@@ -165,12 +166,12 @@ export function MCPLogsDataTable({
 										{polling ? (
 											<>
 												<RefreshCw className="h-4 w-4 animate-spin" />
-												Waiting for new MCP logs...
+												{i18n.t("supplemental.waitingMcpLogs")}
 											</>
 										) : (
 											<Button variant="ghost" size="sm" onClick={onRefresh} disabled={loading} data-testid="mcp-logs-table-refresh-btn">
 												<RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-												Refresh
+												{i18n.t("workspace.mcpLogs.refresh")}
 											</Button>
 										)}
 									</div>
@@ -204,7 +205,7 @@ export function MCPLogsDataTable({
 							) : loading ? null : (
 								<TableRow>
 									<TableCell colSpan={columns.length} className="h-24 text-center">
-										No results found. Try adjusting your filters and/or time range.
+										{i18n.t("supplemental.noFilterResults")}
 									</TableCell>
 								</TableRow>
 							)}
@@ -214,7 +215,7 @@ export function MCPLogsDataTable({
 				{/* Pagination Footer */}
 				<div className="flex items-center justify-between text-xs" data-testid="pagination">
 					<div className="text-muted-foreground flex items-center gap-2">
-						{startItemDisplay.toLocaleString()}-{endItemDisplay.toLocaleString()} of {totalItems.toLocaleString()} entries
+						{startItemDisplay.toLocaleString()}-{endItemDisplay.toLocaleString()} of {totalItems.toLocaleString()} {i18n.t("workspace.virtualKeys.entries")}
 					</div>
 
 					<div className="flex items-center gap-2">
@@ -224,15 +225,15 @@ export function MCPLogsDataTable({
 							onClick={() => goToPage(currentPage - 1)}
 							disabled={currentPage <= 1}
 							data-testid="prev-page"
-							aria-label="Previous page"
+							aria-label={i18n.t("supplemental.previousPage")}
 						>
 							<ChevronLeft className="size-3" />
 						</Button>
 
 						<div className="flex items-center gap-1">
-							<span>Page</span>
+							<span>{i18n.t("supplemental.page")}</span>
 							<span>{currentPage}</span>
-							<span>of {totalPages}</span>
+							<span>{i18n.t("supplemental.of")} {totalPages}</span>
 						</div>
 
 						<Button
@@ -241,7 +242,7 @@ export function MCPLogsDataTable({
 							onClick={() => goToPage(currentPage + 1)}
 							disabled={totalPages === 0 || currentPage >= totalPages}
 							data-testid="next-page"
-							aria-label="Next page"
+							aria-label={i18n.t("supplemental.nextPage")}
 						>
 							<ChevronRight className="size-3" />
 						</Button>

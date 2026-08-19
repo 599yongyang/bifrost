@@ -13,6 +13,7 @@ import {
 import type { OAuth2GrantRow } from "@/lib/store/apis/oauth2SessionsApi";
 import { Link } from "@tanstack/react-router";
 import { ExternalLink, Loader2, MoreHorizontal, Trash2 } from "lucide-react";
+import i18n from "@/lib/i18n";
 
 interface GrantActionsProps {
 	row: OAuth2GrantRow;
@@ -32,7 +33,7 @@ export default function GrantActions({ row, revoking, isPendingRow, onRevoke }: 
 	return (
 		<DropdownMenu>
 			<DropdownMenuTrigger asChild>
-				<Button data-testid="oauth-grants-actions-trigger" variant="ghost" size="icon" className="h-8 w-8" aria-label="Grant actions" disabled={busy}>
+				<Button data-testid="oauth-grants-actions-trigger" variant="ghost" size="icon" className="h-8 w-8" aria-label={i18n.t("supplemental.grantActions")} disabled={busy}>
 					{busy && isPendingRow ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreHorizontal className="h-4 w-4" />}
 				</Button>
 			</DropdownMenuTrigger>
@@ -41,7 +42,7 @@ export default function GrantActions({ row, revoking, isPendingRow, onRevoke }: 
 					<DropdownMenuItem asChild className="cursor-pointer">
 						<Link to={authSessionsUrl} data-testid="oauth-grants-view-sessions-link">
 							<ExternalLink className="h-4 w-4" />
-							View auth sessions
+							{i18n.t("supplemental.viewAuthSessions")}
 						</Link>
 					</DropdownMenuItem>
 				)}
@@ -53,7 +54,7 @@ export default function GrantActions({ row, revoking, isPendingRow, onRevoke }: 
 					onSelect={(e) => { e.preventDefault(); onRevoke(); }}
 				>
 					<Trash2 className="h-4 w-4" />
-					Revoke
+					{i18n.t("supplemental.revoke")}
 				</DropdownMenuItem>
 			</DropdownMenuContent>
 		</DropdownMenu>

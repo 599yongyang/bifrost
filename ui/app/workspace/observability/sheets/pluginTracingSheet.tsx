@@ -7,6 +7,7 @@ import { getErrorMessage, useGetLoadedPluginsQuery, useGetPluginQuery, useUpdate
 import { PluginSpanFilter } from "@/lib/types/config";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import i18n from "@/lib/i18n";
 
 interface PluginTracingSheetProps {
 	open: boolean;
@@ -127,7 +128,7 @@ export default function PluginTracingSheet({ open, onClose, pluginName, destinat
 					<div className="flex flex-col gap-4">
 						<div>
 							<div className="mb-2 flex items-center justify-between">
-								<p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">Plugins</p>
+								<p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">{i18n.t("sidebar.nav.plugins")}</p>
 								<TriStateCheckbox
 									allIds={allPlugins}
 									selectedIds={allPlugins.filter((n) => toggles[n] ?? true)}
@@ -163,7 +164,7 @@ export default function PluginTracingSheet({ open, onClose, pluginName, destinat
 					</Alert>
 					<div className="flex justify-end gap-2 pt-2">
 						<Button type="button" variant="outline" onClick={onClose} disabled={isLoading} data-testid="plugin-tracing-cancel-button">
-							Cancel
+							{i18n.t("common.cancel")}
 						</Button>
 						<Button
 							onClick={handleSave}
@@ -172,7 +173,7 @@ export default function PluginTracingSheet({ open, onClose, pluginName, destinat
 							data-testid="plugin-tracing-save-button"
 							type="button"
 						>
-							Save
+							{i18n.t("common.save")}
 						</Button>
 					</div>
 				</div>

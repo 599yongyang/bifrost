@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import type { DBKey, VirtualKey } from "@/lib/types/governance";
 import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import i18n from "@/lib/i18n";
 
 export function ApiKeySelectorView({
 	providerKeys,
@@ -106,7 +107,7 @@ export function ApiKeySelectorView({
 					<ComboboxList>
 						{apiKeyOptions.length > 0 && (
 							<ComboboxGroup>
-								<ComboboxLabel>API Keys</ComboboxLabel>
+								<ComboboxLabel>{i18n.t("sidebar.sub.apiKeys")}</ComboboxLabel>
 								{apiKeyOptions.map((o) => (
 									<ComboboxItem key={o.value} value={o.value}>
 										{o.label}
@@ -117,7 +118,7 @@ export function ApiKeySelectorView({
 						{apiKeyOptions.length > 0 && virtualKeyOptions.length > 0 && <ComboboxSeparator />}
 						{virtualKeyOptions.length > 0 && (
 							<ComboboxGroup>
-								<ComboboxLabel>Virtual Keys</ComboboxLabel>
+								<ComboboxLabel>{i18n.t("sidebar.sub.virtualKeys")}</ComboboxLabel>
 								{virtualKeyOptions.map((o) => (
 									<ComboboxItem key={o.value} value={o.value}>
 										{o.label}
@@ -128,10 +129,10 @@ export function ApiKeySelectorView({
 						{isSearching && !hasResults && (
 							<div className="text-muted-foreground flex items-center justify-center gap-2 py-6 text-sm">
 								<Loader2 className="size-4 animate-spin" />
-								Searching...
+								{i18n.t("supplemental.searching")}
 							</div>
 						)}
-						{!isSearching && !hasResults && <div className="text-muted-foreground py-6 text-center text-sm">No results found.</div>}
+						{!isSearching && !hasResults && <div className="text-muted-foreground py-6 text-center text-sm">{i18n.t("workspace.promptRepository.apiKeySelector.noResults")}</div>}
 					</ComboboxList>
 				</ComboboxContent>
 			</Combobox>

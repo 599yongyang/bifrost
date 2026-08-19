@@ -5,6 +5,7 @@ import type { LogFilters as LogFiltersType } from "@/lib/types/logs";
 import { formatCompactNumber } from "@/lib/utils/numbers";
 import { Check, Info } from "lucide-react";
 import { useCallback, useState } from "react";
+import i18n from "@/lib/i18n";
 
 export type RecalculateCostMode = "missing" | "all";
 
@@ -50,7 +51,7 @@ export function RecalculateCostDialog({ open, onOpenChange, filters, totalLogs, 
 				}}
 			>
 				<DialogHeader className="pb-2">
-					<DialogTitle>Recalculate costs</DialogTitle>
+					<DialogTitle>{i18n.t("supplemental.recalculateCosts")}</DialogTitle>
 					<DialogDescription>
 						The current time window and filters will be applied. Choose which logs to recompute cost for.
 					</DialogDescription>
@@ -60,13 +61,13 @@ export function RecalculateCostDialog({ open, onOpenChange, filters, totalLogs, 
 					<RecalculateModeOption
 						selected={mode === "missing"}
 						onSelect={() => selectMode("missing")}
-						title="Missing cost only"
+						title={i18n.t("supplemental.missingCostOnly")}
 						description="Only recompute logs that don't have a cost yet."
 					/>
 					<RecalculateModeOption
 						selected={mode === "all"}
 						onSelect={() => selectMode("all")}
-						title="All selected logs"
+						title={i18n.t("supplemental.allSelectedLogs")}
 						description="Recompute cost for every log matching the current filters."
 					/>
 				</div>
@@ -98,10 +99,10 @@ export function RecalculateCostDialog({ open, onOpenChange, filters, totalLogs, 
 
 				<DialogFooter className="pt-0">
 					<Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
-						Cancel
+						{i18n.t("common.cancel")}
 					</Button>
 					<Button size="sm" onClick={() => onConfirm(mode)} disabled={confirmDisabled}>
-						Recalculate
+						{i18n.t("supplemental.recalculate")}
 					</Button>
 				</DialogFooter>
 			</DialogContent>

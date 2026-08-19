@@ -7,6 +7,7 @@ import { Link2 } from "lucide-react";
 import { useState } from "react";
 import { RULE_W, SCOPE_CONFIG, type ScopeKey } from "../constants";
 import { RFEdgeHandle } from "./rfEdgeHandle";
+import i18n from "@/lib/i18n";
 
 export function RFRuleNode({ data }: { data: any }) {
 	const rule = data.rule as RoutingRule;
@@ -51,7 +52,7 @@ export function RFRuleNode({ data }: { data: any }) {
 						{rule.chain_rule && <Link2 className="h-3 w-3" style={{ color: scopeColor }} />}
 						{!rule.enabled && (
 							<Badge variant="secondary" className="px-1 py-0 text-[9px]">
-								Off
+								{i18n.t("workspace.routingRules.off")}
 							</Badge>
 						)}
 					</div>
@@ -60,7 +61,7 @@ export function RFRuleNode({ data }: { data: any }) {
 				{/* rule name */}
 				<div className="px-3 py-2">
 					<p className="text-foreground truncate text-xs font-semibold">{rule.name}</p>
-					{rule.priority > 0 && <p className="text-muted-foreground mt-0.5 text-[10px]">Priority {rule.priority}</p>}
+					{rule.priority > 0 && <p className="text-muted-foreground mt-0.5 text-[10px]">{i18n.t("workspace.routingRules.priority")} {rule.priority}</p>}
 				</div>
 
 				{/* targets footer */}
@@ -81,7 +82,7 @@ export function RFRuleNode({ data }: { data: any }) {
 						{rule.targets.length > 4 && <span className="text-muted-foreground text-[9px]">+{rule.targets.length - 4}</span>}
 					</div>
 					<span className="text-muted-foreground ml-auto text-[10px]">
-						{rule.targets.length} target{rule.targets.length !== 1 ? "s" : ""}
+						{rule.targets.length} {i18n.t("workspace.routingRules.targets_one")}{rule.targets.length !== 1 ? "s" : ""}
 					</span>
 				</div>
 

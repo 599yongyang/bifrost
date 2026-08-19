@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 import { buildProviderUpdatePayload } from "../views/utils";
 import { AllowedRequestsFields } from "./allowedRequestsFields";
+import i18n from "@/lib/i18n";
 
 // Type for form data
 type FormCustomProviderConfig = z.infer<typeof formCustomProviderConfigSchema>;
@@ -83,11 +84,11 @@ export function ApiStructureFormFragment({ provider }: Props) {
 		)
 			.unwrap()
 			.then(() => {
-				toast.success("Provider configuration updated successfully");
+				toast.success(i18n.t("workspace.providers.providerConfigUpdated"));
 				form.reset(data);
 			})
 			.catch((err) => {
-				toast.error("Failed to update provider configuration", {
+				toast.error(i18n.t("workspace.providers.providerConfigUpdateFailed"), {
 					description: getErrorMessage(err),
 				});
 			});
@@ -107,11 +108,11 @@ export function ApiStructureFormFragment({ provider }: Props) {
 						name="base_provider_type"
 						render={({ field }) => (
 							<FormItem>
-								<FormLabel>Base Provider Type</FormLabel>
+								<FormLabel>{i18n.t("workspace.providers.baseProviderType")}</FormLabel>
 								<Select onValueChange={field.onChange} value={field.value}>
 									<FormControl>
 										<SelectTrigger disabled={true}>
-											<SelectValue placeholder="Select base provider" />
+											<SelectValue placeholder={i18n.t("workspace.providers.selectBaseProvider")} />
 										</SelectTrigger>
 									</FormControl>
 									<SelectContent>
@@ -123,7 +124,7 @@ export function ApiStructureFormFragment({ provider }: Props) {
 										<SelectItem value="replicate">Replicate</SelectItem>
 									</SelectContent>
 								</Select>
-								<FormDescription>The underlying provider this custom provider will use</FormDescription>
+								<FormDescription>{i18n.t("workspace.providers.underlyingProviderDescription")}</FormDescription>
 								<FormMessage />
 							</FormItem>
 						)}
@@ -137,9 +138,9 @@ export function ApiStructureFormFragment({ provider }: Props) {
 									<div className="flex items-center justify-between space-x-2 rounded-lg border p-3">
 										<div className="space-y-0.5">
 											<label htmlFor="drop-excess-requests" className="text-sm font-medium">
-												Is Keyless?
+												{i18n.t("workspace.providers.isKeyless")}
 											</label>
-											<p className="text-muted-foreground text-sm">Whether the custom provider requires a key</p>
+											<p className="text-muted-foreground text-sm">{i18n.t("workspace.providers.isKeylessDescription")}</p>
 										</div>
 										<Switch
 											id="drop-excess-requests"
@@ -165,13 +166,13 @@ export function ApiStructureFormFragment({ provider }: Props) {
 				{/* Form Actions */}
 				<div className="flex justify-end gap-2 py-2">
 					<Button type="button" variant="outline" onClick={() => form.reset()} disabled={!hasUpdateProviderAccess}>
-						Reset
+						{i18n.t("workspace.plugins.reset")}
 					</Button>
 					<TooltipProvider>
 						<Tooltip>
 							<TooltipTrigger asChild>
 								<Button type="submit" disabled={!form.formState.isDirty || !hasUpdateProviderAccess} isLoading={isUpdatingProvider}>
-									Save API Structure Configuration
+									{i18n.t("workspace.providers.saveApiStructureConfiguration")}
 								</Button>
 							</TooltipTrigger>
 							{!form.formState.isValid && (

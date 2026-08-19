@@ -16,6 +16,7 @@ import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import { AllowedRequestsFields } from "../fragments/allowedRequestsFields";
+import i18n from "@/lib/i18n";
 
 const formSchema = z.object({
 	name: z.string().min(1),
@@ -121,7 +122,7 @@ export function AddCustomProviderSheetContent({ show = true, onClose, onSave }: 
 				form.reset();
 			})
 			.catch((err) => {
-				toast.error("Failed to add provider", {
+				toast.error(i18n.t("workspace.providers.failedToAdd"), {
 					description: getErrorMessage(err),
 				});
 			});
@@ -133,8 +134,8 @@ export function AddCustomProviderSheetContent({ show = true, onClose, onSave }: 
 	return (
 		<>
 			<SheetHeader className="flex shrink-0 flex-col items-start px-8 py-4" headerClassName="mb-0 sticky -top-4 bg-card z-10">
-				<SheetTitle>Add Custom Provider</SheetTitle>
-				<SheetDescription>Enter the details of your custom provider.</SheetDescription>
+				<SheetTitle>{i18n.t("workspace.providers.addCustom.title")}</SheetTitle>
+				<SheetDescription>{i18n.t("workspace.providers.addCustom.description")}</SheetDescription>
 			</SheetHeader>
 			<Form {...form}>
 				<form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col">
@@ -144,10 +145,10 @@ export function AddCustomProviderSheetContent({ show = true, onClose, onSave }: 
 							name="name"
 							render={({ field }) => (
 								<FormItem className="flex flex-col gap-3">
-									<FormLabel className="text-right">Name</FormLabel>
+									<FormLabel className="text-right">{i18n.t("workspace.mcp.name")}</FormLabel>
 									<div className="col-span-3">
 										<FormControl>
-											<Input placeholder="Name" data-testid="custom-provider-name" disabled={!hasProviderCreateAccess} {...field} />
+											<Input placeholder={i18n.t("workspace.mcp.name")} data-testid="custom-provider-name" disabled={!hasProviderCreateAccess} {...field} />
 										</FormControl>
 										<FormMessage />
 									</div>
@@ -159,12 +160,12 @@ export function AddCustomProviderSheetContent({ show = true, onClose, onSave }: 
 							name="baseFormat"
 							render={({ field }) => (
 								<FormItem className="flex flex-col gap-3">
-									<FormLabel>Base Format</FormLabel>
+									<FormLabel>{i18n.t("workspace.providers.addCustom.baseFormat")}</FormLabel>
 									<div>
 										<FormControl>
 											<Select onValueChange={field.onChange} value={field.value} disabled={!hasProviderCreateAccess}>
 												<SelectTrigger className="w-full" data-testid="base-provider-select">
-													<SelectValue placeholder="Select base format" />
+													<SelectValue placeholder={i18n.t("workspace.providers.addCustom.selectBaseFormat")} />
 												</SelectTrigger>
 												<SelectContent>
 													<SelectItem value="openai">OpenAI</SelectItem>
@@ -186,7 +187,7 @@ export function AddCustomProviderSheetContent({ show = true, onClose, onSave }: 
 							name="base_url"
 							render={({ field }) => (
 								<FormItem className="flex flex-col gap-3">
-									<FormLabel>Base URL</FormLabel>
+									<FormLabel>{i18n.t("workspace.providers.baseUrl")}</FormLabel>
 									<div>
 										<FormControl>
 											<Input
@@ -237,9 +238,9 @@ export function AddCustomProviderSheetContent({ show = true, onClose, onSave }: 
 										<div className="flex items-center justify-between space-x-2 rounded-lg border p-3">
 											<div className="space-y-0.5">
 												<label htmlFor="drop-excess-requests" className="text-sm font-medium">
-													Is Keyless?
+													{i18n.t("workspace.providers.isKeyless")}
 												</label>
-												<p className="text-muted-foreground text-sm">Whether the custom provider requires a key</p>
+												<p className="text-muted-foreground text-sm">{i18n.t("workspace.providers.isKeylessDescription")}</p>
 											</div>
 											<Switch
 												id="drop-excess-requests"
@@ -263,10 +264,10 @@ export function AddCustomProviderSheetContent({ show = true, onClose, onSave }: 
 					</div>
 					<div className="bg-card sticky bottom-0 ml-auto flex w-full flex-row gap-2 border-t px-8 py-4">
 						<Button type="button" variant="outline" onClick={onClose} className="ml-auto" data-testid="custom-provider-cancel-btn">
-							Cancel
+							{i18n.t("common.cancel")}
 						</Button>
 						<Button type="submit" isLoading={isAddingProvider} disabled={!hasProviderCreateAccess} data-testid="custom-provider-save-btn">
-							Add
+							{i18n.t("common.add")}
 						</Button>
 					</div>
 				</form>

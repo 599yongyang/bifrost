@@ -55,6 +55,7 @@ import {
 import { useState } from "react";
 import { toast } from "sonner";
 import { PAGE_SIZE, formatDateShort, useDebouncedValue } from "./helpers";
+import i18n from "@/lib/i18n";
 
 const SKILLS_REPOSITORY_DOCS_URL = "https://docs.getbifrost.ai/features/skills-repository";
 
@@ -84,11 +85,11 @@ function MarketplacePopover() {
 			.then(() => {
 				setCopiedKey(key);
 				setOpen(false);
-				toast.success("Copied to clipboard");
+				toast.success(i18n.t("supplemental.copiedClipboard"));
 				setTimeout(() => setCopiedKey(null), 2000);
 			})
 			.catch(() => {
-				toast.error("Failed to copy to clipboard");
+				toast.error(i18n.t("workspace.routingRules.copyFailed"));
 			});
 	};
 
@@ -97,7 +98,7 @@ function MarketplacePopover() {
 			<PopoverTrigger asChild>
 				<Button variant="outline" size="sm">
 					<Package className="h-3.5 w-3.5" />
-					Register as Marketplace
+					{i18n.t("supplemental.registerMarketplace")}
 				</Button>
 			</PopoverTrigger>
 			<PopoverContent align="end" className="w-auto max-w-md p-0">
@@ -249,7 +250,7 @@ function SkillActionsMenu({
 						}}
 					>
 						<Trash2 className="h-4 w-4" />
-						Delete
+						{i18n.t("common.delete")}
 					</DropdownMenuItem>
 				</DropdownMenuContent>
 			</DropdownMenu>
@@ -257,17 +258,17 @@ function SkillActionsMenu({
 			<AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
 				<AlertDialogContent>
 					<AlertDialogHeader>
-						<AlertDialogTitle>Delete {skill.name}?</AlertDialogTitle>
+						<AlertDialogTitle>{i18n.t("common.delete")} {skill.name}?</AlertDialogTitle>
 						<AlertDialogDescription>
 							This action cannot be undone. The skill, its files, and version history will be permanently deleted.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>
-						<AlertDialogCancel>Cancel</AlertDialogCancel>
+						<AlertDialogCancel>{i18n.t("common.cancel")}</AlertDialogCancel>
 						<AlertDialogAction data-testid="skill-delete-confirm-btn" onClick={() => onDelete(skill.id)} disabled={isDeleting}>
 							{isDeleting ? (
 								<>
-									<Loader2 className="h-3.5 w-3.5 animate-spin" /> Deleting...
+									<Loader2 className="h-3.5 w-3.5 animate-spin" /> {i18n.t("workspace.plugins.deleting")}
 								</>
 							) : (
 								"Delete skill"
@@ -364,7 +365,7 @@ export function SkillsListView({
 			<div className="flex flex-col items-center justify-center gap-3 py-20">
 				<p className="text-muted-foreground text-sm">Failed to load skills</p>
 				<Button variant="outline" size="sm" onClick={refetch}>
-					Retry
+					{i18n.t("workspace.oauth.retry")}
 				</Button>
 			</div>
 		);
@@ -392,11 +393,11 @@ export function SkillsListView({
 								window.open(`${SKILLS_REPOSITORY_DOCS_URL}?utm_source=bfd`, "_blank", "noopener,noreferrer");
 							}}
 						>
-							Read more <ArrowUpRight className="text-muted-foreground h-3 w-3" />
+							{i18n.t("common.readMore")} <ArrowUpRight className="text-muted-foreground h-3 w-3" />
 						</Button>
 						{hasCreateAccess && (
-							<Button aria-label="Create your first skill" data-testid="skill-create-btn" onClick={onCreateNew}>
-								Create Skill
+							<Button aria-label={i18n.t("supplemental.createFirstSkill")} data-testid="skill-create-btn" onClick={onCreateNew}>
+								{i18n.t("supplemental.createSkill")}
 							</Button>
 						)}
 					</div>
@@ -411,10 +412,10 @@ export function SkillsListView({
 			<div className="mb-4 flex shrink-0 items-center justify-between">
 				<div>
 					<div className="flex items-center gap-2">
-						<h2 className="text-lg font-semibold">Skills Repository</h2>
-						<Badge aria-label="Skills Repository is in beta">Beta</Badge>
+						<h2 className="text-lg font-semibold">{i18n.t("sidebar.nav.skillsRepository")}</h2>
+						<Badge aria-label={i18n.t("supplemental.skillsBeta")}>Beta</Badge>
 					</div>
-					<p className="text-muted-foreground text-sm">Manage Agent Skills for distribution to AI coding assistants</p>
+					<p className="text-muted-foreground text-sm">{i18n.t("supplemental.manageAgentSkills")}</p>
 				</div>
 				<div className="flex items-center gap-2">
 					{isGitAvailable ? (
@@ -425,7 +426,7 @@ export function SkillsListView({
 								<span tabIndex={0}>
 									<Button variant="outline" size="sm" disabled>
 										<Package className="h-3.5 w-3.5" />
-										Register as Marketplace
+										{i18n.t("supplemental.registerMarketplace")}
 									</Button>
 								</span>
 							</TooltipTrigger>
@@ -469,7 +470,7 @@ export function SkillsListView({
 					{hasCreateAccess && (
 						<Button data-testid="skill-create-btn" onClick={onCreateNew} size="sm">
 							<Plus className="h-4 w-4" />
-							New Skill
+							{i18n.t("supplemental.newSkill")}
 						</Button>
 					)}
 				</div>
@@ -481,8 +482,8 @@ export function SkillsListView({
 					<Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
 					<Input
 						data-testid="skill-search-input"
-						aria-label="Search skills by name"
-						placeholder="Search skills..."
+						aria-label={i18n.t("supplemental.searchSkillsName")}
+						placeholder={i18n.t("supplemental.searchSkills")}
 						value={search}
 						onChange={(e) => {
 							setSearch(e.target.value);
@@ -501,7 +502,7 @@ export function SkillsListView({
 							Its version bumps automatically on changes; use the dropdown to bump manually if needed.
 						</TooltipContent>
 					</Tooltip>
-					<span className="text-muted-foreground whitespace-nowrap">all-skills version</span>
+					<span className="text-muted-foreground whitespace-nowrap">{i18n.t("supplemental.allSkillsVersion")}</span>
 					{hasEditAccess ? (
 						<DropdownMenu>
 							<DropdownMenuTrigger asChild>
@@ -530,7 +531,7 @@ export function SkillsListView({
 										disabled={isBumpingAllSkillsVersion}
 										onSelect={() => handleBumpAllSkillsVersion(bump)}
 									>
-										Bump {bump}
+										{i18n.t("supplemental.bump")} {bump}
 									</DropdownMenuItem>
 								))}
 							</DropdownMenuContent>
@@ -551,14 +552,14 @@ export function SkillsListView({
 							<TableHead className="w-60">
 								<SortableHeader column="name" label="Name" sortBy={sortBy} order={sortOrder} onToggle={toggleSort} />
 							</TableHead>
-							<TableHead>Description</TableHead>
-							<TableHead className="w-36">Version</TableHead>
-							<TableHead className="w-36">Files</TableHead>
+							<TableHead>{i18n.t("workspace.virtualKeys.description")}</TableHead>
+							<TableHead className="w-36">{i18n.t("supplemental.version")}</TableHead>
+							<TableHead className="w-36">{i18n.t("supplemental.files")}</TableHead>
 							<TableHead className="w-44">
 								<SortableHeader column="updated_at" label="Updated" sortBy={sortBy} order={sortOrder} onToggle={toggleSort} />
 							</TableHead>
 							<TableHead className={`bg-muted sticky right-0 z-30 w-14 text-right ${PIN_SHADOW_RIGHT}`}>
-								<span className="sr-only">Actions</span>
+								<span className="sr-only">{i18n.t("workspace.routingRules.actions")}</span>
 							</TableHead>
 						</TableRow>
 					</TableHeader>
@@ -572,7 +573,7 @@ export function SkillsListView({
 										{!search && hasCreateAccess && (
 											<Button variant="outline" size="sm" onClick={onCreateNew} className="mt-2">
 												<Plus className="h-3.5 w-3.5" />
-												Create your first skill
+												{i18n.t("supplemental.createFirstSkill")}
 											</Button>
 										)}
 									</div>
@@ -642,7 +643,7 @@ export function SkillsListView({
 			{total > 0 && (
 				<div className="flex shrink-0 items-center justify-between text-xs">
 					<div className="text-muted-foreground flex items-center gap-2">
-						{(offset + 1).toLocaleString()}-{Math.min(offset + PAGE_SIZE, total).toLocaleString()} of {total.toLocaleString()} entries
+						{(offset + 1).toLocaleString()}-{Math.min(offset + PAGE_SIZE, total).toLocaleString()} of {total.toLocaleString()} {i18n.t("workspace.virtualKeys.entries")}
 					</div>
 					<div className="flex items-center gap-2">
 						<Button
@@ -651,7 +652,7 @@ export function SkillsListView({
 							data-testid="skill-pagination-prev"
 							onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
 							disabled={offset === 0 || isFetching}
-							aria-label="Previous page"
+							aria-label={i18n.t("supplemental.previousPage")}
 						>
 							<ChevronLeft className="size-3" />
 						</Button>
@@ -666,7 +667,7 @@ export function SkillsListView({
 							data-testid="skill-pagination-next"
 							onClick={() => setOffset(offset + PAGE_SIZE)}
 							disabled={offset + PAGE_SIZE >= total || isFetching}
-							aria-label="Next page"
+							aria-label={i18n.t("supplemental.nextPage")}
 						>
 							<ChevronRight className="size-3" />
 						</Button>

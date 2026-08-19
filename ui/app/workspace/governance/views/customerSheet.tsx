@@ -27,6 +27,7 @@ import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import isEqual from "lodash.isequal";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import i18n from "@/lib/i18n";
 
 interface CustomerSheetProps {
 	open: boolean;
@@ -252,7 +253,7 @@ export default function CustomerSheet({ open, onOpenChange, customer, onSuccess 
 				}
 
 				await updateCustomer({ customerId: customer.id, data: updateData }).unwrap();
-				toast.success("Customer updated successfully");
+				toast.success(i18n.t("workspace.governance.customers.dialog.updatedSuccess"));
 			} else {
 				const createData: CreateCustomerRequest = {
 					name: formData.name,
@@ -274,7 +275,7 @@ export default function CustomerSheet({ open, onOpenChange, customer, onSuccess 
 				}
 
 				await createCustomer(createData).unwrap();
-				toast.success("Customer created successfully");
+				toast.success(i18n.t("workspace.governance.customers.dialog.createdSuccess"));
 			}
 
 			onOpenChange(false);
@@ -318,17 +319,17 @@ export default function CustomerSheet({ open, onOpenChange, customer, onSuccess 
 						<div className="space-y-6">
 							<div className="space-y-4">
 								<div className="space-y-2">
-									<Label htmlFor="name">Customer Name *</Label>
+									<Label htmlFor="name">{i18n.t("workspace.governance.customers.dialog.customerName")}</Label>
 									<Input
 										id="name"
 										data-testid="customer-name-input"
-										placeholder="e.g., Acme Corporation"
+										placeholder={i18n.t("workspace.governance.customers.dialog.customerNamePlaceholder")}
 										value={formData.name}
 										maxLength={50}
 										onChange={(e) => updateField("name", e.target.value)}
 									/>
 									{nameError && <p className="text-destructive text-sm">{nameError}</p>}
-									<p className="text-muted-foreground text-sm">This name will be used to identify the customer account.</p>
+									<p className="text-muted-foreground text-sm">{i18n.t("workspace.governance.customers.dialog.customerNameHint")}</p>
 								</div>
 							</div>
 
@@ -363,11 +364,10 @@ export default function CustomerSheet({ open, onOpenChange, customer, onSuccess 
 								<div className="flex items-center justify-between gap-4 rounded-md border px-3 py-2">
 									<div className="space-y-0.5">
 										<Label htmlFor="customer-calendar-aligned-toggle" className="text-sm font-normal">
-											Align to calendar cycle
+											{i18n.t("workspace.virtualKeys.alignToCalendarCycle")}
 										</Label>
 										<p className="text-muted-foreground text-xs">
-											Reset budgets and rate limits at the start of each period (e.g. 1st of month) instead of rolling from creation date.
-											Applies to durations of a day or longer.
+											{i18n.t("supplemental.calendarBudgetReset")}
 										</p>
 									</div>
 									<Switch
@@ -382,7 +382,7 @@ export default function CustomerSheet({ open, onOpenChange, customer, onSuccess 
 							<AlertDialog open={showCalendarAlignWarning} onOpenChange={setShowCalendarAlignWarning}>
 								<AlertDialogContent>
 									<AlertDialogHeader>
-										<AlertDialogTitle>Reset budget and rate-limit usage?</AlertDialogTitle>
+										<AlertDialogTitle>{i18n.t("supplemental.resetBudgetUsage")}</AlertDialogTitle>
 										<AlertDialogDescription>
 											Enabling calendar alignment will reset budget usage to <span className="font-semibold">$0.00</span> and token/request
 											rate-limit counters to <span className="font-semibold">0</span> for this customer, then snap each reset date to the
@@ -391,7 +391,7 @@ export default function CustomerSheet({ open, onOpenChange, customer, onSuccess 
 										</AlertDialogDescription>
 									</AlertDialogHeader>
 									<AlertDialogFooter>
-										<AlertDialogCancel data-testid="customer-calendar-align-cancel-btn">Cancel</AlertDialogCancel>
+										<AlertDialogCancel data-testid="customer-calendar-align-cancel-btn">{i18n.t("common.cancel")}</AlertDialogCancel>
 										<AlertDialogAction
 											data-testid="customer-calendar-align-enable-btn"
 											onClick={() => {
@@ -399,7 +399,7 @@ export default function CustomerSheet({ open, onOpenChange, customer, onSuccess 
 												setShowCalendarAlignWarning(false);
 											}}
 										>
-											Enable Calendar Alignment
+											{i18n.t("workspace.virtualKeys.enableCalendarAlignment")}
 										</AlertDialogAction>
 									</AlertDialogFooter>
 								</AlertDialogContent>
@@ -416,7 +416,7 @@ export default function CustomerSheet({ open, onOpenChange, customer, onSuccess 
 
 					<SheetFooter className="bg-card sticky bottom-0 flex-row justify-end gap-2 border-t px-6 py-4">
 						<Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
-							Cancel
+							{i18n.t("common.cancel")}
 						</Button>
 						<TooltipProvider>
 							<Tooltip>

@@ -28,6 +28,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import TeamSheet from "./teamSheet";
 import { TeamsEmptyState } from "./teamsEmptyState";
+import i18n from "@/lib/i18n";
 
 // Helper to format reset duration for display
 const formatResetDuration = (duration: string) => {
@@ -78,12 +79,12 @@ function TeamActionsMenu({
 						}}
 					>
 						<Edit className="h-4 w-4" />
-						Edit
+						{i18n.t("common.edit")}
 					</DropdownMenuItem>
 					<DropdownMenuItem asChild className="cursor-pointer" data-testid={`team-view-logs-btn-${team.name}`}>
 						<Link to="/workspace/logs" search={{ team_ids: [team.id] }} onClick={() => setIsOpen(false)}>
 							<ScrollText className="h-4 w-4" />
-							View logs
+							{i18n.t("supplemental.viewLogs")}
 						</Link>
 					</DropdownMenuItem>
 					<DropdownMenuItem
@@ -98,21 +99,21 @@ function TeamActionsMenu({
 						}}
 					>
 						<Trash2 className="h-4 w-4" />
-						Delete
+						{i18n.t("common.delete")}
 					</DropdownMenuItem>
 				</DropdownMenuContent>
 			</DropdownMenu>
 			<AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
 				<AlertDialogContent>
 					<AlertDialogHeader>
-						<AlertDialogTitle>Delete Team</AlertDialogTitle>
+						<AlertDialogTitle>{i18n.t("workspace.governance.teams.deleteTitle")}</AlertDialogTitle>
 						<AlertDialogDescription>
 							Are you sure you want to delete &quot;{team.name}&quot;? This will also unassign any virtual keys from this team. This action
 							cannot be undone.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>
-						<AlertDialogCancel>Cancel</AlertDialogCancel>
+						<AlertDialogCancel>{i18n.t("common.cancel")}</AlertDialogCancel>
 						<AlertDialogAction onClick={() => onDelete(team.id)} disabled={isDeleting} className="bg-red-600 hover:bg-red-700">
 							{isDeleting ? "Deleting..." : "Delete"}
 						</AlertDialogAction>
@@ -174,7 +175,7 @@ export default function TeamsTable({
 	const handleDelete = async (teamId: string) => {
 		try {
 			await deleteTeam(teamId).unwrap();
-			toast.success("Team deleted successfully");
+			toast.success(i18n.t("workspace.governance.teams.deleteSuccess"));
 		} catch (error) {
 			toast.error(getErrorMessage(error));
 		}
@@ -222,12 +223,12 @@ export default function TeamsTable({
 				<div className="flex grow flex-col overflow-y-auto">
 					<div className="mb-4 flex items-center justify-between">
 						<div>
-							<h2 className="text-lg font-semibold">Teams</h2>
-							<p className="text-muted-foreground text-sm">Organize users into teams with shared budgets and access controls.</p>
+							<h2 className="text-lg font-semibold">{i18n.t("sidebar.sub.teams")}</h2>
+							<p className="text-muted-foreground text-sm">{i18n.t("workspace.governance.teams.description")}</p>
 						</div>
 						<Button data-testid="create-team-btn" onClick={handleAddTeam} disabled={!hasCreateAccess}>
 							<Plus className="h-4 w-4" />
-							Add Team
+							{i18n.t("workspace.governance.teams.addTeam")}
 						</Button>
 					</div>
 
@@ -235,8 +236,8 @@ export default function TeamsTable({
 						<div className="relative max-w-sm flex-1">
 							<Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
 							<Input
-								aria-label="Search teams by name"
-								placeholder="Search by name..."
+								aria-label={i18n.t("workspace.governance.teams.searchAriaLabel")}
+								placeholder={i18n.t("workspace.mcp.searchPlaceholder")}
 								value={search}
 								onChange={(e) => onSearchChange(e.target.value)}
 								className="pl-9"
@@ -249,11 +250,11 @@ export default function TeamsTable({
 						<Table className="min-w-[1100px]" containerClassName="h-full">
 							<TableHeader className="bg-background sticky top-0">
 								<TableRow>
-									<TableHead>Name</TableHead>
-									<TableHead>Customer</TableHead>
-									<TableHead>Budget</TableHead>
-									<TableHead>Rate Limit</TableHead>
-									<TableHead>Virtual Keys</TableHead>
+									<TableHead>{i18n.t("workspace.mcp.name")}</TableHead>
+									<TableHead>{i18n.t("workspace.virtualKeys.customer")}</TableHead>
+									<TableHead>{i18n.t("workspace.modelLimits.budget")}</TableHead>
+									<TableHead>{i18n.t("workspace.modelLimits.rateLimit")}</TableHead>
+									<TableHead>{i18n.t("sidebar.sub.virtualKeys")}</TableHead>
 									<TableHead className={`bg-muted sticky right-0 z-10 w-[56px] text-right ${PIN_SHADOW_RIGHT}`}></TableHead>
 								</TableRow>
 							</TableHeader>
@@ -261,7 +262,7 @@ export default function TeamsTable({
 								{teams.length === 0 ? (
 									<TableRow>
 										<TableCell colSpan={6} className="h-24 text-center">
-											<span className="text-muted-foreground text-sm">No matching teams found.</span>
+											<span className="text-muted-foreground text-sm">{i18n.t("workspace.governance.teams.noMatching")}</span>
 										</TableCell>
 									</TableRow>
 								) : (
@@ -305,7 +306,7 @@ export default function TeamsTable({
 														<span className="truncate font-medium">{team.name}</span>
 														{isExhausted && (
 															<Badge variant="destructive" className="w-fit text-xs">
-																Limit Reached
+																{i18n.t("workspace.modelLimits.limitReached")}
 															</Badge>
 														)}
 													</div>
@@ -346,7 +347,7 @@ export default function TeamsTable({
 																			<p className="font-medium">
 																				{formatCurrency(b.current_usage)} / {formatCurrency(b.max_limit)}
 																			</p>
-																			<p className="text-primary-foreground/80 text-xs">Resets {formatResetDuration(b.reset_duration)}</p>
+																			<p className="text-primary-foreground/80 text-xs">{i18n.t("supplemental.resets")} {formatResetDuration(b.reset_duration)}</p>
 																		</TooltipContent>
 																	</Tooltip>
 																);
@@ -364,7 +365,7 @@ export default function TeamsTable({
 																	<TooltipTrigger asChild>
 																		<div className="space-y-1.5">
 																			<div className="flex items-center justify-between gap-4 text-xs">
-																				<span className="font-medium">{team.rate_limit.token_max_limit.toLocaleString()} tokens</span>
+																				<span className="font-medium">{team.rate_limit.token_max_limit.toLocaleString()} {i18n.t("workspace.governance.teams.tokensUnit")}</span>
 																				<span className="text-muted-foreground">
 																					{formatResetDuration(team.rate_limit.token_reset_duration || "1h")}
 																				</span>
@@ -385,10 +386,10 @@ export default function TeamsTable({
 																	<TooltipContent>
 																		<p className="font-medium">
 																			{team.rate_limit.token_current_usage.toLocaleString()} /{" "}
-																			{team.rate_limit.token_max_limit.toLocaleString()} tokens
+																			{team.rate_limit.token_max_limit.toLocaleString()} {i18n.t("workspace.governance.teams.tokensUnit")}
 																		</p>
 																		<p className="text-primary-foreground/80 text-xs">
-																			Resets {formatResetDuration(team.rate_limit.token_reset_duration || "1h")}
+																			{i18n.t("supplemental.resets")} {formatResetDuration(team.rate_limit.token_reset_duration || "1h")}
 																		</p>
 																	</TooltipContent>
 																</Tooltip>
@@ -398,7 +399,7 @@ export default function TeamsTable({
 																	<TooltipTrigger asChild>
 																		<div className="space-y-1.5">
 																			<div className="flex items-center justify-between gap-4 text-xs">
-																				<span className="font-medium">{team.rate_limit.request_max_limit.toLocaleString()} req</span>
+																				<span className="font-medium">{team.rate_limit.request_max_limit.toLocaleString()} {i18n.t("workspace.governance.teams.requestUnitShort")}</span>
 																				<span className="text-muted-foreground">
 																					{formatResetDuration(team.rate_limit.request_reset_duration || "1h")}
 																				</span>
@@ -419,10 +420,10 @@ export default function TeamsTable({
 																	<TooltipContent>
 																		<p className="font-medium">
 																			{team.rate_limit.request_current_usage.toLocaleString()} /{" "}
-																			{team.rate_limit.request_max_limit.toLocaleString()} requests
+																			{team.rate_limit.request_max_limit.toLocaleString()} {i18n.t("workspace.governance.teams.requestsUnit")}
 																		</p>
 																		<p className="text-primary-foreground/80 text-xs">
-																			Resets {formatResetDuration(team.rate_limit.request_reset_duration || "1h")}
+																			{i18n.t("supplemental.resets")} {formatResetDuration(team.rate_limit.request_reset_duration || "1h")}
 																		</p>
 																	</TooltipContent>
 																</Tooltip>
@@ -468,7 +469,7 @@ export default function TeamsTable({
 						<div className="flex shrink-0 items-center justify-between text-xs" data-testid="pagination">
 							<div className="text-muted-foreground flex items-center gap-2">
 								{(offset + 1).toLocaleString()}-{Math.min(offset + limit, totalCount).toLocaleString()} of {totalCount.toLocaleString()}{" "}
-								entries
+								{i18n.t("workspace.virtualKeys.entries")}
 							</div>
 
 							<div className="flex items-center gap-2">
@@ -478,7 +479,7 @@ export default function TeamsTable({
 									onClick={() => onOffsetChange(Math.max(0, offset - limit))}
 									disabled={offset === 0}
 									data-testid="teams-pagination-prev-btn"
-									aria-label="Previous page"
+									aria-label={i18n.t("supplemental.previousPage")}
 								>
 									<ChevronLeft className="size-3" />
 								</Button>
@@ -495,7 +496,7 @@ export default function TeamsTable({
 									onClick={() => onOffsetChange(offset + limit)}
 									disabled={offset + limit >= totalCount}
 									data-testid="teams-pagination-next-btn"
-									aria-label="Next page"
+									aria-label={i18n.t("supplemental.nextPage")}
 								>
 									<ChevronRight className="size-3" />
 								</Button>

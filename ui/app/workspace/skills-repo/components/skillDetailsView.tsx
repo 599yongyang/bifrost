@@ -29,6 +29,7 @@ import { SkillFormFields } from "../forms/skillEditFormFields";
 import { SkillEditView } from "../forms/skillEditForm";
 import { SkillVersionsList } from "../dialogs/skillVersionDialog";
 import { VersionDetailDialog } from "../dialogs/versionDetailsDialog";
+import i18n from "@/lib/i18n";
 
 // ---------- SkillDetailView ----------
 
@@ -110,7 +111,7 @@ export function SkillDetailView({
 		if (!form.runValidation()) return;
 		const bumpErr = validateVersionBump(form.version, highestVersion);
 		if (bumpErr) {
-			toast.error("Invalid version", { description: bumpErr });
+			toast.error(i18n.t("supplemental.invalidVersion"), { description: bumpErr });
 			return;
 		}
 
@@ -154,10 +155,10 @@ export function SkillDetailView({
 	if (!skill) {
 		return (
 			<div className="flex w-full flex-1 flex-col items-center justify-center p-4">
-				<p className="text-muted-foreground text-sm">Skill not found</p>
+				<p className="text-muted-foreground text-sm">{i18n.t("supplemental.skillNotFound")}</p>
 				<Button variant="outline" size="sm" className="mt-3" onClick={onBack}>
 					<ArrowLeft className="h-3.5 w-3.5" />
-					Back to list
+					{i18n.t("supplemental.backToList")}
 				</Button>
 			</div>
 		);
@@ -237,7 +238,7 @@ export function SkillDetailView({
 									}}
 								>
 									<Plus className="h-3.5 w-3.5" />
-									Add New Version
+									{i18n.t("supplemental.addNewVersion")}
 								</SplitButton>
 								<DropdownMenu>
 									<DropdownMenuTrigger asChild>
@@ -249,7 +250,7 @@ export function SkillDetailView({
 										<DropdownMenuItem className="cursor-pointer" asChild>
 											<a href={`${getApiBaseUrl()}/skills/serve/${encodeURIComponent(skill.name)}/download.zip`} download>
 												<Download className="h-4 w-4" />
-												Download ZIP
+												{i18n.t("supplemental.downloadZip")}
 											</a>
 										</DropdownMenuItem>
 										{hasDeleteAccess && (
@@ -263,7 +264,7 @@ export function SkillDetailView({
 												}}
 											>
 												<Trash2 className="h-4 w-4" />
-												Delete
+												{i18n.t("common.delete")}
 											</DropdownMenuItem>
 										)}
 									</DropdownMenuContent>
@@ -271,17 +272,17 @@ export function SkillDetailView({
 								<AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
 									<AlertDialogContent>
 										<AlertDialogHeader>
-											<AlertDialogTitle>Delete {skill.name}?</AlertDialogTitle>
+											<AlertDialogTitle>{i18n.t("common.delete")} {skill.name}?</AlertDialogTitle>
 											<AlertDialogDescription>
 												This action cannot be undone. The skill, its files, and version history will be permanently deleted.
 											</AlertDialogDescription>
 										</AlertDialogHeader>
 										<AlertDialogFooter>
-											<AlertDialogCancel>Cancel</AlertDialogCancel>
+											<AlertDialogCancel>{i18n.t("common.cancel")}</AlertDialogCancel>
 											<AlertDialogAction onClick={handleDelete} disabled={isDeleting}>
 												{isDeleting ? (
 													<>
-														<Loader2 className="h-3.5 w-3.5 animate-spin" /> Deleting...
+														<Loader2 className="h-3.5 w-3.5 animate-spin" /> {i18n.t("workspace.plugins.deleting")}
 													</>
 												) : (
 													"Delete skill"

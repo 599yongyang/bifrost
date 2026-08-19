@@ -9,6 +9,7 @@ import {
 	AlertDialogTitle,
 } from "@/components/ui/alertDialog";
 import type { MCPLibraryEntry } from "@/lib/types/mcp";
+import i18n from "@/lib/i18n";
 
 interface MCPLibraryDeleteDialogProps {
 	/** The entry being removed; when null the dialog is closed. */
@@ -39,7 +40,7 @@ export function MCPLibraryDeleteDialog({ server, open, isDeleting, onOpenChange,
 					</AlertDialogDescription>
 				</AlertDialogHeader>
 				<AlertDialogFooter>
-					<AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+					<AlertDialogCancel disabled={isDeleting}>{i18n.t("common.cancel")}</AlertDialogCancel>
 					<AlertDialogAction
 						onClick={(event) => {
 							event.preventDefault();

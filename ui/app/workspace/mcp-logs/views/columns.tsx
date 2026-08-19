@@ -6,6 +6,7 @@ import type { MCPToolLogEntry } from "@/lib/types/logs";
 import { ColumnDef, Row } from "@tanstack/react-table";
 import { format, isValid } from "date-fns";
 import { ArrowUpDown, MoreHorizontal, Trash2 } from "lucide-react";
+import i18n from "@/lib/i18n";
 
 // Helper function to validate status and return a safe Status value
 const getValidatedStatus = (status: string): Status => {
@@ -35,7 +36,7 @@ export const createMCPColumns = (
 		accessorKey: "timestamp",
 		header: ({ column }) => (
 			<Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}>
-				Time
+				{i18n.t("workspace.logs.colTime")}
 				<ArrowUpDown className="ml-2 h-4 w-4" />
 			</Button>
 		),
@@ -74,7 +75,7 @@ export const createMCPColumns = (
 		accessorKey: "latency",
 		header: ({ column }) => (
 			<Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}>
-				Latency
+				{i18n.t("workspace.logs.colLatency")}
 				<ArrowUpDown className="ml-2 h-4 w-4" />
 			</Button>
 		),
@@ -117,7 +118,7 @@ export const createMCPColumns = (
 							<div className="flex justify-center">
 								<DropdownMenu>
 									<DropdownMenuTrigger asChild onClick={(event) => event.stopPropagation()}>
-										<Button variant="ghost" size="icon" data-testid="log-actions-btn" aria-label="Log actions" className="h-7 w-7">
+										<Button variant="ghost" size="icon" data-testid="log-actions-btn" aria-label={i18n.t("supplemental.logActions")} className="h-7 w-7">
 											<MoreHorizontal className="h-4 w-4" />
 										</Button>
 									</DropdownMenuTrigger>
@@ -132,7 +133,7 @@ export const createMCPColumns = (
 											}}
 										>
 											<Trash2 className="h-4 w-4" />
-											Delete
+											{i18n.t("common.delete")}
 										</DropdownMenuItem>
 									</DropdownMenuContent>
 								</DropdownMenu>

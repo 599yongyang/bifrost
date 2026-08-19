@@ -8,6 +8,7 @@ import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { AlertTriangle, Copy } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import i18n from "@/lib/i18n";
 
 type Language = "python" | "typescript";
 
@@ -300,7 +301,7 @@ if (response.choices[0].message.tool_calls) {
 					<ul className="text-muted-foreground space-y-1 text-sm">
 						<li className="flex items-start gap-2">
 							<span className="text-primary">1.</span>
-							<span>Configure MCP servers in the MCP Gateway (e.g., filesystem, web_search)</span>
+							<span>{i18n.t("supplemental.configureMcpServers")}</span>
 						</li>
 						<li className="flex items-start gap-2">
 							<span className="text-primary">2.</span>

@@ -27,6 +27,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { executePrompt, executeToolCall, MCPAuthRequiredError } from "./utils/executor";
+import i18n from "@/lib/i18n";
 
 interface PromptContextValue {
 	// Data
@@ -626,7 +627,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 				await handleSubmitToolResult(afterIndex, toolCall.id, content);
 			} catch (err) {
 				if (err instanceof MCPAuthRequiredError) throw err;
-				toast.error("Failed to execute tool", {
+				toast.error(i18n.t("supplemental.failedExecuteTool"), {
 					description: getErrorMessage(err),
 				});
 			}
@@ -754,7 +755,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 				try {
 					await handleSubmitAllToolResults(afterIndex, successes);
 				} catch (err) {
-					toast.error("Failed to submit tool results", {
+					toast.error(i18n.t("supplemental.failedSubmitToolResults"), {
 						description: getErrorMessage(err),
 					});
 				}

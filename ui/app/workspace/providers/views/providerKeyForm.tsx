@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { v4 as uuid } from "uuid";
 import { z } from "zod";
 import { ApiKeyFormFragment } from "../fragments";
+import i18n from "@/lib/i18n";
 interface Props {
 	provider: ModelProvider;
 	keyId: string | null;
@@ -142,7 +143,7 @@ export default function ProviderKeyForm({ provider, keyId, onCancel, onSave }: P
 				<div className="bg-card sticky bottom-0 border-t px-8 py-4">
 					<div className="flex justify-end space-x-3">
 						<Button type="button" variant="outline" onClick={onCancel} data-testid="key-cancel-btn">
-							Cancel
+							{i18n.t("common.cancel")}
 						</Button>
 						<TooltipProvider>
 							<Tooltip>
@@ -155,7 +156,7 @@ export default function ProviderKeyForm({ provider, keyId, onCancel, onSave }: P
 											data-testid="key-save-btn"
 										>
 											<Save className="h-4 w-4 shrink-0" />
-											Save
+											{i18n.t("common.save")}
 										</Button>
 									</span>
 								</TooltipTrigger>

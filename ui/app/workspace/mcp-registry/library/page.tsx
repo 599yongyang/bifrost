@@ -17,6 +17,7 @@ import { MCPLibraryInstallSheet, sanitizeServerName } from "./views/mcpLibraryIn
 import { MCPLibraryServerCard, MCPLibraryServerCardSkeleton } from "./views/mcpLibraryServerCard";
 import { MCPLibraryServersTable, MCPLibraryServersTableSkeleton } from "./views/mcpLibraryServersTable";
 import { MCPLibrarySettingsSheet } from "./views/mcpLibrarySettingsSheet";
+import i18n from "@/lib/i18n";
 
 const PAGE_SIZE = 24;
 const VIEW_MODE_STORAGE_KEY = "mcp-library-view-mode";
@@ -165,20 +166,20 @@ export default function MCPLibraryPage() {
 						{/* Header */}
 						<div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
 							<div className="space-y-1">
-								<h2 className="text-lg font-semibold tracking-tight">MCP Server Library</h2>
-								<p className="text-muted-foreground max-w-2xl text-sm">Browse and install MCP servers from the synced catalog.</p>
+								<h2 className="text-lg font-semibold tracking-tight">{i18n.t("supplemental.mcpServerLibrary")}</h2>
+								<p className="text-muted-foreground max-w-2xl text-sm">{i18n.t("supplemental.browseMcpCatalog")}</p>
 							</div>
 							<div className="flex items-center gap-2">
 								{hasCreateMCPClientAccess && (
 									<Button variant="outline" size="sm" onClick={() => setAddServerOpen(true)} data-testid="mcp-library-add-server-btn">
 										<Plus className="h-4 w-4" />
-										Add Server
+										{i18n.t("workspace.mcp.emptyState.addServer")}
 									</Button>
 								)}
 								{hasSettingsAccess && (
 									<Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)} data-testid="mcp-library-settings-btn">
 										<Settings className="h-4 w-4" />
-										Settings
+										{i18n.t("sidebar.nav.settings")}
 									</Button>
 								)}
 							</div>
@@ -192,12 +193,12 @@ export default function MCPLibraryPage() {
 									<Input
 										value={urlState.search}
 										onChange={(e) => setUrlState({ search: e.target.value, offset: 0 })}
-										placeholder="Search servers..."
+										placeholder={i18n.t("supplemental.searchServers")}
 										className="h-9 pl-9"
 										data-testid="mcp-library-search-input"
 									/>
 								</div>
-								<div className="border-border flex w-fit overflow-hidden rounded-sm border p-0.5" aria-label="Library view mode">
+								<div className="border-border flex w-fit overflow-hidden rounded-sm border p-0.5" aria-label={i18n.t("supplemental.libraryViewMode")}>
 									<Button
 										type="button"
 										variant="ghost"
@@ -212,7 +213,7 @@ export default function MCPLibraryPage() {
 										data-testid="mcp-library-table-view-toggle"
 									>
 										<List className="h-4 w-4" />
-										<span className="hidden sm:inline">Table</span>
+										<span className="hidden sm:inline">{i18n.t("supplemental.table")}</span>
 									</Button>
 									<Button
 										type="button"
@@ -228,7 +229,7 @@ export default function MCPLibraryPage() {
 										data-testid="mcp-library-grid-view-toggle"
 									>
 										<LayoutGrid className="h-4 w-4" />
-										<span className="hidden sm:inline">Grid</span>
+										<span className="hidden sm:inline">{i18n.t("supplemental.grid")}</span>
 									</Button>
 								</div>
 							</div>
@@ -269,7 +270,7 @@ export default function MCPLibraryPage() {
 											<div className="mx-auto mt-6 flex flex-row flex-wrap items-center justify-center gap-2">
 												<Button onClick={() => setSettingsOpen(true)} data-testid="mcp-library-empty-settings-btn">
 													<Settings className="h-4 w-4" />
-													Configure sync
+													{i18n.t("supplemental.configureSync")}
 												</Button>
 											</div>
 										)}
@@ -310,7 +311,7 @@ export default function MCPLibraryPage() {
 										<div className="mt-auto flex shrink-0 items-center justify-between text-xs" data-testid="pagination">
 											<div className="text-muted-foreground flex items-center gap-2">
 												{(urlState.offset + 1).toLocaleString()}-{Math.min(urlState.offset + PAGE_SIZE, totalCount).toLocaleString()} of{" "}
-												{totalCount.toLocaleString()} entries
+												{totalCount.toLocaleString()} {i18n.t("workspace.virtualKeys.entries")}
 											</div>
 
 											<div className="flex items-center gap-2">
@@ -320,7 +321,7 @@ export default function MCPLibraryPage() {
 													onClick={() => setUrlState({ offset: Math.max(0, urlState.offset - PAGE_SIZE) }, { history: "push" })}
 													disabled={urlState.offset === 0}
 													data-testid="mcp-library-pagination-prev-btn"
-													aria-label="Previous page"
+													aria-label={i18n.t("supplemental.previousPage")}
 												>
 													<ChevronLeft className="size-3" />
 												</Button>
@@ -337,7 +338,7 @@ export default function MCPLibraryPage() {
 													onClick={() => setUrlState({ offset: urlState.offset + PAGE_SIZE }, { history: "push" })}
 													disabled={urlState.offset + PAGE_SIZE >= totalCount}
 													data-testid="mcp-library-pagination-next-btn"
-													aria-label="Next page"
+													aria-label={i18n.t("supplemental.nextPage")}
 												>
 													<ChevronRight className="size-3" />
 												</Button>

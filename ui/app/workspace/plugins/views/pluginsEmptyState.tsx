@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { ArrowUpRight, Puzzle } from "lucide-react";
+import i18n from "@/lib/i18n";
 
 const CUSTOM_PLUGINS_DOCS_URL = "https://docs.getbifrost.ai/plugins";
 
@@ -31,7 +32,7 @@ export function PluginsEmptyState({ onCreateClick, canCreate = true }: PluginsEm
 							window.open(`${CUSTOM_PLUGINS_DOCS_URL}?utm_source=bfd`, "_blank", "noopener,noreferrer");
 						}}
 					>
-						Read more <ArrowUpRight className="text-muted-foreground h-3 w-3" />
+						{i18n.t("common.readMore")} <ArrowUpRight className="text-muted-foreground h-3 w-3" />
 					</Button>
 					<Button
 						aria-label="Create your first plugin"
@@ -39,7 +40,7 @@ export function PluginsEmptyState({ onCreateClick, canCreate = true }: PluginsEm
 						onClick={onCreateClick}
 						disabled={!canCreate}
 					>
-						Install New Plugin
+						{i18n.t("workspace.plugins.installNewPlugin")}
 					</Button>
 				</div>
 			</div>

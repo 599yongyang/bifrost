@@ -41,6 +41,7 @@ import { CheckCircle2, ExternalLink, Fingerprint, KeyRound, Loader2, LogIn, Shie
 import { useQueryState } from "nuqs";
 import React from "react";
 import { useMemo, useState } from "react";
+import i18n from "@/lib/i18n";
 
 export default function MCPSessionsAuthPage() {
 	const [flowId] = useQueryState("flow");
@@ -79,7 +80,7 @@ function OAuthAuthView() {
 	if (!flowId) {
 		return (
 			<CenteredCard>
-				<h1 className="text-xl font-semibold">Missing flow identifier</h1>
+				<h1 className="text-xl font-semibold">{i18n.t("supplemental.missingFlowId")}</h1>
 				<p className="text-muted-foreground mt-2 text-sm">
 					This URL is missing the <code className="bg-muted rounded px-1 py-0.5">flow</code> query parameter. Open the link from your
 					inference response or the sessions tab.
@@ -490,7 +491,7 @@ function SessionsTabLink({ variant = "outline" }: { variant?: "outline" | "ghost
 	}
 	return (
 		<Button asChild variant={variant} data-testid="mcp-auth-sessions-tab-link">
-			<Link to="/workspace/mcp-sessions">Open sessions tab</Link>
+			<Link to="/workspace/mcp-sessions">{i18n.t("supplemental.openSessionsTab")}</Link>
 		</Button>
 	);
 }
@@ -504,7 +505,7 @@ function SessionsTabLink({ variant = "outline" }: { variant?: "outline" | "ghost
 function InvalidLinkView() {
 	return (
 		<CenteredCard>
-			<h1 className="text-xl font-semibold tracking-tight">This authentication link is no longer valid</h1>
+			<h1 className="text-xl font-semibold tracking-tight">{i18n.t("supplemental.authLinkInvalid")}</h1>
 			<p className="text-muted-foreground mt-2 text-sm">
 				The link may have expired, been used already, invalid, or had its short-lived token stripped. Trigger the original action again so a
 				fresh authentication link is created.

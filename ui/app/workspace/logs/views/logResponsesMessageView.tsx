@@ -2,6 +2,7 @@ import { CodeEditor } from "@/components/ui/codeEditor";
 import { ResponsesMessage, ResponsesMessageContentBlock } from "@/lib/types/logs";
 import { cleanJson, isJson } from "@/lib/utils/validation";
 import CollapsibleBox from "./collapsibleBox";
+import i18n from "@/lib/i18n";
 
 interface LogResponsesMessageViewProps {
 	messages: ResponsesMessage[];
@@ -143,7 +144,7 @@ function ContentBlockView({ block }: { block: ResponsesMessageContentBlock; inde
 	if (block.annotations && block.annotations.length > 0) {
 		const jsonContent = JSON.stringify(block.annotations, null, 2);
 		return (
-			<CollapsibleBox title="Annotations" onCopy={() => jsonContent} collapsedHeight={100}>
+			<CollapsibleBox title={i18n.t("supplemental.annotations")} onCopy={() => jsonContent} collapsedHeight={100}>
 				<CodeEditor
 					className="z-0 w-full"
 					shouldAdjustInitialHeight={true}
@@ -162,7 +163,7 @@ function ContentBlockView({ block }: { block: ResponsesMessageContentBlock; inde
 	if (block.logprobs && block.logprobs.length > 0) {
 		const jsonContent = JSON.stringify(block.logprobs, null, 2);
 		return (
-			<CollapsibleBox title="Log Probabilities" onCopy={() => jsonContent} collapsedHeight={100}>
+			<CollapsibleBox title={i18n.t("supplemental.logProbabilities")} onCopy={() => jsonContent} collapsedHeight={100}>
 				<CodeEditor
 					className="z-0 w-full"
 					shouldAdjustInitialHeight={true}
@@ -244,7 +245,7 @@ function MessageView({ message, index }: { message: ResponsesMessage; index: num
 						))
 					) : (
 						// Fallback to JSON display for mixed or non-text types
-						<CollapsibleBox title="Summary" onCopy={() => JSON.stringify(message.summary, null, 2)} collapsedHeight={100}>
+						<CollapsibleBox title={i18n.t("supplemental.summary")} onCopy={() => JSON.stringify(message.summary, null, 2)} collapsedHeight={100}>
 							<CodeEditor
 								className="z-0 w-full"
 								shouldAdjustInitialHeight={true}
@@ -262,7 +263,7 @@ function MessageView({ message, index }: { message: ResponsesMessage; index: num
 
 			{/* Handle encrypted reasoning content */}
 			{message.type === "reasoning" && message.encrypted_content && (
-				<CollapsibleBox title="Encrypted Reasoning Content" onCopy={() => message.encrypted_content || ""} collapsedHeight={100}>
+				<CollapsibleBox title={i18n.t("supplemental.encryptedReasoning")} onCopy={() => message.encrypted_content || ""} collapsedHeight={100}>
 					<div className="custom-scrollbar max-h-[400px] overflow-y-auto px-6 py-2 font-mono text-xs break-words whitespace-pre-wrap">
 						{message.encrypted_content}
 					</div>
@@ -276,7 +277,7 @@ function MessageView({ message, index }: { message: ResponsesMessage; index: num
 						<>
 							{isJson(message.content) ? (
 								<CollapsibleBox
-									title="Content"
+									title={i18n.t("supplemental.content")}
 									onCopy={() => JSON.stringify(cleanJson(message.content as string), null, 2)}
 									collapsedHeight={100}
 								>
@@ -292,7 +293,7 @@ function MessageView({ message, index }: { message: ResponsesMessage; index: num
 									/>
 								</CollapsibleBox>
 							) : (
-								<CollapsibleBox title="Content" onCopy={() => (message.content as string) || ""} collapsedHeight={100}>
+								<CollapsibleBox title={i18n.t("supplemental.content")} onCopy={() => (message.content as string) || ""} collapsedHeight={100}>
 									<div className="custom-scrollbar max-h-[400px] overflow-y-auto px-6 py-2 font-mono text-xs break-words whitespace-pre-wrap">
 										{message.content}
 									</div>
@@ -309,7 +310,7 @@ function MessageView({ message, index }: { message: ResponsesMessage; index: num
 			{/* Handle tool call specific fields */}
 			{(message.call_id || message.name || message.arguments) && (
 				<CollapsibleBox
-					title="Tool Details"
+					title={i18n.t("supplemental.toolDetails")}
 					onCopy={() =>
 						JSON.stringify(
 							{
@@ -391,7 +392,7 @@ function MessageView({ message, index }: { message: ResponsesMessage; index: num
 					),
 			) && (
 				<CollapsibleBox
-					title="Additional Fields"
+					title={i18n.t("supplemental.additionalFields")}
 					onCopy={() =>
 						JSON.stringify(
 							Object.fromEntries(
@@ -459,7 +460,7 @@ export default function LogResponsesMessageView({ messages }: LogResponsesMessag
 	if (!messages || messages.length === 0) {
 		return (
 			<div className="w-full rounded-sm border">
-				<div className="text-muted-foreground px-6 py-4 text-center text-sm">No responses messages available</div>
+				<div className="text-muted-foreground px-6 py-4 text-center text-sm">{i18n.t("supplemental.noResponseMessages")}</div>
 			</div>
 		);
 	}

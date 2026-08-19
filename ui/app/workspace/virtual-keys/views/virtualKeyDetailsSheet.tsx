@@ -28,6 +28,7 @@ import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { formatDistanceToNow } from "date-fns";
 import { Users } from "lucide-react";
 import { useVirtualKeyUsage } from "../hooks/useVirtualKeyUsage";
+import i18n from "@/lib/i18n";
 
 function usageBarClass(pct: number, exhausted: boolean) {
 	if (exhausted) return "[&>div]:bg-red-500/70";
@@ -170,11 +171,11 @@ export default function VirtualKeyDetailSheet({
 
 					{/* Basic Information */}
 					<div className="space-y-4">
-						<h3 className="font-semibold">Basic Information</h3>
+						<h3 className="font-semibold">{i18n.t("workspace.virtualKeys.basicInformation")}</h3>
 
 						<div className="grid gap-4">
 							<div className="grid grid-cols-3 items-center gap-4">
-								<span className="text-muted-foreground text-sm">Status</span>
+								<span className="text-muted-foreground text-sm">{i18n.t("workspace.virtualKeys.status")}</span>
 								<div className="col-span-2">
 									{(() => {
 										const isExpired = !!virtualKey.expires_at && Date.now() >= new Date(virtualKey.expires_at).getTime();
@@ -198,7 +199,7 @@ export default function VirtualKeyDetailSheet({
 							)}
 
 							<div className="grid grid-cols-3 items-center gap-4">
-								<span className="text-muted-foreground text-sm">Created</span>
+								<span className="text-muted-foreground text-sm">{i18n.t("workspace.virtualKeys.createdAt")}</span>
 								<div className="col-span-2 text-sm">
 									{formatDistanceToNow(new Date(virtualKey.created_at), {
 										addSuffix: true,
@@ -207,7 +208,7 @@ export default function VirtualKeyDetailSheet({
 							</div>
 
 							<div className="grid grid-cols-3 items-center gap-4">
-								<span className="text-muted-foreground text-sm">Last Updated</span>
+								<span className="text-muted-foreground text-sm">{i18n.t("workspace.virtualKeys.lastUpdatedAt")}</span>
 								<div className="col-span-2 text-sm">
 									{formatDistanceToNow(new Date(virtualKey.updated_at), {
 										addSuffix: true,
@@ -217,7 +218,7 @@ export default function VirtualKeyDetailSheet({
 
 							{entityInfo.type !== "None" && (
 								<div className="grid grid-cols-3 items-center gap-4">
-									<span className="text-muted-foreground text-sm">Assigned To</span>
+									<span className="text-muted-foreground text-sm">{i18n.t("workspace.virtualKeys.assignedTo")}</span>
 									<div className="col-span-2 flex items-center gap-2">
 										<Badge variant={entityInfo.type === "None" ? "outline" : "secondary"}>{entityInfo.type}</Badge>
 										<span className="text-sm">{entityInfo.name}</span>
@@ -231,7 +232,7 @@ export default function VirtualKeyDetailSheet({
 
 					{/* Provider Configurations */}
 					<div className="space-y-4">
-						<h3 className="font-semibold">Provider Configurations</h3>
+						<h3 className="font-semibold">{i18n.t("workspace.virtualKeys.providerConfigurations")}</h3>
 
 						<div className="space-y-3">
 							{!virtualKey.provider_configs || virtualKey.provider_configs.length === 0 ? (
@@ -265,11 +266,11 @@ export default function VirtualKeyDetailSheet({
 											{/* Basic Config */}
 											<div className="space-y-3">
 												<div className="grid grid-cols-3 items-start gap-4">
-													<span className="text-muted-foreground pt-0.5 text-sm font-medium">Allowed Models</span>
+													<span className="text-muted-foreground pt-0.5 text-sm font-medium">{i18n.t("workspace.virtualKeys.allowedModels")}</span>
 													<div className="col-span-2">
 														{config.allowed_models?.includes("*") ? (
 															<Badge variant="success" className="text-xs">
-																All Models
+																{i18n.t("common.allModels")}
 															</Badge>
 														) : config.allowed_models && config.allowed_models.length > 0 ? (
 															<div className="flex flex-wrap gap-1">
@@ -281,14 +282,14 @@ export default function VirtualKeyDetailSheet({
 															</div>
 														) : (
 															<Badge variant="destructive" className="text-xs">
-																No models (deny all)
+																{i18n.t("workspace.virtualKeys.noModelsDenyAll")}
 															</Badge>
 														)}
 													</div>
 												</div>
 
 												<div className="grid grid-cols-3 items-start gap-4">
-													<span className="text-muted-foreground pt-0.5 text-sm font-medium">Blocked Models</span>
+													<span className="text-muted-foreground pt-0.5 text-sm font-medium">{i18n.t("workspace.providers.apiKeyForm.blockedModels")}</span>
 													<div className="col-span-2">
 														{config.blacklisted_models?.includes("*") ? (
 															<Badge variant="destructive" className="text-xs">
@@ -304,18 +305,18 @@ export default function VirtualKeyDetailSheet({
 															</div>
 														) : (
 															<Badge variant="secondary" className="text-xs">
-																No models blocked
+																{i18n.t("workspace.providers.apiKeyForm.noModelsBlocked")}
 															</Badge>
 														)}
 													</div>
 												</div>
 
 												<div className="grid grid-cols-3 items-start gap-4">
-													<span className="text-muted-foreground pt-0.5 text-sm font-medium">Allowed Keys</span>
+													<span className="text-muted-foreground pt-0.5 text-sm font-medium">{i18n.t("workspace.virtualKeys.allowedKeys")}</span>
 													<div className="col-span-2">
 														{config.allow_all_keys ? (
 															<Badge variant="success" className="text-xs">
-																All Keys
+																{i18n.t("workspace.virtualKeys.allKeys")}
 															</Badge>
 														) : config.keys && config.keys.length > 0 ? (
 															<div className="flex flex-wrap gap-1">
@@ -327,7 +328,7 @@ export default function VirtualKeyDetailSheet({
 															</div>
 														) : (
 															<Badge variant="destructive" className="text-xs">
-																No keys (deny all)
+																{i18n.t("workspace.virtualKeys.noKeysDenyAll")}
 															</Badge>
 														)}
 													</div>
@@ -338,7 +339,7 @@ export default function VirtualKeyDetailSheet({
 													<>
 														<DottedSeparator />
 														<div className="space-y-2">
-															<h4 className="text-sm font-medium">Provider Budgets</h4>
+															<h4 className="text-sm font-medium">{i18n.t("workspace.virtualKeys.providerBudgets")}</h4>
 															{config.budgets.map((b, bIdx) => (
 																<div key={bIdx} className="space-y-2">
 																	<UsageLine current={b.current_usage} max={getEffectiveBudgetLimit(b)} format={formatCurrency} />
@@ -349,12 +350,12 @@ export default function VirtualKeyDetailSheet({
 																	) : null}
 																	<div className="text-muted-foreground flex items-center justify-between text-xs">
 																		<span>
-																			Resets {parseResetPeriod(b.reset_duration)}
+																			{i18n.t("supplemental.resets")} {parseResetPeriod(b.reset_duration)}
 																			{virtualKey.calendar_aligned && supportsCalendarAlignment(b.reset_duration) && " (calendar)"}
 																		</span>
 																		{b.last_reset ? (
 																			<span>
-																				Last reset{" "}
+																				{i18n.t("workspace.virtualKeys.lastReset")}{" "}
 																				{formatDistanceToNow(new Date(b.last_reset), {
 																					addSuffix: true,
 																				})}
@@ -372,7 +373,7 @@ export default function VirtualKeyDetailSheet({
 													<>
 														<DottedSeparator />
 														<div className="space-y-3">
-															<h4 className="text-sm font-medium">Provider Rate Limits</h4>
+															<h4 className="text-sm font-medium">{i18n.t("workspace.virtualKeys.providerRateLimits")}</h4>
 
 															{/* Token Limits */}
 															{config.rate_limit.token_max_limit != null ? (
@@ -385,14 +386,14 @@ export default function VirtualKeyDetailSheet({
 																	/>
 																	<div className="text-muted-foreground flex items-center justify-between text-xs">
 																		<span>
-																			Resets {parseResetPeriod(config.rate_limit.token_reset_duration || "")}
+																			{i18n.t("supplemental.resets")} {parseResetPeriod(config.rate_limit.token_reset_duration || "")}
 																			{virtualKey.calendar_aligned &&
 																				supportsCalendarAlignment(config.rate_limit.token_reset_duration || "") &&
 																				" (calendar)"}
 																		</span>
 																		{config.rate_limit.token_last_reset ? (
 																			<span>
-																				Last reset {formatDistanceToNow(new Date(config.rate_limit.token_last_reset), { addSuffix: true })}
+																				{i18n.t("workspace.virtualKeys.lastReset")} {formatDistanceToNow(new Date(config.rate_limit.token_last_reset), { addSuffix: true })}
 																			</span>
 																		) : null}
 																	</div>
@@ -410,14 +411,14 @@ export default function VirtualKeyDetailSheet({
 																	/>
 																	<div className="text-muted-foreground flex items-center justify-between text-xs">
 																		<span>
-																			Resets {parseResetPeriod(config.rate_limit.request_reset_duration || "")}
+																			{i18n.t("supplemental.resets")} {parseResetPeriod(config.rate_limit.request_reset_duration || "")}
 																			{virtualKey.calendar_aligned &&
 																				supportsCalendarAlignment(config.rate_limit.request_reset_duration || "") &&
 																				" (calendar)"}
 																		</span>
 																		{config.rate_limit.request_last_reset ? (
 																			<span>
-																				Last reset{" "}
+																				{i18n.t("workspace.virtualKeys.lastReset")}{" "}
 																				{formatDistanceToNow(new Date(config.rate_limit.request_last_reset), { addSuffix: true })}
 																			</span>
 																		) : null}
@@ -454,11 +455,11 @@ export default function VirtualKeyDetailSheet({
 																					) : null}
 																					<div className="text-muted-foreground flex items-center justify-between text-xs">
 																						<span>
-																							Resets {parseResetPeriod(b.reset_duration)}
+																							{i18n.t("supplemental.resets")} {parseResetPeriod(b.reset_duration)}
 																							{virtualKey.calendar_aligned && supportsCalendarAlignment(b.reset_duration) && " (calendar)"}
 																						</span>
 																						{b.last_reset ? (
-																							<span>Last reset {formatDistanceToNow(new Date(b.last_reset), { addSuffix: true })}</span>
+																							<span>{i18n.t("workspace.virtualKeys.lastReset")} {formatDistanceToNow(new Date(b.last_reset), { addSuffix: true })}</span>
 																						) : null}
 																					</div>
 																				</div>
@@ -475,7 +476,7 @@ export default function VirtualKeyDetailSheet({
 																				format={(n) => n.toLocaleString()}
 																			/>
 																			<div className="text-muted-foreground text-xs">
-																				Resets {parseResetPeriod(mb.rate_limit.token_reset_duration || "")}
+																				{i18n.t("supplemental.resets")} {parseResetPeriod(mb.rate_limit.token_reset_duration || "")}
 																				{virtualKey.calendar_aligned &&
 																					supportsCalendarAlignment(mb.rate_limit.token_reset_duration || "") &&
 																					" (calendar)"}
@@ -493,7 +494,7 @@ export default function VirtualKeyDetailSheet({
 																				format={(n) => n.toLocaleString()}
 																			/>
 																			<div className="text-muted-foreground text-xs">
-																				Resets {parseResetPeriod(mb.rate_limit.request_reset_duration || "")}
+																				{i18n.t("supplemental.resets")} {parseResetPeriod(mb.rate_limit.request_reset_duration || "")}
 																				{virtualKey.calendar_aligned &&
 																					supportsCalendarAlignment(mb.rate_limit.request_reset_duration || "") &&
 																					" (calendar)"}
@@ -515,18 +516,18 @@ export default function VirtualKeyDetailSheet({
 
 					{/* MCP Client Configurations */}
 					<div className="space-y-4">
-						<h3 className="font-semibold">MCP Client Configurations</h3>
+						<h3 className="font-semibold">{i18n.t("workspace.virtualKeys.mcpClientConfigurations")}</h3>
 
 						<div className="space-y-3">
 							{!virtualKey.mcp_configs || virtualKey.mcp_configs.length === 0 ? (
-								<span className="text-muted-foreground text-sm">No MCP clients configured (deny-by-default)</span>
+								<span className="text-muted-foreground text-sm">{i18n.t("workspace.virtualKeys.noMcpClientsConfigured")}</span>
 							) : (
 								<div className="rounded-md border">
 									<Table>
 										<TableHeader>
 											<TableRow>
-												<TableHead>MCP Client</TableHead>
-												<TableHead>Allowed Tools</TableHead>
+												<TableHead>{i18n.t("workspace.virtualKeys.mcpClient")}</TableHead>
+												<TableHead>{i18n.t("workspace.virtualKeys.allowedTools")}</TableHead>
 											</TableRow>
 										</TableHeader>
 										<TableBody>
@@ -536,7 +537,7 @@ export default function VirtualKeyDetailSheet({
 													<TableCell>
 														{config.tools_to_execute?.includes("*") ? (
 															<Badge variant="success" className="text-xs">
-																All Tools
+																{i18n.t("workspace.dashboard.allTools")}
 															</Badge>
 														) : config.tools_to_execute && config.tools_to_execute.length > 0 ? (
 															<div className="flex flex-wrap gap-1">
@@ -548,7 +549,7 @@ export default function VirtualKeyDetailSheet({
 															</div>
 														) : (
 															<Badge variant="destructive" className="text-xs">
-																No tools (deny all)
+																{i18n.t("workspace.virtualKeys.noToolsDenyAll")}
 															</Badge>
 														)}
 													</TableCell>
@@ -567,7 +568,7 @@ export default function VirtualKeyDetailSheet({
 					<div className="space-y-4">
 						<div className="flex items-center justify-between">
 							<h3 className="font-semibold">
-								Budget Information
+								{i18n.t("workspace.virtualKeys.budgetInformation")}
 								{isManagedByProfile && managingProfile?.budgets?.length ? (
 									<span className="text-muted-foreground ml-2 text-xs font-normal">(from {managingProfile.name})</span>
 								) : null}
@@ -599,12 +600,12 @@ export default function VirtualKeyDetailSheet({
 										) : null}
 										<div className="text-muted-foreground flex items-center justify-between text-xs">
 											<span>
-												Resets {parseResetPeriod(b.reset_duration)}
+												{i18n.t("supplemental.resets")} {parseResetPeriod(b.reset_duration)}
 												{virtualKey.calendar_aligned && supportsCalendarAlignment(b.reset_duration) && " (calendar)"}
 											</span>
 											{b.last_reset ? (
 												<span>
-													Last reset{" "}
+													{i18n.t("workspace.virtualKeys.lastReset")}{" "}
 													{formatDistanceToNow(new Date(b.last_reset), {
 														addSuffix: true,
 													})}
@@ -615,14 +616,14 @@ export default function VirtualKeyDetailSheet({
 								))}
 							</div>
 						) : (
-							<p className="text-muted-foreground text-sm">No budget limits configured</p>
+							<p className="text-muted-foreground text-sm">{i18n.t("workspace.virtualKeys.noBudgetLimitsConfigured")}</p>
 						)}
 					</div>
 
 					{/* Rate Limits */}
 					<div className="space-y-4">
 						<h3 className="font-semibold">
-							Rate Limits
+							{i18n.t("workspace.virtualKeys.rateLimits")}
 							{isManagedByProfile && hasApRateLimit ? (
 								<span className="text-muted-foreground ml-2 text-xs font-normal">(from {managingProfile?.name})</span>
 							) : null}
@@ -633,7 +634,7 @@ export default function VirtualKeyDetailSheet({
 								{/* Token Limits */}
 								{displayRateLimit.token_max_limit != null ? (
 									<div className="space-y-3 rounded-lg border p-4">
-										<span className="text-sm font-medium">Token Limits</span>
+										<span className="text-sm font-medium">{i18n.t("workspace.virtualKeys.tokenLimits")}</span>
 										<UsageLine
 											current={displayRateLimit.token_current_usage}
 											max={displayRateLimit.token_max_limit}
@@ -641,14 +642,14 @@ export default function VirtualKeyDetailSheet({
 										/>
 										<div className="text-muted-foreground flex items-center justify-between text-xs">
 											<span>
-												Resets {parseResetPeriod(displayRateLimit.token_reset_duration || "")}
+												{i18n.t("supplemental.resets")} {parseResetPeriod(displayRateLimit.token_reset_duration || "")}
 												{virtualKey.calendar_aligned &&
 													supportsCalendarAlignment(displayRateLimit.token_reset_duration || "") &&
 													" (calendar)"}
 											</span>
 											{displayRateLimit.token_last_reset ? (
 												<span>
-													Last reset{" "}
+													{i18n.t("workspace.virtualKeys.lastReset")}{" "}
 													{formatDistanceToNow(new Date(displayRateLimit.token_last_reset), {
 														addSuffix: true,
 													})}
@@ -661,7 +662,7 @@ export default function VirtualKeyDetailSheet({
 								{/* Request Limits */}
 								{displayRateLimit.request_max_limit != null ? (
 									<div className="space-y-3 rounded-lg border p-4">
-										<span className="text-sm font-medium">Request Limits</span>
+										<span className="text-sm font-medium">{i18n.t("workspace.virtualKeys.requestLimits")}</span>
 										<UsageLine
 											current={displayRateLimit.request_current_usage}
 											max={displayRateLimit.request_max_limit}
@@ -669,14 +670,14 @@ export default function VirtualKeyDetailSheet({
 										/>
 										<div className="text-muted-foreground flex items-center justify-between text-xs">
 											<span>
-												Resets {parseResetPeriod(displayRateLimit.request_reset_duration || "")}
+												{i18n.t("supplemental.resets")} {parseResetPeriod(displayRateLimit.request_reset_duration || "")}
 												{virtualKey.calendar_aligned &&
 													supportsCalendarAlignment(displayRateLimit.request_reset_duration || "") &&
 													" (calendar)"}
 											</span>
 											{displayRateLimit.request_last_reset ? (
 												<span>
-													Last reset{" "}
+													{i18n.t("workspace.virtualKeys.lastReset")}{" "}
 													{formatDistanceToNow(new Date(displayRateLimit.request_last_reset), {
 														addSuffix: true,
 													})}
@@ -687,11 +688,11 @@ export default function VirtualKeyDetailSheet({
 								) : null}
 
 								{displayRateLimit.token_max_limit == null && displayRateLimit.request_max_limit == null && (
-									<p className="text-muted-foreground text-sm">No rate limits configured</p>
+									<p className="text-muted-foreground text-sm">{i18n.t("workspace.virtualKeys.noRateLimitsConfigured")}</p>
 								)}
 							</div>
 						) : (
-							<p className="text-muted-foreground text-sm">No rate limits configured</p>
+							<p className="text-muted-foreground text-sm">{i18n.t("workspace.virtualKeys.noRateLimitsConfigured")}</p>
 						)}
 					</div>
 				</div>

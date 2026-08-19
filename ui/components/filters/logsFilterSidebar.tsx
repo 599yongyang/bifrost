@@ -11,6 +11,7 @@ import type { LogFilters } from "@/lib/types/logs";
 import { cn } from "@/lib/utils";
 import { ChevronDown, LoaderCircle, PanelLeftClose, PanelLeftOpen, Plus, RotateCcw, Search } from "lucide-react";
 import { Ref, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import i18n from "@/lib/i18n";
 
 const COLLAPSE_STORAGE_KEY = "logs-filter-sidebar-collapsed";
 
@@ -93,7 +94,7 @@ export function LogsFilterSidebar({ filters, onFiltersChange }: LogsSidebarProps
 					{activeFilterCount > 0 && (
 						<Button variant="outline" size="sm" className="text-muted-foreground h-7 px-2 text-xs" onClick={handleReset}>
 							<RotateCcw className="size-3" />
-							Reset
+							{i18n.t("workspace.plugins.reset")}
 						</Button>
 					)}
 					<Button variant="ghost" size="icon" className="size-7" onClick={toggleCollapsed} title="Hide filters" aria-label="Hide filters">
@@ -354,7 +355,7 @@ function SearchableCheckboxList({
 function StatusFilter({ filters, onFiltersChange, defaultOpen }: FilterComponentProps) {
 	const hasActive = (filters.status || []).length > 0;
 	return (
-		<FilterSection title="Status" defaultOpen={defaultOpen || hasActive} testId="status-filter-toggle">
+		<FilterSection title={i18n.t("workspace.virtualKeys.status")} defaultOpen={defaultOpen || hasActive} testId="status-filter-toggle">
 			{Statuses.map((status) => (
 				<CheckboxFilterItem
 					key={status}
@@ -440,7 +441,7 @@ function ProvidersFilter({ filters, onFiltersChange, defaultOpen }: FilterCompon
 
 	return (
 		<FilterSection
-			title="Providers"
+			title={i18n.t("sidebar.sub.providers")}
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
 			onOpenChange={setOpened}
@@ -469,7 +470,7 @@ function ProvidersFilter({ filters, onFiltersChange, defaultOpen }: FilterCompon
 function TypeFilter({ filters, onFiltersChange, defaultOpen }: FilterComponentProps) {
 	const hasActive = (filters.objects || []).length > 0;
 	return (
-		<FilterSection title="Type" defaultOpen={defaultOpen || hasActive} testId="type-filter-toggle">
+		<FilterSection title={i18n.t("workspace.logs.colType")} defaultOpen={defaultOpen || hasActive} testId="type-filter-toggle">
 			{RequestTypes.map((type) => {
 				const label = RequestTypeLabels[type as keyof typeof RequestTypeLabels] ?? type;
 				return (
@@ -516,7 +517,7 @@ function ModelsFilter({ filters, onFiltersChange, defaultOpen }: FilterComponent
 
 	return (
 		<FilterSection
-			title="Models"
+			title={i18n.t("sidebar.nav.models")}
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
 			onOpenChange={setOpened}
@@ -688,7 +689,7 @@ function VirtualKeysFilter({ filters, onFiltersChange, defaultOpen }: FilterComp
 
 	return (
 		<FilterSection
-			title="Virtual Keys"
+			title={i18n.t("sidebar.sub.virtualKeys")}
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
 			onOpenChange={setOpened}
@@ -794,7 +795,7 @@ function RoutingRulesFilter({ filters, onFiltersChange, defaultOpen }: FilterCom
 
 	return (
 		<FilterSection
-			title="Routing Rules"
+			title={i18n.t("sidebar.sub.routingRules")}
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
 			onOpenChange={setOpened}
@@ -863,7 +864,7 @@ function UserFilter({ filters, onFiltersChange, defaultOpen }: FilterComponentPr
 
 	return (
 		<FilterSection
-			title="User"
+			title={i18n.t("common.user")}
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
 			onOpenChange={setOpened}
@@ -926,7 +927,7 @@ function TeamFilter({ filters, onFiltersChange, defaultOpen }: FilterComponentPr
 
 	return (
 		<FilterSection
-			title="Teams"
+			title={i18n.t("sidebar.sub.teams")}
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
 			onOpenChange={setOpened}
@@ -984,7 +985,7 @@ function CustomerFilter({ filters, onFiltersChange, defaultOpen }: FilterCompone
 
 	return (
 		<FilterSection
-			title="Customers"
+			title={i18n.t("sidebar.sub.customers")}
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
 			onOpenChange={setOpened}
@@ -1043,7 +1044,7 @@ function BusinessUnitFilter({ filters, onFiltersChange, defaultOpen }: FilterCom
 
 	return (
 		<FilterSection
-			title="Business Units"
+			title={i18n.t("sidebar.sub.businessUnits")}
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
 			onOpenChange={setOpened}
@@ -1071,7 +1072,7 @@ function BusinessUnitFilter({ filters, onFiltersChange, defaultOpen }: FilterCom
 function CostFilter({ filters, onFiltersChange, defaultOpen }: FilterComponentProps) {
 	const hasActive = !!filters.missing_cost_only;
 	return (
-		<FilterSection title="Cost" defaultOpen={defaultOpen || hasActive} testId="cost-filter-toggle">
+		<FilterSection title={i18n.t("workspace.logs.colCost")} defaultOpen={defaultOpen || hasActive} testId="cost-filter-toggle">
 			<CheckboxFilterItem
 				label="Show missing cost only"
 				checked={!!filters.missing_cost_only}
@@ -1157,7 +1158,7 @@ function MetadataFilters({ filters, onFiltersChange, defaultOpen }: FilterCompon
 
 	return (
 		<FilterSection
-			title="Metadata"
+			title={i18n.t("workspace.mcpLogs.metadata")}
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
 			onOpenChange={setOpened}

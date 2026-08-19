@@ -20,6 +20,7 @@ import React, { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { MCPHeadersAuthorizer } from "./mcpHeadersAuthorizer";
 import { OAuth2Authorizer } from "./oauth2Authorizer";
+import i18n from "@/lib/i18n";
 
 interface ClientFormProps {
 	open: boolean;
@@ -325,7 +326,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 		<Sheet open={open} onOpenChange={(open) => !open && !oauthFlow && onClose()}>
 			<SheetContent className="flex w-full flex-col overflow-x-hidden px-0">
 				<SheetHeader className="flex flex-col items-start px-7 pt-8">
-					<SheetTitle>New MCP Server</SheetTitle>
+					<SheetTitle>{i18n.t("workspace.mcpForm.newServerTitle")}</SheetTitle>
 					<SheetDescription>Configure and connect to a new Model Context Protocol server.</SheetDescription>
 				</SheetHeader>
 
@@ -347,9 +348,9 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 								}}
 								render={({ field }) => (
 									<FormItem>
-										<FormLabel>Name</FormLabel>
+										<FormLabel>{i18n.t("workspace.mcp.name")}</FormLabel>
 										<FormControl>
-											<Input id="client-name" data-testid="client-name-input" placeholder="Server name" maxLength={50} {...field} />
+											<Input id="client-name" data-testid="client-name-input" placeholder={i18n.t("supplemental.serverName")} maxLength={50} {...field} />
 										</FormControl>
 										<FormMessage />
 									</FormItem>
@@ -362,7 +363,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 								name="connection_type"
 								render={({ field }) => (
 									<FormItem className="w-full">
-										<FormLabel>Connection Type</FormLabel>
+										<FormLabel>{i18n.t("workspace.mcp.connectionType")}</FormLabel>
 										<Select
 											value={field.value}
 											onValueChange={(value: MCPConnectionType) => {
@@ -382,13 +383,13 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 											</FormControl>
 											<SelectContent>
 												<SelectItem value="http" data-testid="connection-type-http">
-													HTTP (Streamable)
+													{i18n.t("workspace.mcpForm.httpStreamable")}
 												</SelectItem>
 												<SelectItem value="sse" data-testid="connection-type-sse">
 													Server-Sent Events (SSE)
 												</SelectItem>
 												<SelectItem value="stdio" data-testid="connection-type-stdio">
-													STDIO
+													{i18n.t("workspace.mcpForm.stdio")}
 												</SelectItem>
 											</SelectContent>
 										</Select>
@@ -405,7 +406,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 								render={({ field }) => (
 									<div className="flex items-center justify-between space-x-2 rounded-lg border p-4">
 										<div className="flex items-center gap-2">
-											<Label htmlFor="code-mode">Code Mode Server</Label>
+											<Label htmlFor="code-mode">{i18n.t("workspace.mcpForm.codeModeServer")}</Label>
 											<TooltipProvider>
 												<Tooltip>
 													<TooltipTrigger asChild>
@@ -415,7 +416,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 															rel="noopener noreferrer"
 															data-testid="code-mode-link-help"
 															className="text-muted-foreground hover:text-foreground focus-visible:ring-ring rounded focus-visible:ring-2 focus-visible:outline-none"
-															aria-label="Learn more about Code Mode"
+															aria-label={i18n.t("workspace.mcpForm.learnMoreCodeMode")}
 														>
 															<Info className="h-4 w-4 cursor-help" />
 														</a>
@@ -438,7 +439,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 								render={({ field }) => (
 									<div className="flex items-center justify-between space-x-2 rounded-lg border p-4">
 										<div className="flex items-center gap-2">
-											<Label htmlFor="ping-available">Ping Available for Health Check</Label>
+											<Label htmlFor="ping-available">{i18n.t("workspace.mcpClientSheet.pingAvailableForHealthCheck")}</Label>
 											<TooltipProvider>
 												<Tooltip>
 													<TooltipTrigger asChild>
@@ -471,7 +472,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 										name="connection_string"
 										render={({ field }) => (
 											<FormItem>
-												<FormLabel>Connection URL</FormLabel>
+												<FormLabel>{i18n.t("workspace.mcpForm.connectionUrl")}</FormLabel>
 												<SecretVarInput
 													value={field.value}
 													onChange={(value) => {
@@ -488,22 +489,22 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 
 									{/* Auth Type */}
 									<FormItem className="w-full">
-										<FormLabel>Authentication Type</FormLabel>
+										<FormLabel>{i18n.t("workspace.mcpForm.authType")}</FormLabel>
 										<Select value={authKind} onValueChange={(value: "none" | "headers" | "oauth") => applyAuthKind(value)}>
 											<FormControl>
 												<SelectTrigger className="w-full" data-testid="auth-type-select">
-													<SelectValue placeholder="Select authentication type" />
+													<SelectValue placeholder={i18n.t("supplemental.selectAuthenticationType")} />
 												</SelectTrigger>
 											</FormControl>
 											<SelectContent>
 												<SelectItem value="none" data-testid="auth-type-none">
-													None
+													{i18n.t("workspace.mcpForm.none")}
 												</SelectItem>
 												<SelectItem value="headers" data-testid="auth-type-headers">
-													Headers
+													{i18n.t("workspace.mcpForm.headers")}
 												</SelectItem>
 												<SelectItem value="oauth" data-testid="auth-type-oauth">
-													OAuth 2.0
+													{i18n.t("workspace.mcpForm.oauth")}
 												</SelectItem>
 											</SelectContent>
 										</Select>
@@ -512,19 +513,19 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 									{/* Auth Scope — only meaningful when there's an auth flow */}
 									{authKind !== "none" && (
 										<FormItem className="w-full">
-											<FormLabel>Auth Scope</FormLabel>
+											<FormLabel>{i18n.t("supplemental.authScope")}</FormLabel>
 											<Select value={authScope} onValueChange={(value: "shared" | "per_user") => applyAuthScope(value)}>
 												<FormControl>
 													<SelectTrigger className="w-full" data-testid="auth-scope-select">
-														<SelectValue placeholder="Select auth scope" />
+														<SelectValue placeholder={i18n.t("supplemental.selectAuthScope")} />
 													</SelectTrigger>
 												</FormControl>
 												<SelectContent>
 													<SelectItem value="shared" data-testid="auth-scope-shared">
-														Shared
+														{i18n.t("supplemental.shared")}
 													</SelectItem>
 													<SelectItem value="per_user" data-testid="auth-scope-per-user">
-														Per-User
+														{i18n.t("supplemental.perUser")}
 													</SelectItem>
 												</SelectContent>
 											</Select>
@@ -561,7 +562,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 											    tool use via the inline auth landing page. */}
 											<div className="space-y-1">
 												<div className="space-y-0.5">
-													<div className="text-sm font-medium">Required Headers</div>
+													<div className="text-sm font-medium">{i18n.t("workspace.config.security.requiredHeaders")}</div>
 													<p className="text-muted-foreground text-sm">
 														Comma-separated list of header names each caller must supply when they first use this server (e.g.{" "}
 														<code>X-API-Key, X-Tenant-ID</code>). Values are submitted per user - never stored on this server config.
@@ -611,7 +612,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 										<Accordion type="single" collapsible className="w-full">
 											<AccordionItem value="oauth-advanced" className="border-b-0">
 												<AccordionTrigger className="py-0" data-testid="oauth-advanced-trigger">
-													<span className="text-sm font-medium">OAuth Client Advanced Settings</span>
+													<span className="text-sm font-medium">{i18n.t("supplemental.oauthAdvanced")}</span>
 												</AccordionTrigger>
 												<AccordionContent className="space-y-4 pt-4 pb-0">
 													{/* OAuth Client ID */}
@@ -640,12 +641,12 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 																	<SecretVarInput
 																		value={field.value}
 																		onChange={field.onChange}
-																		placeholder="your-client-id (auto-generated if empty)"
+																		placeholder={i18n.t("workspace.mcpForm.oauthClientIdPlaceholder")}
 																		data-testid="mcp-oauth-client-id"
 																	/>
 																</FormControl>
 																<p className="text-muted-foreground text-xs">
-																	Will be auto-generated via dynamic registration if left empty and provider supports it
+																	{i18n.t("workspace.mcpForm.oauthClientIdAutoGenerated")}
 																</p>
 																<FormMessage />
 															</FormItem>
@@ -658,18 +659,18 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 														name="oauth_config.client_secret"
 														render={({ field }) => (
 															<FormItem>
-																<FormLabel>OAuth Client Secret (optional for PKCE)</FormLabel>
+																<FormLabel>{i18n.t("workspace.mcpForm.oauthClientSecretOptionalForPkce")}</FormLabel>
 																<FormControl>
 																	<SecretVarInput
 																		value={field.value}
 																		onChange={field.onChange}
-																		placeholder="your-client-secret"
+																		placeholder={i18n.t("workspace.mcpForm.oauthClientSecretPlaceholder")}
 																		hideValueWhenEnv
 																		maskNonEnvValue
 																		data-testid="mcp-oauth-client-secret"
 																	/>
 																</FormControl>
-																<p className="text-muted-foreground text-xs">Leave empty for public clients using PKCE</p>
+																<p className="text-muted-foreground text-xs">{i18n.t("workspace.mcpForm.oauthClientSecretOptional")}</p>
 																<FormMessage />
 															</FormItem>
 														)}
@@ -681,7 +682,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 														name="oauth_config.authorize_url"
 														render={({ field }) => (
 															<FormItem>
-																<FormLabel>Authorization URL (optional, auto-discovered)</FormLabel>
+																<FormLabel>{i18n.t("workspace.mcpForm.oauthAuthorizationUrlLabel")}</FormLabel>
 																<FormControl>
 																	<Input
 																		{...field}
@@ -690,7 +691,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 																			field.onChange(e);
 																			clearErrors("oauth_config.authorize_url");
 																		}}
-																		placeholder="https://provider.com/oauth/authorize"
+																		placeholder={i18n.t("workspace.mcpForm.oauthAuthorizationUrlPlaceholder")}
 																		data-testid="mcp-oauth-authorize-url"
 																	/>
 																</FormControl>
@@ -705,7 +706,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 														name="oauth_config.token_url"
 														render={({ field }) => (
 															<FormItem>
-																<FormLabel>Token URL (optional, auto-discovered)</FormLabel>
+																<FormLabel>{i18n.t("workspace.mcpForm.oauthTokenUrlLabel")}</FormLabel>
 																<FormControl>
 																	<Input
 																		{...field}
@@ -714,7 +715,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 																			field.onChange(e);
 																			clearErrors("oauth_config.token_url");
 																		}}
-																		placeholder="https://provider.com/oauth/token"
+																		placeholder={i18n.t("workspace.mcpForm.oauthTokenUrlPlaceholder")}
 																		data-testid="mcp-oauth-token-url"
 																	/>
 																</FormControl>
@@ -729,7 +730,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 														name="oauth_config.registration_url"
 														render={({ field }) => (
 															<FormItem>
-																<FormLabel>Registration URL (optional, auto-discovered)</FormLabel>
+																<FormLabel>{i18n.t("workspace.mcpForm.oauthRegistrationUrlLabel")}</FormLabel>
 																<FormControl>
 																	<Input
 																		{...field}
@@ -738,7 +739,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 																			field.onChange(e);
 																			clearErrors("oauth_config.registration_url");
 																		}}
-																		placeholder="https://provider.com/oauth/register"
+																		placeholder={i18n.t("workspace.mcpForm.oauthRegistrationUrlPlaceholder")}
 																		data-testid="mcp-oauth-registration-url"
 																	/>
 																</FormControl>
@@ -749,18 +750,18 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 
 													{/* Scopes (local state, not RHF field) */}
 													<div className="space-y-2">
-														<Label>Scopes (optional, comma-separated)</Label>
+														<Label>{i18n.t("workspace.mcpForm.oauthScopesLabel")}</Label>
 														<Input
 															value={scopesText}
 															onChange={(e) => setScopesText(e.target.value)}
-															placeholder="read, write, admin"
+															placeholder={i18n.t("workspace.mcpForm.oauthScopesPlaceholder")}
 															data-testid="mcp-oauth-scopes-input"
 														/>
 													</div>
 
 													{/* OAuth Resource Indicator (local state, not RHF field) */}
 													<div className="space-y-2">
-														<Label>Resource</Label>
+														<Label>{i18n.t("supplemental.resource")}</Label>
 														<Input
 															value={resourceText}
 															onChange={(e) => setResourceText(e.target.value)}
@@ -777,7 +778,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 									<Accordion type="single" collapsible className="w-full">
 										<AccordionItem value="tls-config" className="border-b-0">
 											<AccordionTrigger className="py-0" data-testid="tls-config-trigger">
-												<span className="text-sm font-medium">TLS / Certificate</span>
+												<span className="text-sm font-medium">{i18n.t("workspace.providers.tlsCertificate")}</span>
 											</AccordionTrigger>
 											<AccordionContent className="space-y-4 pt-4 pb-0">
 												<FormField
@@ -786,7 +787,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 													render={({ field }) => (
 														<FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
 															<div className="space-y-0.5">
-																<FormLabel>Skip TLS verification</FormLabel>
+																<FormLabel>{i18n.t("workspace.providers.skipTlsVerification")}</FormLabel>
 																<p className="text-muted-foreground text-sm">
 																	Disable TLS certificate verification. Use only in trusted isolated environments. Takes priority over CA
 																	certificate.
@@ -807,7 +808,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 													name="tls_config.ca_cert_pem"
 													render={({ field }) => (
 														<FormItem>
-															<FormLabel>CA Certificate (PEM) (Optional)</FormLabel>
+															<FormLabel>{i18n.t("workspace.providers.caCertificatePemOptional")}</FormLabel>
 															<FormControl>
 																<SecretVarInput
 																	variant="textarea"
@@ -840,7 +841,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 										<div className="flex items-start gap-2">
 											<Info className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-700" />
 											<div className="flex-1">
-												<p className="text-xs font-medium text-amber-900">Docker Notice</p>
+												<p className="text-xs font-medium text-amber-900">{i18n.t("workspace.mcpForm.dockerNoticeTitle")}</p>
 												<p className="mt-0.5 text-xs text-amber-800">
 													If not using the official Bifrost Docker image, STDIO connections may not work if required commands (npx, python,
 													etc.) aren't installed. You can safely ignore this if running locally or using a custom image with the necessary
@@ -856,7 +857,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 										name="stdio_config.command"
 										render={({ field }) => (
 											<FormItem>
-												<FormLabel>Command</FormLabel>
+												<FormLabel>{i18n.t("workspace.mcpForm.command")}</FormLabel>
 												<FormControl>
 													<Input
 														{...field}
@@ -865,7 +866,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 															field.onChange(e);
 															clearErrors("stdio_config.command");
 														}}
-														placeholder="node, python, /path/to/executable"
+														placeholder={i18n.t("workspace.mcpForm.commandPlaceholder")}
 														data-testid="stdio-command-input"
 													/>
 												</FormControl>
@@ -876,11 +877,11 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 
 									{/* Args (local state) */}
 									<div className="space-y-2">
-										<Label>Arguments (comma-separated)</Label>
+										<Label>{i18n.t("workspace.mcpForm.argumentsCommaSeparated")}</Label>
 										<Input
 											value={argsText}
 											onChange={(e) => setArgsText(e.target.value)}
-											placeholder="--port, 3000, --config, config.json"
+											placeholder={i18n.t("workspace.mcpForm.argumentsPlaceholder")}
 											data-testid="stdio-args-input"
 										/>
 									</div>
@@ -918,7 +919,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 						<div className="dark:bg-card border-border border-t bg-white px-8 py-4">
 							<div className="flex justify-end gap-2">
 								<Button type="button" variant="outline" onClick={onClose} disabled={isLoading} data-testid="cancel-client-btn">
-									Cancel
+									{i18n.t("common.cancel")}
 								</Button>
 								<TooltipProvider>
 									<Tooltip>
@@ -930,7 +931,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 													isLoading={isLoading}
 													data-testid="save-client-btn"
 												>
-													Create
+													{i18n.t("workspace.virtualKeys.create")}
 												</Button>
 											</span>
 										</TooltipTrigger>

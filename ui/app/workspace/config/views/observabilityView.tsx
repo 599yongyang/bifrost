@@ -8,6 +8,7 @@ import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { AlertTriangle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import i18n from "@/lib/i18n";
 
 export default function ObservabilityView() {
 	const hasSettingsUpdateAccess = useRbac(RbacResource.Settings, RbacOperation.Update);
@@ -65,8 +66,7 @@ export default function ObservabilityView() {
 			<Alert variant="destructive">
 				<AlertTriangle className="h-4 w-4" />
 				<AlertDescription>
-					These settings require a Bifrost service restart to take effect. Current connections will continue with existing settings until
-					restart.
+					{i18n.t("workspace.config.performanceTuning.restartAlert")}
 				</AlertDescription>
 			</Alert>
 
@@ -101,5 +101,5 @@ export default function ObservabilityView() {
 }
 
 const RestartWarning = () => {
-	return <div className="text-muted-foreground mt-2 pl-4 text-xs font-semibold">Need to restart Bifrost to apply changes.</div>;
+	return <div className="text-muted-foreground mt-2 pl-4 text-xs font-semibold">{i18n.t("workspace.config.security.restartRequired")}</div>;
 };

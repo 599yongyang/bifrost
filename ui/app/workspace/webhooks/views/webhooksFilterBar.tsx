@@ -7,6 +7,7 @@ import { ComboboxSelect } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { WEBHOOK_EVENTS } from "@/lib/types/webhooks";
 import { Search, X } from "lucide-react";
+import i18n from "@/lib/i18n";
 
 const EVENT_OPTIONS = WEBHOOK_EVENTS.map((event) => ({ label: event.value, value: event.value }));
 
@@ -32,8 +33,8 @@ export default function WebhooksFilterBar(props: WebhooksFilterBarProps) {
 			<div className="relative max-w-sm min-w-[200px] flex-1">
 				<Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
 				<Input
-					aria-label="Search webhook endpoints"
-					placeholder="Search by name or URL"
+					aria-label={i18n.t("supplemental.searchWebhookEndpoints")}
+					placeholder={i18n.t("supplemental.searchNameOrUrl")}
 					value={props.search}
 					onChange={(e) => props.onSearchChange(e.target.value)}
 					className="pl-9"
@@ -48,7 +49,7 @@ export default function WebhooksFilterBar(props: WebhooksFilterBarProps) {
 				options={EVENT_OPTIONS}
 				value={props.eventFilter}
 				onValueChange={props.onEventFilterChange}
-				placeholder="All events"
+				placeholder={i18n.t("supplemental.allEvents")}
 				className="h-9 w-[220px]"
 			/>
 			<ComboboxSelect
@@ -59,13 +60,13 @@ export default function WebhooksFilterBar(props: WebhooksFilterBarProps) {
 				options={STATUS_OPTIONS}
 				value={props.statusFilter}
 				onValueChange={props.onStatusFilterChange}
-				placeholder="All statuses"
+				placeholder={i18n.t("supplemental.allStatuses")}
 				className="h-9 w-[170px]"
 			/>
 			{props.hasActiveFilters && (
 				<Button variant="ghost" size="sm" onClick={props.onClearFilters} data-testid="webhooks-clear-filters-btn" className="h-9">
 					<X className="h-4 w-4" />
-					Clear filters
+					{i18n.t("supplemental.clearFilters")}
 				</Button>
 			)}
 		</div>

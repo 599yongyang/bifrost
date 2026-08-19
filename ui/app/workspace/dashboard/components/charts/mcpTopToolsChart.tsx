@@ -5,6 +5,7 @@ import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis
 import { formatCompactNumber } from "@/lib/utils/numbers";
 import { formatCost, getModelColor } from "../../utils/chartUtils";
 import { ChartErrorBoundary } from "./chartErrorBoundary";
+import i18n from "@/lib/i18n";
 
 interface MCPTopToolsChartProps {
 	data: MCPTopToolsResponse | null;
@@ -25,7 +26,7 @@ function CustomTooltip({ active, payload }: any) {
 					<span className="font-medium">{data.count.toLocaleString()}</span>
 				</div>
 				<div className="flex items-center justify-between gap-4">
-					<span className="text-zinc-600 dark:text-zinc-400">Cost</span>
+					<span className="text-zinc-600 dark:text-zinc-400">{i18n.t("workspace.logs.colCost")}</span>
 					<span className="font-medium">{formatCost(data.cost)}</span>
 				</div>
 			</div>

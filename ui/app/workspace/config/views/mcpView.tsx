@@ -14,6 +14,7 @@ import { IS_ENTERPRISE } from "@/lib/constants/config";
 import { AlertTriangle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import i18n from "@/lib/i18n";
 
 const secretVarEquals = (a?: SecretVar, b?: SecretVar) =>
 	(a?.value ?? "") === (b?.value ?? "") && (a?.ref ?? "") === (b?.ref ?? "") && (a?.type ?? "plain_text") === (b?.type ?? "plain_text");
@@ -208,12 +209,12 @@ export default function MCPView() {
 			const toolTimeout = Number.parseInt(localValues.mcp_tool_execution_timeout);
 
 			if (isNaN(agentDepth) || agentDepth <= 0) {
-				toast.error("Max agent depth must be a positive number.");
+				toast.error(i18n.t("workspace.mcpSettings.maxAgentDepthError"));
 				return;
 			}
 
 			if (isNaN(toolTimeout) || toolTimeout <= 0) {
-				toast.error("Tool execution timeout must be a positive number.");
+				toast.error(i18n.t("workspace.mcpSettings.toolExecutionTimeoutError"));
 				return;
 			}
 
@@ -246,7 +247,7 @@ export default function MCPView() {
       }
 
 			if (!bifrostConfig) {
-				toast.error("Configuration not loaded. Please refresh and try again.");
+				toast.error(i18n.t("workspace.mcpSettings.configNotLoaded"));
 				return;
 			}
 
@@ -271,7 +272,7 @@ export default function MCPView() {
 				...bifrostConfig,
 				client_config: clientConfigToSave,
 			}).unwrap();
-			toast.success("MCP settings updated successfully.");
+			toast.success(i18n.t("workspace.mcpSettings.successMessage"));
 		} catch (error) {
 			toast.error(getErrorMessage(error));
 		}
@@ -280,17 +281,17 @@ export default function MCPView() {
 	return (
 		<div className="mx-auto w-full max-w-7xl space-y-4" data-testid="mcp-settings-view">
 			<div>
-				<h2 className="text-lg font-semibold tracking-tight">MCP Settings</h2>
-				<p className="text-muted-foreground text-sm">Configure MCP (Model Context Protocol) agent and tool settings.</p>
+				<h2 className="text-lg font-semibold tracking-tight">{i18n.t("sidebar.sub.mcpSettings")}</h2>
+				<p className="text-muted-foreground text-sm">{i18n.t("workspace.mcpSettings.description")}</p>
 			</div>
 			<div className="space-y-4">
 				{/* Max Agent Depth */}
 				<div className="flex items-center justify-between space-x-2 rounded-sm border p-4">
 					<div className="space-y-0.5">
 						<label htmlFor="mcp-agent-depth" className="text-sm font-medium">
-							Max Agent Depth
+							{i18n.t("workspace.mcpSettings.maxAgentDepth")}
 						</label>
-						<p className="text-muted-foreground text-sm">Maximum depth for MCP agent execution.</p>
+						<p className="text-muted-foreground text-sm">{i18n.t("workspace.mcpSettings.maxAgentDepthDescription")}</p>
 					</div>
 					<Input
 						id="mcp-agent-depth"
@@ -307,9 +308,9 @@ export default function MCPView() {
 				<div className="flex items-center justify-between space-x-2 rounded-sm border p-4">
 					<div className="space-y-0.5">
 						<label htmlFor="mcp-tool-execution-timeout" className="text-sm font-medium">
-							Tool Execution Timeout (seconds)
+							{i18n.t("workspace.mcpSettings.toolExecutionTimeout")}
 						</label>
-						<p className="text-muted-foreground text-sm">Maximum time in seconds for tool execution.</p>
+						<p className="text-muted-foreground text-sm">{i18n.t("workspace.mcpSettings.toolExecutionTimeoutDescription")}</p>
 					</div>
 					<Input
 						id="mcp-tool-execution-timeout"
@@ -326,9 +327,9 @@ export default function MCPView() {
 				<div className="flex items-center justify-between space-x-2 rounded-sm border p-4">
 					<div className="space-y-0.5">
 						<label htmlFor="mcp-tool-sync-interval" className="text-sm font-medium">
-							Tool Sync Interval (minutes)
+							{i18n.t("workspace.mcpSettings.toolSyncInterval")}
 						</label>
-						<p className="text-muted-foreground text-sm">How often to refresh tool lists from MCP servers. Set to 0 to disable.</p>
+						<p className="text-muted-foreground text-sm">{i18n.t("workspace.mcpSettings.toolSyncIntervalDescription")}</p>
 					</div>
 					<Input
 						id="mcp-tool-sync-interval"
@@ -345,7 +346,7 @@ export default function MCPView() {
 				<div className="flex items-center justify-between space-x-2 rounded-sm border p-4">
 					<div className="space-y-0.5">
 						<label htmlFor="mcp-disable-auto-tool-inject" className="text-sm font-medium">
-							Disable Auto Tool Injection
+							{i18n.t("workspace.mcpSettings.disableAutoToolInject")}
 						</label>
 						<p className="text-muted-foreground text-sm">
 							When enabled, MCP tools are not automatically included in every request. Tools are only injected when explicitly specified via
@@ -386,25 +387,25 @@ export default function MCPView() {
 				<div className="space-y-4 rounded-sm border p-4">
 					<div className="space-y-0.5">
 						<label htmlFor="mcp-binding-level" className="text-sm font-medium">
-							Code Mode Binding Level
+							{i18n.t("workspace.mcpSettings.codeModeBindingLevel")}
 						</label>
 						<p className="text-muted-foreground text-sm">
-							How tools are exposed in the VFS: server-level (all tools per server) or tool-level (individual tools).
+							{i18n.t("workspace.mcpSettings.codeModeBindingLevelDescription")}
 						</p>
 					</div>
 					<Select value={localValues.mcp_code_mode_binding_level} onValueChange={handleCodeModeBindingLevelChange}>
 						<SelectTrigger id="mcp-binding-level" data-testid="mcp-binding-level" className="w-56">
-							<SelectValue placeholder="Select binding level" />
+							<SelectValue placeholder={i18n.t("workspace.mcpSettings.selectBindingLevel")} />
 						</SelectTrigger>
 						<SelectContent>
-							<SelectItem value="server">Server-Level</SelectItem>
-							<SelectItem value="tool">Tool-Level</SelectItem>
+							<SelectItem value="server">{i18n.t("workspace.mcpSettings.serverLevel")}</SelectItem>
+							<SelectItem value="tool">{i18n.t("workspace.mcpSettings.toolLevel")}</SelectItem>
 						</SelectContent>
 					</Select>
 
 					{/* Visual Example */}
 					<div className="mt-6 space-y-2">
-						<p className="text-foreground text-xs font-semibold tracking-wide uppercase">VFS Structure:</p>
+						<p className="text-foreground text-xs font-semibold tracking-wide uppercase">{i18n.t("workspace.mcpSettings.vfsStructure")}</p>
 
 						{localValues.mcp_code_mode_binding_level === "server" ? (
 							<div className="bg-muted border-border rounded-sm border p-4">
@@ -414,7 +415,7 @@ export default function MCPView() {
 									<div className="pl-3">├─ youtube.py</div>
 									<div className="pl-3">└─ weather.py</div>
 								</div>
-								<p className="text-muted-foreground mt-3 text-xs">All tools per server in a single .py file</p>
+								<p className="text-muted-foreground mt-3 text-xs">{i18n.t("workspace.mcpSettings.serverLevelExample")}</p>
 							</div>
 						) : (
 							<div className="bg-muted border-border rounded-sm border p-4">
@@ -429,7 +430,7 @@ export default function MCPView() {
 									<div className="pl-3">└─ weather/</div>
 									<div className="pl-6">└─ get_forecast.py</div>
 								</div>
-								<p className="text-muted-foreground mt-3 text-xs">Individual .py file for each tool</p>
+								<p className="text-muted-foreground mt-3 text-xs">{i18n.t("workspace.mcpSettings.toolLevelExample")}</p>
 							</div>
 						)}
 					</div>
@@ -439,7 +440,7 @@ export default function MCPView() {
 				<Accordion type="single" collapsible className="rounded-sm border px-4">
 					<AccordionItem value="advanced-settings" className="border-b-0">
 						<AccordionTrigger data-testid="mcp-settings-advanced-trigger">
-							<span className="text-sm font-medium">Advanced Settings</span>
+							<span className="text-sm font-medium">{i18n.t("workspace.config.proxy.advancedSettings")}</span>
 						</AccordionTrigger>
 						<AccordionContent className="space-y-2 pt-2">
 							<label htmlFor="external-client-url" className="text-sm font-medium">
@@ -455,7 +456,7 @@ export default function MCPView() {
 							<SecretVarInput
 								id="external-client-url"
 								data-testid="mcp-external-client-url-input"
-								placeholder="https://bifrost.example.com or env.BIFROST_OAUTH_REDIRECT_URL"
+								placeholder={i18n.t("workspace.mcpSettings.clientUrlPlaceholder")}
 								value={localConfig.mcp_external_client_url}
 								onChange={handleClientURLChange}
 								disabled={!hasSettingsUpdateAccess}
@@ -503,9 +504,9 @@ export default function MCPView() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="headers">Headers</SelectItem>
+                    <SelectItem value="headers">{i18n.t("workspace.mcpForm.headers")}</SelectItem>
                     <SelectItem value="both">Both</SelectItem>
-                    <SelectItem value="oauth">OAuth</SelectItem>
+                    <SelectItem value="oauth">{i18n.t("workspace.mcp.authTypeLabels.oauth")}</SelectItem>
                   </SelectContent>
                 </Select>
                 {/* oauth: VK/header access disabled */}

@@ -3,6 +3,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { X } from "lucide-react";
 import React from "react";
+import i18n from "@/lib/i18n";
 
 type OmittedInputProps = Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChange">;
 
@@ -162,7 +163,7 @@ export const TagInput = React.forwardRef<HTMLInputElement, TagInputProps>(
 						onClick={() => setTagsExpanded(false)}
 						className="text-muted-foreground/50 hover:text-muted-foreground/80 hover:bg-muted/15 border-border/40 bg-muted/10 relative z-[2] w-full cursor-pointer border-t py-2 text-xs transition-[color,background-color]"
 					>
-						Show less
+						{i18n.t("workspace.logs.detail.showLess")}
 					</button>
 				)}
 			</div>

@@ -49,6 +49,7 @@ import SpeechView from "../views/speechView";
 import TranscriptionView from "../views/transcriptionView";
 import VideoView from "../views/videoView";
 import { getTimeoutDetails } from "../utils/timeoutDetails";
+import i18n from "@/lib/i18n";
 
 const formatRealtimeTransport = (value: unknown): string => {
 	const transport = String(value ?? "").trim();
@@ -448,7 +449,7 @@ function CopyInlineButton({ text, testId }: { text: string; testId?: string }) {
 				copy(text);
 			}}
 			className="text-muted-foreground hover:bg-muted hover:text-foreground inline-flex h-6 w-6 items-center justify-center rounded-sm transition"
-			aria-label="Copy"
+			aria-label={i18n.t("common.copy")}
 			data-testid={testId}
 		>
 			<Clipboard className="h-3.5 w-3.5" />
@@ -484,7 +485,7 @@ function RoutingDecisionLogs({ logs }: { logs: string }) {
 	return (
 		<div className="w-full rounded-sm border">
 			<div className="flex items-center justify-between border-b py-2 pl-6">
-				<div className="text-sm font-medium">Routing Decision Logs</div>
+				<div className="text-sm font-medium">{i18n.t("workspace.logs.detail.routingDecisionLogs")}</div>
 				<button
 					type="button"
 					onClick={() => copy(logs)}
@@ -699,12 +700,12 @@ export function LogDetailView({
 			<div className="flex items-center justify-between gap-3">
 				<div className="text-muted-foreground flex items-center gap-2 text-sm">
 					{headerAction}
-					<span className="text-foreground font-medium">Request details</span>
+					<span className="text-foreground font-medium">{i18n.t("workspace.logs.detail.requestDetailsTitle")}</span>
 				</div>
 				<div className="flex items-center gap-3">
 					{revealAvailable && (
 						<div className="flex items-center gap-2">
-							<span className="text-muted-foreground text-[11px] font-medium">Show original values</span>
+							<span className="text-muted-foreground text-[11px] font-medium">{i18n.t("supplemental.showOriginalValues")}</span>
 							<Switch
 								checked={revealEnabled}
 								onCheckedChange={handleToggleReveal}
@@ -724,7 +725,7 @@ export function LogDetailView({
 									{!isPassthrough && (
 										<DropdownMenuItem onClick={() => copyRequestBody(log, copyBody)} data-testid="logdetails-copy-request-body-button">
 											<Clipboard className="h-4 w-4" />
-											Copy request body
+											{i18n.t("workspace.logs.detail.copyRequestBody")}
 										</DropdownMenuItem>
 									)}
 									<DropdownMenuItem
@@ -732,7 +733,7 @@ export function LogDetailView({
 										data-testid="logdetails-export-log-button"
 									>
 										<Download className="h-4 w-4" />
-										Export as JSON
+										{i18n.t("workspace.logs.detail.exportAsJson")}
 									</DropdownMenuItem>
 									{handleDelete ? (
 										<>
@@ -740,7 +741,7 @@ export function LogDetailView({
 											<AlertDialogTrigger asChild>
 												<DropdownMenuItem variant="destructive" data-testid="logdetails-delete-item">
 													<Trash2 className="h-4 w-4" />
-													Delete log
+													{i18n.t("workspace.mcpLogs.deleteLog")}
 												</DropdownMenuItem>
 											</AlertDialogTrigger>{" "}
 										</>
@@ -749,11 +750,11 @@ export function LogDetailView({
 							</DropdownMenu>
 							<AlertDialogContent>
 								<AlertDialogHeader>
-									<AlertDialogTitle>Are you sure you want to delete this log?</AlertDialogTitle>
-									<AlertDialogDescription>This action cannot be undone. This will permanently delete the log entry.</AlertDialogDescription>
+									<AlertDialogTitle>{i18n.t("workspace.logs.detail.deleteConfirmTitle")}</AlertDialogTitle>
+									<AlertDialogDescription>{i18n.t("workspace.logs.detail.deleteConfirmDescription")}</AlertDialogDescription>
 								</AlertDialogHeader>
 								<AlertDialogFooter>
-									<AlertDialogCancel data-testid="logdetails-delete-cancel-button">Cancel</AlertDialogCancel>
+									<AlertDialogCancel data-testid="logdetails-delete-cancel-button">{i18n.t("common.cancel")}</AlertDialogCancel>
 									<AlertDialogAction
 										data-testid="logdetails-delete-confirm-button"
 										onClick={() => {
@@ -761,7 +762,7 @@ export function LogDetailView({
 											onClose();
 										}}
 									>
-										Delete
+										{i18n.t("common.delete")}
 									</AlertDialogAction>
 								</AlertDialogFooter>
 							</AlertDialogContent>
@@ -804,12 +805,12 @@ export function LogDetailView({
 									variant="outline"
 									className="rounded-sm bg-indigo-100 px-2 py-0.5 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200"
 								>
-									Direct Cache
+									{i18n.t("supplemental.directCache")}
 								</Badge>
 							) : null}
 							{log.cache_debug?.hit_type === "semantic" ? (
 								<Badge variant="outline" className="rounded-sm bg-rose-100 px-2 py-0.5 text-rose-800 dark:bg-rose-900 dark:text-rose-200">
-									Semantic Cache
+									{i18n.t("supplemental.semanticCache")}
 								</Badge>
 							) : null}
 							{(log.is_large_payload_request || log.is_large_payload_response) && (
@@ -817,7 +818,7 @@ export function LogDetailView({
 									variant="outline"
 									className="rounded-sm border-amber-300 bg-amber-50 px-2 py-0.5 text-amber-700 dark:border-amber-600 dark:bg-amber-950 dark:text-amber-400"
 								>
-									Large Payload
+									{i18n.t("supplemental.largePayload")}
 								</Badge>
 							)}
 							{isRealtimeTurn && log.metadata?.realtime_transport && (
@@ -952,7 +953,7 @@ export function LogDetailView({
 			</div>
 			<details className="group bg-card rounded-sm border" open={false}>
 				<summary className="hover:bg-muted/30 flex cursor-pointer items-center justify-between px-4 py-2.5 text-sm transition">
-					<span className="text-foreground font-medium">More details</span>
+					<span className="text-foreground font-medium">{i18n.t("supplemental.moreDetails")}</span>
 					<span className="text-muted-foreground flex items-center gap-2 text-xs">
 						<span className="hidden md:inline">timings, request meta, tokens, caching, metadata</span>
 						<ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
@@ -960,7 +961,7 @@ export function LogDetailView({
 				</summary>
 				<div className="space-y-4 border-t px-6 py-4">
 					<div className="space-y-4">
-						<BlockHeader title="Timings" />
+						<BlockHeader title={i18n.t("workspace.mcpLogs.details.timings")} />
 						<div className="grid w-full grid-cols-3 items-center justify-between gap-4">
 							<LogEntryDetailsView
 								className="w-full"
@@ -987,7 +988,7 @@ export function LogDetailView({
 					</div>
 					<DottedSeparator />
 					<div className="space-y-4">
-						<BlockHeader title="Request Details" />
+						<BlockHeader title={i18n.t("workspace.mcpLogs.requestDetails")} />
 						<div className="grid w-full grid-cols-3 items-start justify-between gap-4">
 							<LogEntryDetailsView
 								className="w-full"
@@ -1057,7 +1058,7 @@ export function LogDetailView({
 														{log.parent_request_id}
 													</code>
 												</TooltipTrigger>
-												<TooltipContent sideOffset={6}>Filter this session</TooltipContent>
+												<TooltipContent sideOffset={6}>{i18n.t("supplemental.filterSession")}</TooltipContent>
 											</Tooltip>
 										) : (
 											<code className="block min-w-0 font-normal break-all">{log.parent_request_id}</code>
@@ -1471,7 +1472,7 @@ export function LogDetailView({
 									<>
 										<DottedSeparator />
 										<div className="space-y-4">
-											<BlockHeader title="Reasoning Parameters" />
+											<BlockHeader title={i18n.t("supplemental.reasoningParameters")} />
 											<div className="grid w-full grid-cols-3 items-center justify-between gap-4">
 												{reasoning.effort && (
 													<LogEntryDetailsView
@@ -1615,7 +1616,7 @@ export function LogDetailView({
 							<>
 								<DottedSeparator />
 								<div className="space-y-4">
-									<BlockHeader title="Metadata" />
+									<BlockHeader title={i18n.t("workspace.mcpLogs.metadata")} />
 									<div className="grid w-full grid-cols-3 items-start justify-between gap-4">
 										{Object.entries(log.metadata)
 											.filter(([key]) => {
@@ -1648,7 +1649,7 @@ export function LogDetailView({
 				<TabsList className="bg-muted/60 h-10 w-fit">
 					{showTabs && (
 						<TabsTrigger value="messages" className="px-3">
-							Messages
+							{i18n.t("supplemental.messages")}
 							{log.input_history?.length ? (
 								<span className="bg-background text-muted-foreground ml-1.5 rounded-sm border px-2 py-0.5 text-[10px] tabular-nums">
 									{log.input_history.length + (log.output_message ? 1 : 0)}
@@ -1659,7 +1660,7 @@ export function LogDetailView({
 
 					{showTabs && !isPassthrough && !log.list_models_output && (
 						<TabsTrigger value="tools" className="px-3">
-							Tools
+							{i18n.t("supplemental.tools")}
 							{declaredTools.length ? (
 								<span className="bg-background text-muted-foreground ml-1.5 rounded-sm border px-2 py-0.5 text-[10px] tabular-nums">
 									{declaredTools.length}
@@ -1669,7 +1670,7 @@ export function LogDetailView({
 					)}
 					{showTabs && (
 						<TabsTrigger value="routing" className="px-3">
-							Routing
+							{i18n.t("supplemental.routing")}
 							{log.routing_engine_logs ? (
 								<span className="bg-background text-muted-foreground ml-1.5 rounded-sm border px-2 py-0.5 text-[10px] tabular-nums">
 									{log.routing_engine_logs.split("\n").filter(Boolean).length}
@@ -1678,7 +1679,7 @@ export function LogDetailView({
 						</TabsTrigger>
 					)}
 					<TabsTrigger value="plugins" className="px-3">
-						Plugin Logs
+						{i18n.t("supplemental.pluginLogs")}
 						{pluginLogCount > 0 ? (
 							<span className="bg-background text-muted-foreground ml-1.5 rounded-sm border px-2 py-0.5 text-[10px] tabular-nums">
 								{pluginLogCount}
@@ -1687,7 +1688,7 @@ export function LogDetailView({
 					</TabsTrigger>
 					{!isPassthrough && (
 						<TabsTrigger value="raw" className="px-3">
-							Raw JSON
+							{i18n.t("supplemental.rawJson")}
 						</TabsTrigger>
 					)}
 				</TabsList>
@@ -1695,7 +1696,7 @@ export function LogDetailView({
 				<TabsContent value="messages" className="space-y-4">
 					{log.content_hidden && (
 						<div className="text-muted-foreground rounded-sm border border-dashed p-5 text-center text-sm">
-							Content logging has been disabled for this request.
+							{i18n.t("supplemental.contentLoggingDisabled")}
 						</div>
 					)}
 					<div className={cn("flex justify-end", log.content_hidden && "hidden")}>
@@ -1710,7 +1711,7 @@ export function LogDetailView({
 											: "text-muted-foreground hover:text-foreground border-transparent hover:border-border",
 									)}
 								>
-									Messages
+									{i18n.t("supplemental.messages")}
 									{visibleRoles.size < allRoles.length && (
 										<span className="bg-primary text-primary-foreground rounded-sm px-1 py-0.5 text-[10px] tabular-nums">
 											{visibleRoles.size}/{allRoles.length}
@@ -1724,7 +1725,7 @@ export function LogDetailView({
 									checked={visibleRoles.size === allRoles.length}
 									onCheckedChange={(checked) => setVisibleRoles(checked ? new Set(allRoles) : new Set())}
 								>
-									Show all messages
+									{i18n.t("supplemental.showAllMessages")}
 								</DropdownMenuCheckboxItem>
 								<DropdownMenuSeparator />
 								{(
@@ -1753,7 +1754,7 @@ export function LogDetailView({
 								))}
 								<DropdownMenuSeparator />
 								<DropdownMenuItem onClick={() => setVisibleRoles(new Set())} className="text-muted-foreground justify-center text-[12px]">
-									Clear all
+									{i18n.t("supplemental.clearAll")}
 								</DropdownMenuItem>
 							</DropdownMenuContent>
 						</DropdownMenu>
@@ -1789,7 +1790,7 @@ export function LogDetailView({
 
 					{isPassthrough && passthroughRequestBody && (
 						<CollapsibleBox
-							title="Request Body"
+							title={i18n.t("supplemental.requestBody")}
 							onCopy={() => {
 								try {
 									return JSON.stringify(JSON.parse(passthroughRequestBody || ""), null, 2);
@@ -1824,7 +1825,7 @@ export function LogDetailView({
 					)}
 					{isPassthrough && passthroughResponseBody && log.status !== "processing" && (
 						<CollapsibleBox
-							title="Response Body"
+							title={i18n.t("supplemental.responseBody")}
 							onCopy={() => {
 								try {
 									return JSON.stringify(JSON.parse(passthroughResponseBody || ""), null, 2);
@@ -1945,7 +1946,7 @@ export function LogDetailView({
 														.map((b, i) => {
 															const src = b.image_url?.url;
 															if (!src) return null;
-															return <img key={`${i}-${src}`} src={src} alt="Attached image" className="mt-2 max-w-full rounded border" />;
+															return <img key={`${i}-${src}`} src={src} alt={i18n.t("workspace.logs.detail.attachedImageAlt")} className="mt-2 max-w-full rounded border" />;
 														})}
 												{text &&
 													Array.isArray(message.content) &&
@@ -2008,7 +2009,7 @@ export function LogDetailView({
 															<div className="rounded-sm border border-red-200 bg-red-50/70 p-3 dark:border-red-900 dark:bg-red-950/30">
 																<div className="flex items-center gap-2 text-red-700 dark:text-red-400">
 																	<AlertCircle className="h-4 w-4 shrink-0" />
-																	<span className="text-[12.5px] font-semibold">Refusal</span>
+																	<span className="text-[12.5px] font-semibold">{i18n.t("workspace.logs.detail.refusalLabel")}</span>
 																</div>
 																{refusalText && (
 																	<div className="mt-2 text-[13px] leading-relaxed break-words whitespace-pre-wrap text-red-700 dark:text-red-400">
@@ -2054,7 +2055,7 @@ export function LogDetailView({
 											<div className="rounded-sm border border-red-200 bg-red-50/70 p-3 dark:border-red-900 dark:bg-red-950/30">
 												<div className="flex items-center gap-2 text-red-700 dark:text-red-400">
 													<AlertCircle className="h-4 w-4 shrink-0" />
-													<span className="text-[12.5px] font-semibold">Refusal</span>
+													<span className="text-[12.5px] font-semibold">{i18n.t("workspace.logs.detail.refusalLabel")}</span>
 												</div>
 											</div>
 										</MessageRow>
@@ -2138,7 +2139,7 @@ export function LogDetailView({
 															<div key={`s-${i}`} className="space-y-1">
 																{reasoningParts.summaries.length > 1 ? (
 																	<div className="text-muted-foreground text-[10.5px] font-semibold tracking-wider uppercase">
-																		Summary {i + 1}
+																		{i18n.t("supplemental.summary")} {i + 1}
 																	</div>
 																) : null}
 																<CollapsibleCode text={s} preview={3} mono={false} />
@@ -2146,7 +2147,7 @@ export function LogDetailView({
 														))}
 														{reasoningParts.encrypted ? (
 															<div className="space-y-1">
-																<div className="text-muted-foreground text-[10.5px] font-semibold tracking-wider uppercase">Encrypted</div>
+																<div className="text-muted-foreground text-[10.5px] font-semibold tracking-wider uppercase">{i18n.t("supplemental.encrypted")}</div>
 																<CollapsibleCode text={reasoningParts.encrypted} preview={2} />
 															</div>
 														) : null}
@@ -2158,7 +2159,7 @@ export function LogDetailView({
 														) : null}
 													</div>
 												) : (
-													<div className="text-muted-foreground text-[12px] italic">No reasoning content available</div>
+													<div className="text-muted-foreground text-[12px] italic">{i18n.t("workspace.logs.detail.noReasoningContent")}</div>
 												)
 											) : text ? (
 												usePlainText ? (
@@ -2174,9 +2175,9 @@ export function LogDetailView({
 											) : Array.isArray(msg.tools) && msg.tools.length > 0 ? (
 												<CollapsibleCode text={JSON.stringify(msg.tools, null, 2)} preview={3} />
 											) : Array.isArray(msg.tools) ? (
-												<div className="text-muted-foreground text-[12px] italic">No tools declared</div>
+												<div className="text-muted-foreground text-[12px] italic">{i18n.t("supplemental.noToolsDeclared")}</div>
 											) : (
-												<div className="text-muted-foreground text-[12px] italic">No content</div>
+												<div className="text-muted-foreground text-[12px] italic">{i18n.t("workspace.logs.detail.noContent")}</div>
 											)}
 											{Array.isArray(msg.content) &&
 												msg.content
@@ -2185,7 +2186,7 @@ export function LogDetailView({
 														<img
 															key={`${i}-${b.image_url}`}
 															src={b.image_url}
-															alt="Attached image"
+															alt={i18n.t("workspace.logs.detail.attachedImageAlt")}
 															className="mt-2 max-w-full rounded border"
 														/>
 													))}
@@ -2198,13 +2199,13 @@ export function LogDetailView({
 
 					{log.is_large_payload_request && !log.input_history?.length && !log.responses_input_history?.length && (
 						<div className="rounded-sm border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
-							Large payload request: input content was streamed directly to the provider and is not available for display.
+							{i18n.t("workspace.logs.detail.largePayloadRequest")}
 							{log.raw_request && " A truncated preview is available in the Raw JSON tab."}
 						</div>
 					)}
 					{log.is_large_payload_response && !log.output_message && !log.responses_output?.length && log.status !== "processing" && (
 						<div className="rounded-sm border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
-							Large payload response: response content was streamed directly to the client and is not available for display.
+							{i18n.t("workspace.logs.detail.largePayloadResponse")}
 							{log.raw_response && " A truncated preview is available in the Raw JSON tab."}
 						</div>
 					)}
@@ -2273,7 +2274,7 @@ export function LogDetailView({
 						<div className="rounded-sm border border-red-200 bg-red-50/70 p-5 dark:border-red-900 dark:bg-red-950/30">
 							<div className="flex items-center gap-2 text-red-700 dark:text-red-400">
 								<AlertCircle className="h-4 w-4 shrink-0" />
-								<span className="text-[12.5px] font-semibold">Error</span>
+								<span className="text-[12.5px] font-semibold">{i18n.t("workspace.mcp.errorTitle")}</span>
 								{log.error_details?.error.message ? <CopyInlineButton text={log.error_details.error.message} /> : null}
 							</div>
 							{log.error_details?.error.message ? (
@@ -2294,7 +2295,7 @@ export function LogDetailView({
 							{log.error_details?.error.error != null ? (
 								<details className="group mt-3 rounded-sm border border-red-200/70 bg-white/40 dark:border-red-900/70 dark:bg-red-950/40">
 									<summary className="flex cursor-pointer items-center justify-between px-3 py-2 text-[12px] text-red-700 hover:bg-red-50/80 dark:text-red-400 dark:hover:bg-red-950/60">
-										<span className="font-medium">Details</span>
+										<span className="font-medium">{i18n.t("workspace.logs.detail.details")}</span>
 										<ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
 									</summary>
 									<div className="custom-scrollbar max-h-[400px] overflow-y-auto border-t border-red-200/70 px-3 py-2 font-mono text-[11.5px] leading-[1.6] break-words whitespace-pre-wrap text-red-900 dark:border-red-900/70 dark:text-red-300">
@@ -2355,7 +2356,7 @@ export function LogDetailView({
 											{schemaJson ? (
 												<div className="border-t">
 													<div className="text-muted-foreground flex items-center justify-between px-3 py-1.5 text-[10.5px] tracking-wider uppercase">
-														<span className="font-semibold">Parameters</span>
+														<span className="font-semibold">{i18n.t("workspace.logs.detail.parameters")}</span>
 														<CopyInlineButton text={schemaJson} />
 													</div>
 													<pre className="custom-scrollbar max-h-[300px] overflow-auto border-t px-3 py-2 font-mono text-[11.5px] leading-[1.6] whitespace-pre">
@@ -2363,7 +2364,7 @@ export function LogDetailView({
 													</pre>
 												</div>
 											) : (
-												<div className="text-muted-foreground border-t px-3 py-2 text-[11.5px]">No parameter schema.</div>
+												<div className="text-muted-foreground border-t px-3 py-2 text-[11.5px]">{i18n.t("workspace.logs.detail.noParameterSchema")}</div>
 											)}
 										</details>
 									);
@@ -2372,7 +2373,7 @@ export function LogDetailView({
 						</div>
 					) : null}
 					{log.params?.instructions && (
-						<CollapsibleBox title="Instructions" onCopy={() => log.params?.instructions || ""}>
+						<CollapsibleBox title={i18n.t("workspace.logs.detail.instructions")} onCopy={() => log.params?.instructions || ""}>
 							<div className="custom-scrollbar max-h-[400px] overflow-y-auto px-6 py-2 font-mono text-xs break-words whitespace-pre-wrap">
 								{log.params.instructions}
 							</div>
@@ -2380,7 +2381,7 @@ export function LogDetailView({
 					)}
 					{!toolsParameter && !log.params?.instructions && (
 						<div className="text-muted-foreground rounded-sm border border-dashed p-5 text-center text-sm">
-							No tools or instructions on this request.
+							{i18n.t("workspace.logs.detail.noToolsOrInstructions")}
 						</div>
 					)}
 				</TabsContent>
@@ -2397,7 +2398,7 @@ export function LogDetailView({
 										<tr className="border-border text-muted-foreground border-b">
 											<th className="py-1 pr-6 text-left font-medium">#</th>
 											<th className="py-1 pr-6 text-left font-medium">Key</th>
-											<th className="py-1 text-left font-medium">Result</th>
+											<th className="py-1 text-left font-medium">{i18n.t("workspace.mcpLogs.details.result")}</th>
 										</tr>
 									</thead>
 									<tbody>
@@ -2409,7 +2410,7 @@ export function LogDetailView({
 													{record.fail_reason ? (
 														<span className="text-destructive">{record.fail_reason}</span>
 													) : (
-														<span className="text-green-600 dark:text-green-400">success</span>
+														<span className="text-green-600 dark:text-green-400">{i18n.t("workspace.logs.detail.success")}</span>
 													)}
 												</td>
 											</tr>
@@ -2423,7 +2424,7 @@ export function LogDetailView({
 						<RoutingDecisionLogs logs={log.routing_engine_logs} />
 					) : (
 						<div className="text-muted-foreground rounded-sm border border-dashed p-5 text-center text-sm">
-							No routing logs for this request.
+							{i18n.t("workspace.logs.detail.noRoutingLogs")}
 						</div>
 					)}
 				</TabsContent>
@@ -2433,7 +2434,7 @@ export function LogDetailView({
 						<PluginLogsView pluginLogs={log.plugin_logs} />
 					) : (
 						<div className="text-muted-foreground rounded-sm border border-dashed p-5 text-center text-sm">
-							No plugin logs for this request.
+							{i18n.t("workspace.logs.detail.noPluginLogs")}
 						</div>
 					)}
 				</TabsContent>
@@ -2442,9 +2443,9 @@ export function LogDetailView({
 					{rawRequest && (
 						<>
 							<div className="text-muted-foreground text-[12px]">
-								Raw Request sent to <span className="text-foreground font-medium capitalize">{log.provider}</span>
+								{i18n.t("workspace.logs.detail.rawRequestSentTo")} <span className="text-foreground font-medium capitalize">{log.provider}</span>
 								{log.is_large_payload_request && (
-									<span className="ml-2 text-xs font-normal text-amber-600 dark:text-amber-400">(truncated preview)</span>
+									<span className="ml-2 text-xs font-normal text-amber-600 dark:text-amber-400">{i18n.t("workspace.logs.detail.truncatedPreview")}</span>
 								)}
 							</div>
 							<CollapsibleBox
@@ -2473,9 +2474,9 @@ export function LogDetailView({
 					{rawResponse && log.status !== "processing" && (
 						<>
 							<div className="text-muted-foreground pt-4 text-[12px]">
-								Raw Response from <span className="text-foreground font-medium capitalize">{log.provider}</span>
+								{i18n.t("workspace.logs.detail.rawResponseFrom")} <span className="text-foreground font-medium capitalize">{log.provider}</span>
 								{log.is_large_payload_response && (
-									<span className="ml-2 text-xs font-normal text-amber-600 dark:text-amber-400">(truncated preview)</span>
+									<span className="ml-2 text-xs font-normal text-amber-600 dark:text-amber-400">{i18n.t("workspace.logs.detail.truncatedPreview")}</span>
 								)}
 							</div>
 							<CollapsibleBox
@@ -2502,7 +2503,7 @@ export function LogDetailView({
 						</>
 					)}
 					{!rawRequest && !rawResponse && !passthroughRequestBody && !passthroughResponseBody && (
-						<div className="text-muted-foreground rounded-sm border border-dashed p-5 text-center text-sm">No raw JSON available.</div>
+						<div className="text-muted-foreground rounded-sm border border-dashed p-5 text-center text-sm">{i18n.t("workspace.logs.detail.noRawJson")}</div>
 					)}
 				</TabsContent>
 			</Tabs>
@@ -2551,7 +2552,7 @@ const copyRequestBody = async (log: LogEntry, copy: (text: string) => Promise<vo
 		const isSupportedType = isChat || isResponses || isRealtimeTurn || isSpeech || isTextCompletion || isEmbedding;
 		if (!isSupportedType) {
 			if (log.object === "audio.transcription" || log.object === "audio.transcription.chunk") {
-				toast.error("Copy request body is not available for transcription requests");
+				toast.error(i18n.t("workspace.logs.detail.copyRequestBodyNotAvailableForTranscription"));
 			} else {
 				toast.error("Copy request body is only available for chat, responses, compaction, speech, text completion, and embedding requests");
 			}
@@ -2609,6 +2610,6 @@ const copyRequestBody = async (log: LogEntry, copy: (text: string) => Promise<vo
 		const requestBodyJson = JSON.stringify(requestBody, null, 2);
 		await copy(requestBodyJson);
 	} catch {
-		toast.error("Failed to copy request body");
+		toast.error(i18n.t("workspace.logs.detail.requestBodyCopyFailed"));
 	}
 };

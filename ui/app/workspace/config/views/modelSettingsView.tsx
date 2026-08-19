@@ -12,6 +12,7 @@ import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
+import i18n from "@/lib/i18n";
 
 interface ModelSettingsFormData {
 	pricing_datasheet_url: string;
@@ -113,7 +114,7 @@ export default function ModelSettingsView() {
 					routing_chain_max_depth: data.routing_chain_max_depth,
 				},
 			}).unwrap();
-			toast.success("Model settings updated successfully.");
+			toast.success(i18n.t("workspace.customPricing.modelSettings.updatedSuccess"));
 			reset(data);
 		} catch (error) {
 			toast.error(getErrorMessage(error));
@@ -133,21 +134,21 @@ export default function ModelSettingsView() {
 		<div className="mx-auto w-full max-w-7xl space-y-4" data-testid="model-settings-view">
 			<form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
 				<div>
-					<h2 className="text-lg font-semibold tracking-tight">Model Settings</h2>
-					<p className="text-muted-foreground text-sm">Configure pricing and routing behaviour.</p>
+					<h2 className="text-lg font-semibold tracking-tight">{i18n.t("sidebar.sub.modelSettings")}</h2>
+					<p className="text-muted-foreground text-sm">{i18n.t("workspace.customPricing.modelSettings.description")}</p>
 				</div>
 
 				<div className="space-y-4">
 					{/* Pricing Datasheet URL */}
 					<div className="space-y-2 rounded-sm border p-4">
 						<div className="space-y-0.5">
-							<Label htmlFor="pricing-datasheet-url">Pricing Datasheet URL</Label>
-							<p className="text-muted-foreground text-sm">URL to a custom pricing datasheet. Leave empty to use default pricing.</p>
+							<Label htmlFor="pricing-datasheet-url">{i18n.t("workspace.customPricing.modelSettings.pricingDatasheetUrl")}</Label>
+							<p className="text-muted-foreground text-sm">{i18n.t("workspace.customPricing.modelSettings.pricingDatasheetUrlDesc")}</p>
 						</div>
 						<Input
 							id="pricing-datasheet-url"
 							type="text"
-							placeholder="https://example.com/pricing.json"
+							placeholder={i18n.t("workspace.customPricing.modelSettings.pricingDatasheetUrlPlaceholder")}
 							data-testid="pricing-datasheet-url-input"
 							{...register("pricing_datasheet_url", {
 								validate: {
@@ -199,8 +200,8 @@ export default function ModelSettingsView() {
 					{/* Pricing Sync Interval */}
 					<div className="space-y-2 rounded-sm border p-4">
 						<div className="space-y-0.5">
-							<Label htmlFor="pricing-sync-interval">Pricing Sync Interval (hours)</Label>
-							<p className="text-muted-foreground text-sm">How often to sync pricing data from the datasheet URL.</p>
+							<Label htmlFor="pricing-sync-interval">{i18n.t("workspace.customPricing.modelSettings.pricingSyncInterval")}</Label>
+							<p className="text-muted-foreground text-sm">{i18n.t("workspace.customPricing.modelSettings.pricingSyncIntervalDesc")}</p>
 						</div>
 						<Input
 							id="pricing-sync-interval"
@@ -257,9 +258,9 @@ export default function ModelSettingsView() {
 					{/* Routing Chain Max Depth */}
 					<div className="flex items-center justify-between rounded-sm border p-4">
 						<div className="space-y-0.5">
-							<Label htmlFor="routing-chain-max-depth">Routing Chain Max Depth</Label>
+							<Label htmlFor="routing-chain-max-depth">{i18n.t("workspace.customPricing.modelSettings.routingChainMaxDepth")}</Label>
 							<p className="text-muted-foreground text-sm">
-								Maximum number of chained routing rule evaluations per request. Prevents infinite loops from circular rule definitions.
+								{i18n.t("workspace.customPricing.modelSettings.routingChainMaxDepthDesc")}
 							</p>
 						</div>
 						<Input

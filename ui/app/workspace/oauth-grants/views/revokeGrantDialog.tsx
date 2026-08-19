@@ -12,6 +12,7 @@ import {
 	AlertDialogHeader,
 	AlertDialogTitle,
 } from "@/components/ui/alertDialog";
+import i18n from "@/lib/i18n";
 
 interface RevokeGrantDialogProps {
 	open: boolean;
@@ -36,13 +37,13 @@ export default function RevokeGrantDialog({ open, onOpenChange, onConfirm }: Rev
 				</AlertDialogHeader>
 				<AlertDialogFooter>
 					<AlertDialogCancel data-testid="oauth-grants-revoke-cancel-btn">
-						Cancel
+						{i18n.t("common.cancel")}
 					</AlertDialogCancel>
 					<AlertDialogAction
 						data-testid="oauth-grants-revoke-confirm-btn"
 						onClick={onConfirm}
 					>
-						Revoke
+						{i18n.t("supplemental.revoke")}
 					</AlertDialogAction>
 				</AlertDialogFooter>
 			</AlertDialogContent>

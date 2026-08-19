@@ -22,6 +22,7 @@ import { FilePreviewPane } from "../components/filePreview";
 import { composeFrontmatter, type SkillFormReturn } from "../components/helpers";
 import { MetadataTableEditor } from "../components/metadataEditorTableView";
 import { FormSection, SkillMarkdown } from "../components/shared";
+import i18n from "@/lib/i18n";
 
 export function SkillEditView({
 	form,
@@ -215,7 +216,7 @@ export function SkillEditView({
 					<div className="flex flex-col gap-8 pt-4">
 						<section className="flex flex-col gap-2">
 							<div className="flex items-center gap-1.5">
-								<h2 className="text-foreground text-base leading-[normal] font-semibold">Name</h2>
+								<h2 className="text-foreground text-base leading-[normal] font-semibold">{i18n.t("workspace.mcp.name")}</h2>
 								<Tooltip>
 									<TooltipTrigger asChild>
 										<button
@@ -258,7 +259,7 @@ export function SkillEditView({
 				<ResizablePanelGroup direction="horizontal" className="h-full min-h-0">
 					{/* Left: files panel */}
 					<ResizablePanel defaultSize="28%" minSize="18%" maxSize="50%" className="bg-card flex min-h-0 flex-col gap-2">
-						<p className="text-muted-foreground/70 px-1 text-[10px] font-semibold tracking-wider uppercase">Details</p>
+						<p className="text-muted-foreground/70 px-1 text-[10px] font-semibold tracking-wider uppercase">{i18n.t("workspace.logs.detail.details")}</p>
 						<button
 							type="button"
 							data-testid="skill-details-pane-btn"
@@ -274,15 +275,15 @@ export function SkillEditView({
 							)}
 						>
 							<Settings2 className="h-3.5 w-3.5 shrink-0" />
-							Skill Metadata
+							{i18n.t("supplemental.skillMetadata")}
 						</button>
-						<p className="text-muted-foreground/70 mt-2 px-1 text-[10px] font-semibold tracking-wider uppercase">Files</p>
+						<p className="text-muted-foreground/70 mt-2 px-1 text-[10px] font-semibold tracking-wider uppercase">{i18n.t("supplemental.files")}</p>
 						<div className="bg-card flex min-h-0 flex-1 flex-col rounded-md border">
 							<div className="flex h-9 items-center border-b">
 								<div className="relative grow">
 									<Search className="text-muted-foreground absolute top-1/2 left-2.5 h-4 w-4 -translate-y-1/2" />
 									<Input
-										placeholder="Search files..."
+										placeholder={i18n.t("supplemental.searchFiles")}
 										value={fileSearchQuery}
 										onChange={(e) => setFileSearchQuery(e.target.value)}
 										data-testid="sidebar-search"
@@ -370,7 +371,7 @@ export function SkillEditView({
 										role="tab"
 										aria-selected={bodyTab === "edit"}
 									>
-										Edit
+										{i18n.t("common.edit")}
 									</button>
 									<button
 										type="button"
@@ -383,7 +384,7 @@ export function SkillEditView({
 										role="tab"
 										aria-selected={bodyTab === "preview"}
 									>
-										Preview
+										{i18n.t("supplemental.preview")}
 									</button>
 									<span className="text-muted-foreground ml-auto pr-1 text-xs">
 										Use <code className="font-mono">@</code> to reference files
@@ -456,7 +457,7 @@ export function SkillEditView({
 					onClick={onCancel}
 					className="text-muted-foreground hover:bg-transparent hover:text-red-600 dark:hover:text-red-400"
 				>
-					Cancel
+					{i18n.t("common.cancel")}
 				</Button>
 				<Button variant="outline" size="sm" data-testid="skill-preview-btn" onClick={() => setShowPreviewDialog(true)}>
 					<Eye className="h-3.5 w-3.5" />
@@ -564,7 +565,7 @@ export function SkillEditView({
 							</Button>
 							<DialogClose className="text-muted-foreground hover:bg-background/80 hover:text-foreground cursor-pointer rounded-sm p-1.5 transition-colors">
 								<X className="h-4 w-4" />
-								<span className="sr-only">Close</span>
+								<span className="sr-only">{i18n.t("common.close")}</span>
 							</DialogClose>
 						</div>
 						<ScrollArea className="h-dvh" viewportClassName="bg-muted">
@@ -629,7 +630,7 @@ function DetailsEditorPane({
 		<div className="flex h-full min-h-0 flex-col overflow-hidden">
 			<ScrollArea className="min-h-0 flex-1 rounded-sm border">
 				<div className="flex flex-col gap-8 p-4">
-					<FormSection title="Description">
+					<FormSection title={i18n.t("workspace.virtualKeys.description")}>
 						<div className="flex flex-col gap-2">
 							<Textarea
 								data-testid="skill-description-input"
@@ -638,7 +639,7 @@ function DetailsEditorPane({
 									form.setDescription(e.target.value);
 									form.validateField("description", e.target.value);
 								}}
-								placeholder="What does this skill do?"
+								placeholder={i18n.t("supplemental.whatSkillDoes")}
 								rows={3}
 								className={form.errors.description ? "border-destructive" : undefined}
 							/>
@@ -651,10 +652,10 @@ function DetailsEditorPane({
 						</div>
 					</FormSection>
 
-					<FormSection title="Spec Fields">
+					<FormSection title={i18n.t("supplemental.specFields")}>
 						<div className="grid grid-cols-3 gap-4">
 							<div className="flex flex-col gap-1">
-								<Label className="text-muted-foreground text-xs">License</Label>
+								<Label className="text-muted-foreground text-xs">{i18n.t("supplemental.license")}</Label>
 								<Input
 									data-testid="skill-license-input"
 									value={form.license}
@@ -664,7 +665,7 @@ function DetailsEditorPane({
 								/>
 							</div>
 							<div className="flex flex-col gap-1">
-								<Label className="text-muted-foreground text-xs">Compatibility</Label>
+								<Label className="text-muted-foreground text-xs">{i18n.t("sidebar.sub.compatibility")}</Label>
 								<Input
 									data-testid="skill-compatibility-input"
 									value={form.compatibility}
@@ -674,7 +675,7 @@ function DetailsEditorPane({
 								/>
 							</div>
 							<div className="flex flex-col gap-1">
-								<Label className="text-muted-foreground text-xs">Allowed Tools</Label>
+								<Label className="text-muted-foreground text-xs">{i18n.t("workspace.virtualKeys.allowedTools")}</Label>
 								<Input
 									data-testid="skill-allowed-tools-input"
 									value={form.allowedTools}
@@ -687,7 +688,7 @@ function DetailsEditorPane({
 					</FormSection>
 
 					<FormSection
-						title="Metadata"
+						title={i18n.t("workspace.mcpLogs.metadata")}
 						helperText={
 							<>
 								Flat key-value pairs nested under <code className="font-mono">metadata:</code> in SKILL.md
@@ -704,7 +705,7 @@ function DetailsEditorPane({
 						/>
 					</FormSection>
 
-					<FormSection title="Extra Frontmatter" helperText="Valid JSON merged into the SKILL.md YAML frontmatter">
+					<FormSection title={i18n.t("supplemental.extraFrontmatter")} helperText="Valid JSON merged into the SKILL.md YAML frontmatter">
 						<div className="flex flex-col gap-2">
 							<div className="h-64 overflow-hidden rounded-sm border">
 								<CodeEditor
@@ -775,7 +776,7 @@ function VersionPopoverBody({
 				</p>
 			</div>
 			<div className="flex flex-col gap-1.5">
-				<Label className="text-muted-foreground text-xs">Version</Label>
+				<Label className="text-muted-foreground text-xs">{i18n.t("supplemental.version")}</Label>
 				<div className="flex items-center gap-2">
 					{!isCreate && previousVersion && (
 						<>
@@ -811,7 +812,7 @@ function VersionPopoverBody({
 			</div>
 			<div className="mt-4 flex justify-end gap-2">
 				<Button variant="ghost" size="sm" onClick={onClose}>
-					Cancel
+					{i18n.t("common.cancel")}
 				</Button>
 				<Button size="sm" data-testid="skill-version-confirm-btn" disabled={!canSave} onClick={submit}>
 					{isCreate ? "Create" : serve ? "Save & Serve" : "Save"}

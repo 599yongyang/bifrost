@@ -32,6 +32,7 @@ import isEqual from "lodash.isequal";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { v4 as uuid } from "uuid";
+import i18n from "@/lib/i18n";
 
 interface TeamSheetProps {
 	team?: Team | null;
@@ -315,7 +316,7 @@ export default function TeamSheet({ team, onSave, onCancel }: TeamSheetProps) {
 				}
 
 				await updateTeam({ teamId: team.id, data: updateData }).unwrap();
-				toast.success("Team updated successfully");
+				toast.success(i18n.t("supplemental.teamUpdated"));
 			} else {
 				// Create new team
 				const createData: CreateTeamRequest = {
@@ -341,7 +342,7 @@ export default function TeamSheet({ team, onSave, onCancel }: TeamSheetProps) {
 				}
 
 				await createTeam(createData).unwrap();
-				toast.success("Team created successfully");
+				toast.success(i18n.t("supplemental.teamCreated"));
 			}
 
 			onSave();
@@ -377,10 +378,10 @@ export default function TeamSheet({ team, onSave, onCancel }: TeamSheetProps) {
 						{/* Basic Information */}
 						<div className="flex flex-col gap-6">
 							<div className="space-y-2">
-								<Label htmlFor="name">Team Name *</Label>
+								<Label htmlFor="name">{i18n.t("workspace.governance.teams.dialog.teamName")}</Label>
 								<Input
 									id="name"
-									placeholder="e.g., Engineering Team"
+									placeholder={i18n.t("workspace.governance.teams.dialog.teamNamePlaceholder")}
 									value={formData.name}
 									maxLength={50}
 									onChange={(e) => updateField("name", e.target.value)}
@@ -392,7 +393,7 @@ export default function TeamSheet({ team, onSave, onCancel }: TeamSheetProps) {
 							{/* Customer Assignment — searchable/paginated, so the sheet never
 							    depends on the caller having fetched every customer up front. */}
 							<div className="space-y-2">
-								<Label htmlFor="customer">Customer (optional)</Label>
+								<Label htmlFor="customer">{i18n.t("supplemental.customerOptional")}</Label>
 								<div className="flex items-center gap-2" data-testid="team-customer-selector">
 									<CustomerSelector
 										value={formData.customerId}
@@ -421,25 +422,25 @@ export default function TeamSheet({ team, onSave, onCancel }: TeamSheetProps) {
 										</Button>
 									)}
 								</div>
-								<p className="text-muted-foreground text-sm">Assign to a customer or leave independent.</p>
+								<p className="text-muted-foreground text-sm">{i18n.t("supplemental.assignCustomer")}</p>
 							</div>
 						</div>
 
 						{/* Multi-budget configuration: one row per budget, each keyed by reset_duration */}
 						<div className="space-y-3">
 							<div className="flex items-center justify-between">
-								<Label>Budgets</Label>
+								<Label>{i18n.t("workspace.governance.teams.dialog.budgets")}</Label>
 								<button
 									type="button"
 									onClick={addBudgetRow}
 									className="text-primary text-xs font-medium hover:underline"
 									data-testid="team-add-budget-btn"
 								>
-									+ Add budget
+									{i18n.t("supplemental.addBudget")}
 								</button>
 							</div>
 							{formData.budgets.length === 0 && (
-								<p className="text-muted-foreground text-xs">No budgets. Click "Add budget" to enforce a spend limit.</p>
+								<p className="text-muted-foreground text-xs">{i18n.t("supplemental.noBudgets")}</p>
 							)}
 							{formData.budgets.map((row, idx) => (
 								<div key={row.id} className="space-y-2 rounded-md border p-3" data-testid={`team-budget-row-${idx}`}>
@@ -468,7 +469,7 @@ export default function TeamSheet({ team, onSave, onCancel }: TeamSheetProps) {
 											className="text-muted-foreground hover:text-destructive mt-6 text-xs font-medium"
 											data-testid={`team-remove-budget-btn-${idx}`}
 										>
-											Remove
+											{i18n.t("workspace.plugins.remove")}
 										</button>
 									</div>
 									{row.resetDuration.endsWith("Q") && (
@@ -521,11 +522,10 @@ export default function TeamSheet({ team, onSave, onCancel }: TeamSheetProps) {
 								<div className="flex items-center justify-between gap-4 rounded-md border px-3 py-2">
 									<div className="space-y-0.5">
 										<Label htmlFor="team-calendar-aligned-toggle" className="text-sm font-normal">
-											Align to calendar cycle
+											{i18n.t("workspace.virtualKeys.alignToCalendarCycle")}
 										</Label>
 										<p className="text-muted-foreground text-xs">
-											Reset budgets and rate limits at the start of each period (e.g. 1st of month) instead of rolling from creation date.
-											Applies to durations of a day or longer.
+											{i18n.t("supplemental.calendarBudgetReset")}
 										</p>
 									</div>
 									<Switch
@@ -542,7 +542,7 @@ export default function TeamSheet({ team, onSave, onCancel }: TeamSheetProps) {
 						<AlertDialog open={showCalendarAlignWarning} onOpenChange={setShowCalendarAlignWarning}>
 							<AlertDialogContent>
 								<AlertDialogHeader>
-									<AlertDialogTitle>Reset budget and rate-limit usage?</AlertDialogTitle>
+									<AlertDialogTitle>{i18n.t("supplemental.resetBudgetUsage")}</AlertDialogTitle>
 									<AlertDialogDescription>
 										Enabling calendar alignment will reset budget usage to <span className="font-semibold">$0.00</span> and token/request
 										rate-limit counters to <span className="font-semibold">0</span> for this team, then snap each reset date to the start of
@@ -551,7 +551,7 @@ export default function TeamSheet({ team, onSave, onCancel }: TeamSheetProps) {
 									</AlertDialogDescription>
 								</AlertDialogHeader>
 								<AlertDialogFooter>
-									<AlertDialogCancel data-testid="team-calendar-align-cancel-btn">Cancel</AlertDialogCancel>
+									<AlertDialogCancel data-testid="team-calendar-align-cancel-btn">{i18n.t("common.cancel")}</AlertDialogCancel>
 									<AlertDialogAction
 										data-testid="team-calendar-align-enable-btn"
 										onClick={() => {
@@ -559,7 +559,7 @@ export default function TeamSheet({ team, onSave, onCancel }: TeamSheetProps) {
 											setShowCalendarAlignWarning(false);
 										}}
 									>
-										Enable Calendar Alignment
+										{i18n.t("workspace.virtualKeys.enableCalendarAlignment")}
 									</AlertDialogAction>
 								</AlertDialogFooter>
 							</AlertDialogContent>
@@ -575,7 +575,7 @@ export default function TeamSheet({ team, onSave, onCancel }: TeamSheetProps) {
 						{/* Current Usage Section (only shown when editing with existing limits) */}
 						{isEditing && ((team?.budgets && team.budgets.length > 0) || team?.rate_limit) && (
 							<div className="bg-muted/50 space-y-4 rounded-lg border p-4">
-								<p className="text-sm font-medium">Current Usage</p>
+								<p className="text-sm font-medium">{i18n.t("workspace.providers.currentUsage")}</p>
 								<div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
 									{team?.budgets?.map((b) => (
 										<div key={b.id} className="space-y-1">
@@ -589,7 +589,7 @@ export default function TeamSheet({ team, onSave, onCancel }: TeamSheetProps) {
 												</Badge>
 											</div>
 											<p className="text-muted-foreground text-xs">
-												Last Reset:{" "}
+												{i18n.t("workspace.governance.teams.dialog.lastReset")}{" "}
 												{formatDistanceToNow(new Date(b.last_reset), {
 													addSuffix: true,
 												})}
@@ -618,7 +618,7 @@ export default function TeamSheet({ team, onSave, onCancel }: TeamSheetProps) {
 												</Badge>
 											</div>
 											<p className="text-muted-foreground text-xs">
-												Last Reset: {formatDistanceToNow(new Date(team.rate_limit.token_last_reset), { addSuffix: true })}
+												{i18n.t("workspace.governance.teams.dialog.lastReset")} {formatDistanceToNow(new Date(team.rate_limit.token_last_reset), { addSuffix: true })}
 											</p>
 										</div>
 									)}
@@ -645,7 +645,7 @@ export default function TeamSheet({ team, onSave, onCancel }: TeamSheetProps) {
 												</Badge>
 											</div>
 											<p className="text-muted-foreground text-xs">
-												Last Reset: {formatDistanceToNow(new Date(team.rate_limit.request_last_reset), { addSuffix: true })}
+												{i18n.t("workspace.governance.teams.dialog.lastReset")} {formatDistanceToNow(new Date(team.rate_limit.request_last_reset), { addSuffix: true })}
 											</p>
 										</div>
 									)}
@@ -657,7 +657,7 @@ export default function TeamSheet({ team, onSave, onCancel }: TeamSheetProps) {
 					<div className="border-border bg-card sticky bottom-0 z-10 border-t px-8 py-4">
 						<div className="flex justify-end gap-2">
 							<Button type="button" variant="outline" onClick={onCancel} disabled={loading}>
-								Cancel
+								{i18n.t("common.cancel")}
 							</Button>
 							<TooltipProvider>
 								<Tooltip>

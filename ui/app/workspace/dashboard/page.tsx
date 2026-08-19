@@ -20,6 +20,7 @@ import { type ModelRankingsTabViewHandle, ModelRankingsTabView } from "./compone
 import { type OverviewTabViewHandle, OverviewTabView } from "./components/tabViews/overviewTabView";
 import { type ProviderUsageTabViewHandle, ProviderUsageTabView } from "./components/tabViews/providerUsageTabView";
 import { type DashboardData, type DashboardTab, type ExportTab, DASHBOARD_EXPORT_TABS } from "./utils/exportUtils";
+import i18n from "@/lib/i18n";
 
 const toChartType = (value: string): ChartType => (value === "line" ? "line" : "bar");
 
@@ -465,7 +466,7 @@ export default function DashboardPage() {
 				{/* Header */}
 				<div className="flex items-center justify-between p-4">
 					<div className="flex items-center gap-2">
-						<h1 className="text-lg font-semibold">Dashboard</h1>
+						<h1 className="text-lg font-semibold">{i18n.t("sidebar.sub.dashboard")}</h1>
 					</div>
 					<div className="flex items-center gap-2">
 						<ExportPopover
@@ -488,7 +489,7 @@ export default function DashboardPage() {
 												setUrlState({ mcp_tool_names: value });
 											}
 										}}
-										placeholder="All Tools"
+										placeholder={i18n.t("workspace.dashboard.allTools")}
 										data-testid="dashboard-mcp-tool-filter"
 									/>
 								)}
@@ -503,7 +504,7 @@ export default function DashboardPage() {
 												setUrlState({ mcp_server_labels: value });
 											}
 										}}
-										placeholder="All Servers"
+										placeholder={i18n.t("workspace.dashboard.allServers")}
 										data-testid="dashboard-mcp-server-filter"
 									/>
 								)}
@@ -530,22 +531,22 @@ export default function DashboardPage() {
 						<div className="mb-2 max-w-full overflow-x-auto">
 							<TabsList className="w-max min-w-max">
 								<TabsTrigger className="shrink-0" value="overview" data-testid="dashboard-tab-overview">
-									Overview
+									{i18n.t("workspace.dashboard.overview")}
 								</TabsTrigger>
 								<TabsTrigger className="shrink-0" value="provider-usage" data-testid="dashboard-tab-provider-usage">
-									Provider Usage
+									{i18n.t("workspace.dashboard.providerUsage")}
 								</TabsTrigger>
 								<TabsTrigger className="shrink-0" value="rankings" data-testid="dashboard-tab-rankings">
-									Model Rankings
+									{i18n.t("workspace.dashboard.modelRankings")}
 								</TabsTrigger>
 								<TabsTrigger className="shrink-0" value="mcp" data-testid="dashboard-tab-mcp">
-									MCP usage
+									{i18n.t("workspace.dashboard.mcpUsage")}
 								</TabsTrigger>
 								<TabsTrigger className="shrink-0" value="team-rankings" data-testid="dashboard-tab-team-rankings">
 									Team Rankings
 								</TabsTrigger>
 								<TabsTrigger className="shrink-0" value="user-rankings" data-testid="dashboard-tab-user-rankings">
-									User Rankings
+									{i18n.t("workspace.dashboard.userRankings")}
 								</TabsTrigger>
 								<TabsTrigger className="shrink-0" value="virtual-key-rankings" data-testid="dashboard-tab-virtual-key-rankings">
 									Virtual Key Rankings

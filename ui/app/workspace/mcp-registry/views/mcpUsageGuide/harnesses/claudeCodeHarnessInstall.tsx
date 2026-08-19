@@ -4,6 +4,7 @@ import { buildClaudeCodeCommand } from "../commandBuilders";
 import { HarnessCommandSection } from "../harnessCommandSection";
 import type { ClaudeScope, HarnessInstallProps } from "../types";
 import { getRegistrationLabel } from "../utils";
+import i18n from "@/lib/i18n";
 
 export function ClaudeCodeHarnessInstall({
 	canGenerateCommand,
@@ -36,7 +37,7 @@ export function ClaudeCodeHarnessInstall({
 					<SelectContent>
 						<SelectItem value="local">Local</SelectItem>
 						<SelectItem value="project">Project</SelectItem>
-						<SelectItem value="user">User</SelectItem>
+						<SelectItem value="user">{i18n.t("common.user")}</SelectItem>
 					</SelectContent>
 				</Select>
 			}

@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import i18n from "@/lib/i18n";
 
 // The local cache plugin runs in one of two modes. Direct-only is purely
 // hash-based, no embedding provider needed; perfect for exact-replay
@@ -279,7 +280,7 @@ export default function CachingView() {
 
 			{configError !== undefined && (
 				<div className="border-destructive/50 bg-destructive/10 rounded-sm border p-4">
-					<p className="text-destructive text-sm font-medium">Failed to load configuration</p>
+					<p className="text-destructive text-sm font-medium">{i18n.t("workspace.config.caching.failedToLoadConfiguration")}</p>
 					<p className="text-muted-foreground mt-1 text-sm">
 						{getErrorMessage(configError) || "An unexpected error occurred. Please try again."}
 					</p>
@@ -383,7 +384,7 @@ export default function CachingView() {
 											<h3 className="text-sm font-medium">Embedding Provider &amp; Model</h3>
 											<div className="grid grid-cols-2 gap-4">
 												<div className="space-y-2">
-													<Label htmlFor="provider">Configured Providers</Label>
+													<Label htmlFor="provider">{i18n.t("workspace.providers.configuredProviders")}</Label>
 													<Select
 														value={cacheConfig.provider}
 														onValueChange={(value: ModelProviderName) =>
@@ -394,7 +395,7 @@ export default function CachingView() {
 														}
 													>
 														<SelectTrigger className="w-full" data-testid="caching-provider-select">
-															<SelectValue placeholder="Select provider" />
+															<SelectValue placeholder={i18n.t("workspace.config.caching.selectProvider")} />
 														</SelectTrigger>
 														<SelectContent>
 															{embeddingProviders
@@ -411,7 +412,7 @@ export default function CachingView() {
 													</Select>
 												</div>
 												<div className="space-y-2">
-													<Label htmlFor="embedding_model">Embedding Model*</Label>
+													<Label htmlFor="embedding_model">{i18n.t("workspace.config.caching.embeddingModel")}</Label>
 													<ModelMultiselect
 														inputId="embedding_model"
 														data-testid="caching-embedding-model-select"
@@ -429,7 +430,7 @@ export default function CachingView() {
 												here.
 											</p>
 											<div className="space-y-2">
-												<Label htmlFor="dimension">Dimension</Label>
+												<Label htmlFor="dimension">{i18n.t("workspace.config.caching.dimension")}</Label>
 												<Input
 													id="dimension"
 													data-testid="caching-dimension-input"
@@ -460,10 +461,10 @@ export default function CachingView() {
 
 								{/* Cache settings shared across modes. */}
 								<div className="space-y-4">
-									<h3 className="text-sm font-medium">Cache Settings</h3>
+									<h3 className="text-sm font-medium">{i18n.t("workspace.config.caching.cacheSettings")}</h3>
 									<div className={cn("grid gap-4", mode === "semantic" ? "grid-cols-2" : "grid-cols-1")}>
 										<div className="space-y-2">
-											<Label htmlFor="ttl">TTL (seconds)</Label>
+											<Label htmlFor="ttl">{i18n.t("workspace.config.caching.ttlSeconds")}</Label>
 											<Input
 												id="ttl"
 												data-testid="caching-ttl-input"
@@ -488,7 +489,7 @@ export default function CachingView() {
 										</div>
 										{mode === "semantic" && (
 											<div className="space-y-2">
-												<Label htmlFor="threshold">Similarity Threshold</Label>
+												<Label htmlFor="threshold">{i18n.t("workspace.config.caching.similarityThreshold")}</Label>
 												<Input
 													id="threshold"
 													data-testid="caching-threshold-input"
@@ -557,10 +558,10 @@ export default function CachingView() {
 
 								{/* Conversation Settings. */}
 								<div className="space-y-4">
-									<h3 className="text-sm font-medium">Conversation Settings</h3>
+									<h3 className="text-sm font-medium">{i18n.t("workspace.config.caching.conversationSettings")}</h3>
 									<div className="grid grid-cols-2 gap-4">
 										<div className="space-y-2">
-											<Label htmlFor="conversation_history_threshold">Conversation History Threshold</Label>
+											<Label htmlFor="conversation_history_threshold">{i18n.t("workspace.config.caching.conversationHistoryThreshold")}</Label>
 											<Input
 												id="conversation_history_threshold"
 												data-testid="caching-conversation-history-threshold-input"
@@ -594,7 +595,7 @@ export default function CachingView() {
 									<div className="space-y-2">
 										<div className="flex h-fit items-center justify-between space-x-2 rounded-sm border p-3">
 											<div className="space-y-0.5">
-												<Label className="text-sm font-medium">Exclude System Prompt</Label>
+												<Label className="text-sm font-medium">{i18n.t("workspace.config.caching.excludeSystemPrompt")}</Label>
 												<p className="text-muted-foreground text-xs">Strip system messages from the cache key.</p>
 											</div>
 											<Switch
@@ -613,7 +614,7 @@ export default function CachingView() {
 									<div className="space-y-3">
 										<div className="flex items-center justify-between space-x-2 rounded-sm border p-3">
 											<div className="space-y-0.5">
-												<Label className="text-sm font-medium">Cache by Model</Label>
+												<Label className="text-sm font-medium">{i18n.t("workspace.config.caching.cacheByModel")}</Label>
 												<p className="text-muted-foreground text-xs">
 													Include model name in the cache key. Different models won&apos;t share cached responses.
 												</p>
@@ -627,7 +628,7 @@ export default function CachingView() {
 										</div>
 										<div className="flex items-center justify-between space-x-2 rounded-sm border p-3">
 											<div className="space-y-0.5">
-												<Label className="text-sm font-medium">Cache by Provider</Label>
+												<Label className="text-sm font-medium">{i18n.t("workspace.config.caching.cacheByProvider")}</Label>
 												<p className="text-muted-foreground text-xs">
 													Include provider name in the cache key. Different providers won&apos;t share cached responses.
 												</p>
@@ -655,7 +656,7 @@ export default function CachingView() {
 											<b>x-bf-cache-threshold</b>: override the semantic similarity threshold.
 										</li>
 										<li>
-											<b>x-bf-cache-type</b>: send <code>direct</code> or <code>semantic</code> to limit lookup to one path.
+											<b>x-bf-cache-type</b>: send <code>direct</code> {i18n.t("workspace.virtualKeys.or")} <code>semantic</code> to limit lookup to one path.
 										</li>
 										<li>
 											<b>x-bf-cache-no-store</b>: <code>true</code> to skip writing the response (still serves cached hits).

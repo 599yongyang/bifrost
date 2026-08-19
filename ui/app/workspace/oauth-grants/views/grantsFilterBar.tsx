@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ComboboxSelect } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Fingerprint, KeyRound, Search, UserRound, X } from "lucide-react";
+import i18n from "@/lib/i18n";
 
 const MODE_OPTIONS = [
 	{ label: "User", value: "user", icon: <UserRound className="size-3.5" /> },
@@ -51,13 +52,13 @@ export default function GrantsFilterBar({
 				options={MODE_OPTIONS}
 				value={modeFilter}
 				onValueChange={onModeChange}
-				placeholder="All identities"
+				placeholder={i18n.t("supplemental.allIdentities")}
 				className="h-9 w-[180px]"
 			/>
 			{hasActiveFilters && (
 				<Button data-testid="oauth-grants-clear-filters-btn" variant="ghost" size="sm" onClick={onClearFilters} className="h-9">
 					<X className="h-4 w-4" />
-					Clear filters
+					{i18n.t("supplemental.clearFilters")}
 				</Button>
 			)}
 		</div>

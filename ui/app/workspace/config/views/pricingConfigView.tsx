@@ -6,6 +6,7 @@ import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
+import i18n from "@/lib/i18n";
 
 interface PricingFormData {
 	pricing_datasheet_url: string;
@@ -98,13 +99,13 @@ export default function PricingConfigView() {
 					{/* Pricing Datasheet URL */}
 					<div className="space-y-2 rounded-sm border p-4">
 						<div className="space-y-0.5">
-							<Label htmlFor="pricing-datasheet-url">Pricing Datasheet URL</Label>
-							<p className="text-muted-foreground text-sm">URL to a custom pricing datasheet. Leave empty to use default pricing.</p>
+							<Label htmlFor="pricing-datasheet-url">{i18n.t("workspace.customPricing.modelSettings.pricingDatasheetUrl")}</Label>
+							<p className="text-muted-foreground text-sm">{i18n.t("workspace.customPricing.modelSettings.pricingDatasheetUrlDesc")}</p>
 						</div>
 						<Input
 							id="pricing-datasheet-url"
 							type="text"
-							placeholder="https://example.com/pricing.json"
+							placeholder={i18n.t("workspace.customPricing.modelSettings.pricingDatasheetUrlPlaceholder")}
 							data-testid="pricing-datasheet-url-input"
 							{...register("pricing_datasheet_url", {
 								pattern: {
@@ -155,8 +156,8 @@ export default function PricingConfigView() {
 					<div className="space-y-2 rounded-sm border p-4">
 						<div className="space-y-2">
 							<div className="space-y-0.5">
-								<Label htmlFor="pricing-sync-interval">Pricing Sync Interval (hours)</Label>
-								<p className="text-muted-foreground text-sm">How often to sync pricing data from the datasheet URL.</p>
+								<Label htmlFor="pricing-sync-interval">{i18n.t("workspace.customPricing.modelSettings.pricingSyncInterval")}</Label>
+								<p className="text-muted-foreground text-sm">{i18n.t("workspace.customPricing.modelSettings.pricingSyncIntervalDesc")}</p>
 							</div>
 							<Input
 								id="pricing-sync-interval"

@@ -9,6 +9,7 @@ import type { CreateMCPLibraryEntryRequest, MCPAuthType, MCPConnectionType } fro
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
+import i18n from "@/lib/i18n";
 
 interface MCPLibraryAddServerFormData {
 	name: string;
@@ -124,7 +125,7 @@ export function MCPLibraryAddServerSheet({ open, onClose }: MCPLibraryAddServerS
 					<div className="flex-1 space-y-4 px-8 py-4">
 						{/* Name */}
 						<div className="space-y-2">
-							<Label htmlFor="mcp-add-name">Name</Label>
+							<Label htmlFor="mcp-add-name">{i18n.t("workspace.mcp.name")}</Label>
 							<Input
 								id="mcp-add-name"
 								placeholder="My Internal Server"
@@ -140,7 +141,7 @@ export function MCPLibraryAddServerSheet({ open, onClose }: MCPLibraryAddServerS
 
 						{/* Description */}
 						<div className="space-y-2">
-							<Label htmlFor="mcp-add-description">Description</Label>
+							<Label htmlFor="mcp-add-description">{i18n.t("workspace.virtualKeys.description")}</Label>
 							<Textarea
 								id="mcp-add-description"
 								placeholder="What this server does..."
@@ -152,21 +153,21 @@ export function MCPLibraryAddServerSheet({ open, onClose }: MCPLibraryAddServerS
 						{/* Connection details */}
 						<div className="flex gap-3">
 							<div className="w-32 shrink-0 space-y-2">
-								<Label>Connection Type</Label>
+								<Label>{i18n.t("workspace.mcp.connectionType")}</Label>
 								<Select value={connectionType} onValueChange={(v) => setValue("connection_type", v as MCPConnectionType)}>
 									<SelectTrigger className="w-full" data-testid="mcp-add-connection-type">
 										<SelectValue />
 									</SelectTrigger>
 									<SelectContent>
-										<SelectItem value="http">HTTP</SelectItem>
-										<SelectItem value="sse">SSE</SelectItem>
-										<SelectItem value="stdio">STDIO</SelectItem>
+										<SelectItem value="http">{i18n.t("workspace.mcp.connectionTypeLabels.http")}</SelectItem>
+										<SelectItem value="sse">{i18n.t("workspace.mcpForm.sse")}</SelectItem>
+										<SelectItem value="stdio">{i18n.t("workspace.mcpForm.stdio")}</SelectItem>
 									</SelectContent>
 								</Select>
 							</div>
 							{!isStdio && (
 								<div className="min-w-0 flex-1 space-y-2">
-									<Label htmlFor="mcp-add-url">Connection URL</Label>
+									<Label htmlFor="mcp-add-url">{i18n.t("workspace.mcpForm.connectionUrl")}</Label>
 									<Input
 										id="mcp-add-url"
 										placeholder="https://my-server.internal/mcp"
@@ -184,7 +185,7 @@ export function MCPLibraryAddServerSheet({ open, onClose }: MCPLibraryAddServerS
 						{isStdio && (
 							<div className="space-y-4 rounded-sm border p-4">
 								<div className="space-y-2">
-									<Label htmlFor="mcp-add-command">Command</Label>
+									<Label htmlFor="mcp-add-command">{i18n.t("workspace.mcpForm.command")}</Label>
 									<Input
 										id="mcp-add-command"
 										placeholder="npx"
@@ -197,7 +198,7 @@ export function MCPLibraryAddServerSheet({ open, onClose }: MCPLibraryAddServerS
 									{errors.command && <p className="text-destructive text-sm">{errors.command.message}</p>}
 								</div>
 								<div className="space-y-2">
-									<Label htmlFor="mcp-add-args">Arguments</Label>
+									<Label htmlFor="mcp-add-args">{i18n.t("workspace.mcpLogs.details.arguments")}</Label>
 									<Input
 										id="mcp-add-args"
 										placeholder="comma separated, e.g. -y, my-package"
@@ -221,17 +222,17 @@ export function MCPLibraryAddServerSheet({ open, onClose }: MCPLibraryAddServerS
 						{/* Auth + category */}
 						<div className="grid grid-cols-2 gap-3">
 							<div className="w-full space-y-2">
-								<Label>Authentication</Label>
+								<Label>{i18n.t("supplemental.authentication")}</Label>
 								<Select value={authType} onValueChange={(v) => setValue("auth_type", v as MCPAuthType)}>
 									<SelectTrigger data-testid="mcp-add-auth-type" className="w-full">
 										<SelectValue />
 									</SelectTrigger>
 									<SelectContent>
-										<SelectItem value="none">None</SelectItem>
-										<SelectItem value="headers">Headers</SelectItem>
-										<SelectItem value="oauth">OAuth</SelectItem>
+										<SelectItem value="none">{i18n.t("workspace.mcpForm.none")}</SelectItem>
+										<SelectItem value="headers">{i18n.t("workspace.mcpForm.headers")}</SelectItem>
+										<SelectItem value="oauth">{i18n.t("workspace.mcp.authTypeLabels.oauth")}</SelectItem>
 										<SelectItem value="per_user_headers">Per-user Headers</SelectItem>
-										<SelectItem value="per_user_oauth">Per-user OAuth</SelectItem>
+										<SelectItem value="per_user_oauth">{i18n.t("workspace.mcp.authTypeLabels.perUserOauth")}</SelectItem>
 									</SelectContent>
 								</Select>
 							</div>
@@ -279,7 +280,7 @@ export function MCPLibraryAddServerSheet({ open, onClose }: MCPLibraryAddServerS
 					<div className="border-border bg-card sticky bottom-0 z-10 border-t px-8 py-4">
 						<div className="flex justify-end gap-2">
 							<Button type="button" variant="outline" onClick={onClose} disabled={isLoading} data-testid="mcp-add-cancel-btn">
-								Cancel
+								{i18n.t("common.cancel")}
 							</Button>
 							<Button type="submit" disabled={isLoading} data-testid="mcp-add-submit-btn">
 								{isLoading ? "Publishing..." : "Publish to Library"}

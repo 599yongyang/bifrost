@@ -24,6 +24,7 @@ import {
 	UserRound,
 } from "lucide-react";
 import GrantActions from "./grantActions";
+import i18n from "@/lib/i18n";
 
 interface GrantsTableProps {
 	rows: OAuth2GrantRow[];
@@ -56,7 +57,7 @@ export default function GrantsTable({
 				<Table containerClassName="h-full overflow-auto">
 					<TableHeader className="bg-muted sticky top-0 z-20">
 						<TableRow>
-							<TableHead>Client</TableHead>
+							<TableHead>{i18n.t("supplemental.client")}</TableHead>
 							<TableHead>
 								<HeaderWithTooltip
 									label="Bound to"
@@ -69,7 +70,7 @@ export default function GrantsTable({
 									tooltip="When the current JWT access token expires. MCP clients silently refresh using the refresh token, so an active grant past its expiry will mint a new token automatically on the next request."
 								/>
 							</TableHead>
-							<TableHead>Created</TableHead>
+							<TableHead>{i18n.t("workspace.virtualKeys.createdAt")}</TableHead>
 							<TableHead>
 								<HeaderWithTooltip
 									label="Last used"
@@ -85,7 +86,7 @@ export default function GrantsTable({
 								<TableCell colSpan={6} className="h-24 text-center">
 									{hasActiveFilters ? (
 										<div className="text-muted-foreground text-sm">
-											No grants match these filters.
+											{i18n.t("supplemental.noMatchingGrants")}
 										</div>
 									) : (
 										<EmptyGrantsState />
@@ -130,7 +131,7 @@ export default function GrantsTable({
 			{totalCount > 0 && (
 				<div className="flex shrink-0 items-center justify-between text-xs" data-testid="pagination">
 					<div className="text-muted-foreground flex items-center gap-2">
-						{(offset + 1).toLocaleString()}-{Math.min(offset + pageSize, totalCount).toLocaleString()} of {totalCount.toLocaleString()} entries
+						{(offset + 1).toLocaleString()}-{Math.min(offset + pageSize, totalCount).toLocaleString()} of {totalCount.toLocaleString()} {i18n.t("workspace.virtualKeys.entries")}
 					</div>
 
 					<div className="flex items-center gap-2">
@@ -140,7 +141,7 @@ export default function GrantsTable({
 							onClick={() => onOffsetChange(Math.max(0, offset - pageSize))}
 							disabled={offset === 0}
 							data-testid="oauth-grants-prev-page-btn"
-							aria-label="Previous page"
+							aria-label={i18n.t("supplemental.previousPage")}
 						>
 							<ChevronLeft className="size-3" />
 						</Button>
@@ -157,7 +158,7 @@ export default function GrantsTable({
 							onClick={() => onOffsetChange(offset + pageSize)}
 							disabled={offset + pageSize >= totalCount}
 							data-testid="oauth-grants-next-page-btn"
-							aria-label="Next page"
+							aria-label={i18n.t("supplemental.nextPage")}
 						>
 							<ChevronRight className="size-3" />
 						</Button>

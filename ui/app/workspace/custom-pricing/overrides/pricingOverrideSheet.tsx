@@ -35,6 +35,7 @@ import { toast } from "sonner";
 import { PricingFieldSelector } from "./pricingFieldSelector";
 // Side-effect import: registers the enterprise user picker (no-op in OSS builds).
 import "@enterprise/lib/registrations/userPicker";
+import i18n from "@/lib/i18n";
 
 export const REQUEST_TYPE_GROUPS = [
 	{
@@ -835,15 +836,15 @@ export default function PricingOverrideSheet({ open, onOpenChange, editingOverri
 		try {
 			if (editingOverride) {
 				await updateOverride({ id: editingOverride.id, data: requestPayload }).unwrap();
-				toast.success("Pricing override updated");
+				toast.success(i18n.t("workspace.customPricing.overrideSheet.overrideUpdated"));
 			} else {
 				await createOverride(requestPayload).unwrap();
-				toast.success("Pricing override created");
+				toast.success(i18n.t("workspace.customPricing.overrideSheet.overrideCreated"));
 			}
 			handleCloseDrawer();
 			onSaved?.();
 		} catch (error) {
-			toast.error("Failed to save pricing override", { description: getErrorMessage(error) });
+			toast.error(i18n.t("workspace.customPricing.overrideSheet.saveFailed"), { description: getErrorMessage(error) });
 		}
 	};
 
@@ -865,10 +866,10 @@ export default function PricingOverrideSheet({ open, onOpenChange, editingOverri
 									render={({ field }) => (
 										<FormItem>
 											<FormLabel>
-												Name <span className="text-red-500">*</span>
+												{i18n.t("workspace.mcp.name")} <span className="text-red-500">*</span>
 											</FormLabel>
 											<FormControl>
-												<Input data-testid="pricing-override-name-input" placeholder="e.g., GPT-4 Negotiated Rate" {...field} />
+												<Input data-testid="pricing-override-name-input" placeholder={i18n.t("workspace.customPricing.overrideSheet.namePlaceholder")} {...field} />
 											</FormControl>
 											<FormMessage />
 										</FormItem>
@@ -877,7 +878,7 @@ export default function PricingOverrideSheet({ open, onOpenChange, editingOverri
 
 								{shouldLockScope && scopeLock ? (
 									<div className="space-y-2">
-										<Label htmlFor="pricing-override-scope-lock-input">Scope</Label>
+										<Label htmlFor="pricing-override-scope-lock-input">{i18n.t("workspace.routingRules.scope")}</Label>
 										<Input
 											id="pricing-override-scope-lock-input"
 											data-testid="pricing-override-scope-lock-input"
@@ -892,7 +893,7 @@ export default function PricingOverrideSheet({ open, onOpenChange, editingOverri
 											name="scopeRoot"
 											render={({ field }) => (
 												<FormItem>
-													<FormLabel>Scope root</FormLabel>
+													<FormLabel>{i18n.t("workspace.customPricing.overrideSheet.scopeRoot")}</FormLabel>
 													<Select
 														value={field.value}
 														onValueChange={(value: ScopeRoot) => {
@@ -909,9 +910,9 @@ export default function PricingOverrideSheet({ open, onOpenChange, editingOverri
 															</SelectTrigger>
 														</FormControl>
 														<SelectContent>
-															<SelectItem value="global">Global</SelectItem>
-															<SelectItem value="virtual_key">Virtual key</SelectItem>
-															{(UserPicker || scopeRoot === "user") && <SelectItem value="user">User</SelectItem>}
+															<SelectItem value="global">{i18n.t("workspace.customPricing.overrideSheet.global")}</SelectItem>
+															<SelectItem value="virtual_key">{i18n.t("workspace.customPricing.overrideSheet.virtualKey")}</SelectItem>
+															{(UserPicker || scopeRoot === "user") && <SelectItem value="user">{i18n.t("common.user")}</SelectItem>}
 														</SelectContent>
 													</Select>
 												</FormItem>
@@ -925,7 +926,7 @@ export default function PricingOverrideSheet({ open, onOpenChange, editingOverri
 												render={({ field }) => (
 													<FormItem>
 														<FormLabel>
-															User <span className="text-red-500">*</span>
+															{i18n.t("common.user")} <span className="text-red-500">*</span>
 														</FormLabel>
 														<FormControl>
 															{UserPicker ? (
@@ -966,7 +967,7 @@ export default function PricingOverrideSheet({ open, onOpenChange, editingOverri
 												render={({ field }) => (
 													<FormItem>
 														<FormLabel>
-															Virtual key <span className="text-red-500">*</span>
+															{i18n.t("workspace.customPricing.overrideSheet.virtualKey")} <span className="text-red-500">*</span>
 														</FormLabel>
 														<FormControl>
 															<VirtualKeySelector
@@ -982,7 +983,7 @@ export default function PricingOverrideSheet({ open, onOpenChange, editingOverri
 																		? { value: editingOverride.virtual_key_id, label: editingOverride.virtual_key_id }
 																		: null
 																}
-																placeholder="Select virtual key"
+																placeholder={i18n.t("workspace.customPricing.overrideSheet.selectVirtualKey")}
 															/>
 														</FormControl>
 														<FormMessage />
@@ -997,7 +998,7 @@ export default function PricingOverrideSheet({ open, onOpenChange, editingOverri
 												name="providerID"
 												render={({ field }) => (
 													<FormItem>
-														<FormLabel>Provider</FormLabel>
+														<FormLabel>{i18n.t("workspace.logs.colProvider")}</FormLabel>
 														<Select
 															value={field.value || "__none__"}
 															onValueChange={(value) => {
@@ -1012,7 +1013,7 @@ export default function PricingOverrideSheet({ open, onOpenChange, editingOverri
 																	disabled={isProvidersLoading || !!providersError}
 																>
 																	{isProvidersLoading ? (
-																		<span className="text-muted-foreground">Loading...</span>
+																		<span className="text-muted-foreground">{i18n.t("common.loading")}</span>
 																	) : field.value ? (
 																		<div className="flex items-center gap-1.5">
 																			<RenderProviderIcon
@@ -1023,12 +1024,12 @@ export default function PricingOverrideSheet({ open, onOpenChange, editingOverri
 																			<span>{getProviderLabel(field.value)}</span>
 																		</div>
 																	) : (
-																		<span className="text-muted-foreground">All providers</span>
+																		<span className="text-muted-foreground">{i18n.t("workspace.customPricing.overrideSheet.allProviders")}</span>
 																	)}
 																</SelectTrigger>
 															</FormControl>
 															<SelectContent>
-																<SelectItem value="__none__">All providers</SelectItem>
+																<SelectItem value="__none__">{i18n.t("workspace.customPricing.overrideSheet.allProviders")}</SelectItem>
 																{providers.map((provider) => (
 																	<SelectItem key={provider.name} value={provider.name}>
 																		<div className="flex items-center gap-1.5">
@@ -1056,14 +1057,14 @@ export default function PricingOverrideSheet({ open, onOpenChange, editingOverri
 													name="providerKeyID"
 													render={({ field }) => (
 														<FormItem>
-															<FormLabel>Provider key</FormLabel>
+															<FormLabel>{i18n.t("workspace.customPricing.overrideSheet.providerKey")}</FormLabel>
 															<FormControl>
 																<ComboboxSelect
 																	data-testid="pricing-override-provider-key-select"
 																	options={providerScopedKeyOptions.map((option) => ({ label: option.label, value: option.id }))}
 																	value={field.value || null}
 																	onValueChange={(value) => field.onChange(value ?? "")}
-																	placeholder="All provider keys"
+																	placeholder={i18n.t("workspace.customPricing.overrideSheet.allProviderKeys")}
 																	noPortal
 																	className="h-9"
 																/>
@@ -1086,7 +1087,7 @@ export default function PricingOverrideSheet({ open, onOpenChange, editingOverri
 										name="matchType"
 										render={({ field }) => (
 											<FormItem>
-												<FormLabel>Match type</FormLabel>
+												<FormLabel>{i18n.t("workspace.customPricing.overrideSheet.matchType")}</FormLabel>
 												<Select
 													value={field.value}
 													onValueChange={(value: PricingOverrideMatchType) => {
@@ -1096,12 +1097,12 @@ export default function PricingOverrideSheet({ open, onOpenChange, editingOverri
 												>
 													<FormControl>
 														<SelectTrigger data-testid="pricing-override-match-type-select" className="w-full">
-															<SelectValue placeholder="Select match type" />
+															<SelectValue placeholder={i18n.t("workspace.customPricing.overrideSheet.selectMatchType")} />
 														</SelectTrigger>
 													</FormControl>
 													<SelectContent>
-														<SelectItem value="exact">Exact</SelectItem>
-														<SelectItem value="wildcard">Wildcard</SelectItem>
+														<SelectItem value="exact">{i18n.t("workspace.customPricing.overrideSheet.exact")}</SelectItem>
+														<SelectItem value="wildcard">{i18n.t("workspace.customPricing.overrideSheet.wildcard")}</SelectItem>
 													</SelectContent>
 												</Select>
 											</FormItem>
@@ -1113,7 +1114,7 @@ export default function PricingOverrideSheet({ open, onOpenChange, editingOverri
 										render={({ field }) => (
 											<FormItem>
 												<FormLabel>
-													Pattern <span className="text-red-500">*</span>
+													{i18n.t("workspace.customPricing.overrideSheet.pattern")} <span className="text-red-500">*</span>
 												</FormLabel>
 												<FormControl>
 													<Input
@@ -1139,7 +1140,7 @@ export default function PricingOverrideSheet({ open, onOpenChange, editingOverri
 								render={({ field }) => (
 									<FormItem>
 										<FormLabel>
-											Request types <span className="text-red-500">*</span>
+											{i18n.t("workspace.customPricing.overrideSheet.requestTypes")} <span className="text-red-500">*</span>
 										</FormLabel>
 										<Popover open={requestTypePopoverOpen} onOpenChange={setRequestTypePopoverOpen} modal={false}>
 											<PopoverTrigger asChild>
@@ -1154,7 +1155,7 @@ export default function PricingOverrideSheet({ open, onOpenChange, editingOverri
 															{field.value.length > 0 ? (
 																field.value.map((rt) => RequestTypeLabels[rt as keyof typeof RequestTypeLabels] ?? rt).join(", ")
 															) : (
-																<span className="text-muted-foreground">Select request types...</span>
+																<span className="text-muted-foreground">{i18n.t("workspace.customPricing.overrideSheet.selectRequestTypes")}</span>
 															)}
 														</span>
 														<ChevronDown className="h-4 w-4 shrink-0" />
@@ -1216,8 +1217,8 @@ export default function PricingOverrideSheet({ open, onOpenChange, editingOverri
 								render={({ field }) => (
 									<FormItem>
 										<FormLabel>
-											Pricing fields <span className="text-red-500">*</span>{" "}
-											<span className="text-muted-foreground text-xs font-normal">(USD per unit)</span>
+											{i18n.t("workspace.customPricing.overrideSheet.pricingFields")} <span className="text-red-500">*</span>{" "}
+											<span className="text-muted-foreground text-xs font-normal">{i18n.t("workspace.customPricing.overrideSheet.pricingFieldsUnit")}</span>
 										</FormLabel>
 										<PricingFieldSelector
 											key={open ? (editingOverride?.id ?? "new") : "closed"}
@@ -1237,7 +1238,7 @@ export default function PricingOverrideSheet({ open, onOpenChange, editingOverri
 							/>
 
 							<div className="space-y-2">
-								<Label className="text-muted-foreground text-xs">JSON</Label>
+								<Label className="text-muted-foreground text-xs">{i18n.t("workspace.customPricing.overrideSheet.json")}</Label>
 								<div className={cn("bg-muted/50 overflow-hidden rounded-md border", jsonError && "border-destructive")}>
 									<CodeEditor
 										lang="json"
@@ -1263,7 +1264,7 @@ export default function PricingOverrideSheet({ open, onOpenChange, editingOverri
 								disabled={isSaving}
 							>
 								<X className="h-4 w-4" />
-								Cancel
+								{i18n.t("common.cancel")}
 							</Button>
 							<Button data-testid="pricing-override-save-btn" type="submit" disabled={isSaving}>
 								<Save className="h-4 w-4" />

@@ -6,6 +6,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ComponentPro
 import MessageRoleSwitcher from "./messageRoleSwitcher";
 import { isJson } from "@/lib/utils/validation";
 import { CodeEditor } from "@/components/ui/codeEditor";
+import i18n from "@/lib/i18n";
 
 const LazyMarkdown = lazy(() => import("@/components/ui/markdown").then((m) => ({ default: m.Markdown })));
 const Markdown = (props: ComponentProps<typeof LazyMarkdown>) => (
@@ -96,13 +97,13 @@ export function AssistantMessageView({
 							<TooltipContent side="bottom">
 								<div className="flex flex-col gap-0.5 text-xs tabular-nums">
 									<span>
-										<span className="inline-block w-12">Input:</span> {usage.prompt_tokens} tokens
+										<span className="inline-block w-12">{i18n.t("workspace.promptRepository.messages.input")}</span> {usage.prompt_tokens} {i18n.t("workspace.governance.teams.tokensUnit")}
 									</span>
 									<span>
-										<span className="inline-block w-12">Output:</span> {usage.completion_tokens} tokens
+										<span className="inline-block w-12">{i18n.t("workspace.promptRepository.messages.output")}</span> {usage.completion_tokens} {i18n.t("workspace.governance.teams.tokensUnit")}
 									</span>
 									<span>
-										<span className="inline-block w-12">Total:</span> {usage.total_tokens} tokens
+										<span className="inline-block w-12">{i18n.t("workspace.promptRepository.messages.total")}</span> {usage.total_tokens} {i18n.t("workspace.governance.teams.tokensUnit")}
 									</span>
 								</div>
 							</TooltipContent>
@@ -111,7 +112,7 @@ export function AssistantMessageView({
 					{!disabled && !isStreaming && (
 						<button
 							type="button"
-							aria-label="Edit message"
+							aria-label={i18n.t("workspace.promptRepository.messages.editMessageAriaLabel")}
 							data-testid="assistant-msg-edit"
 							onClick={() => setEditMode(true)}
 							className="hover:bg-muted focus:bg-muted rounded-sm p-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 focus:opacity-100"
@@ -122,7 +123,7 @@ export function AssistantMessageView({
 					{!disabled && onRemove && (
 						<button
 							type="button"
-							aria-label="Delete message"
+							aria-label={i18n.t("workspace.promptRepository.messages.deleteMessageAriaLabel")}
 							data-testid="assistant-msg-delete"
 							onClick={onRemove}
 							className="hover:bg-muted focus:bg-muted rounded-sm p-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 focus:opacity-100"
@@ -163,7 +164,7 @@ export function AssistantMessageView({
 						}}
 					/>
 				) : isEmpty ? (
-					<div className="text-muted-foreground min-h-[20px] text-sm italic">Enter assistant message...</div>
+					<div className="text-muted-foreground min-h-[20px] text-sm italic">{i18n.t("workspace.promptRepository.messages.enterAssistantMessage")}</div>
 				) : contentIsJson ? (
 					<CodeEditor
 						wrap

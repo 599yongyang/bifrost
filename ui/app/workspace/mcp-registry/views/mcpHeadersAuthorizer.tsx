@@ -14,6 +14,7 @@ import { getErrorMessage, useCreateMCPClientMutation } from "@/lib/store";
 import { CreateMCPClientRequest } from "@/lib/types/mcp";
 import { Loader2 } from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
+import i18n from "@/lib/i18n";
 
 interface MCPHeadersAuthorizerProps {
 	open: boolean;
@@ -140,7 +141,7 @@ export const MCPHeadersAuthorizer: React.FC<MCPHeadersAuthorizerProps> = ({
 							</div>
 							<div className="flex w-full justify-end space-x-2">
 								<Button onClick={handleCancel} variant="outline" data-testid="per-user-headers-cancel">
-									Cancel
+									{i18n.t("common.cancel")}
 								</Button>
 								<Button onClick={handleConfirm} data-testid="per-user-headers-confirm">
 									Continue with Test
@@ -193,7 +194,7 @@ export const MCPHeadersAuthorizer: React.FC<MCPHeadersAuthorizerProps> = ({
 							</div>
 							<p className="text-sm text-red-600">{errorMessage || "An error occurred"}</p>
 							<Button onClick={handleRetry} variant="outline" data-testid="mcp-headers-authorizer-retry-btn">
-								Retry
+								{i18n.t("workspace.oauth.retry")}
 							</Button>
 						</div>
 					)}

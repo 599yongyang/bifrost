@@ -10,6 +10,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Eye, EyeOff, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm, type Resolver } from "react-hook-form";
+import i18n from "@/lib/i18n";
 
 interface MaximFormFragmentProps {
 	initialConfig?: {
@@ -70,12 +71,12 @@ export function MaximFormFragment({ initialConfig, onSave, onDelete, isDeleting 
 							name="maxim_config.api_key"
 							render={({ field }) => (
 								<FormItem>
-									<FormLabel>API Key</FormLabel>
+									<FormLabel>{i18n.t("workspace.virtualKeys.apiKey")}</FormLabel>
 									<FormControl>
 										<div className="relative">
 											<Input
 												type={showApiKey ? "text" : "password"}
-												placeholder="Enter your Maxim API key"
+												placeholder={i18n.t("workspace.observability.maximForm.apiKeyPlaceholder")}
 												disabled={!hasMaximAccess}
 												{...field}
 												className="pr-10"
@@ -104,7 +105,7 @@ export function MaximFormFragment({ initialConfig, onSave, onDelete, isDeleting 
 								<FormItem>
 									<FormLabel>Log Repository ID (Optional)</FormLabel>
 									<FormControl>
-										<Input placeholder="Enter log repository ID" disabled={!hasMaximAccess} {...field} value={field.value ?? ""} />
+										<Input placeholder={i18n.t("workspace.observability.maximForm.logRepoIdPlaceholder")} disabled={!hasMaximAccess} {...field} value={field.value ?? ""} />
 									</FormControl>
 									<FormMessage />
 								</FormItem>
@@ -117,7 +118,7 @@ export function MaximFormFragment({ initialConfig, onSave, onDelete, isDeleting 
 							render={({ field }) => (
 								<FormItem>
 									<FormLabel>
-										Request Headers <span className="text-muted-foreground font-normal">(Optional)</span>
+										{i18n.t("workspace.observability.otelForm.requestHeaders")} <span className="text-muted-foreground font-normal">{i18n.t("workspace.providers.optionalSuffix")}</span>
 									</FormLabel>
 									<FormDescription>
 										Comma-separated list of request headers to capture and attach as trace tags. Supports exact names and wildcard patterns
@@ -168,8 +169,8 @@ export function MaximFormFragment({ initialConfig, onSave, onDelete, isDeleting 
 								variant="outline"
 								onClick={onDelete}
 								disabled={isDeleting}
-								title="Delete connector"
-								aria-label="Delete connector"
+								title={i18n.t("workspace.observability.otelForm.deleteConnector")}
+								aria-label={i18n.t("workspace.observability.otelForm.deleteConnector")}
 							>
 								<Trash2 className="size-4" />
 							</Button>
@@ -189,7 +190,7 @@ export function MaximFormFragment({ initialConfig, onSave, onDelete, isDeleting 
 							}}
 							disabled={!hasMaximAccess || isLoading || !form.formState.isDirty}
 						>
-							Reset
+							{i18n.t("workspace.plugins.reset")}
 						</Button>
 						<TooltipProvider>
 							<Tooltip>

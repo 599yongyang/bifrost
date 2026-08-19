@@ -3,6 +3,7 @@ import { CodeEditor } from "@/components/ui/codeEditor";
 import { BifrostTranscribe, TranscriptionInput } from "@/lib/types/logs";
 import { Clock, FileAudio, Mic } from "lucide-react";
 import AudioPlayer from "./audioPlayer";
+import i18n from "@/lib/i18n";
 
 interface TranscriptionViewProps {
 	transcriptionInput?: TranscriptionInput;
@@ -24,7 +25,7 @@ export default function TranscriptionView({ transcriptionInput, transcriptionOut
 				<div className="w-full rounded-sm border">
 					<div className="flex items-center gap-2 border-b px-6 py-2 text-sm font-medium">
 						<FileAudio className="h-4 w-4" />
-						Transcription Input
+						{i18n.t("supplemental.transcriptionInput")}
 					</div>
 					<div className="space-y-4 p-6">
 						<div className="text-muted-foreground mb-2 text-xs font-medium">AUDIO FILE</div>
@@ -39,12 +40,12 @@ export default function TranscriptionView({ transcriptionInput, transcriptionOut
 				<div className="w-full rounded-sm border">
 					<div className="flex items-center gap-2 border-b px-6 py-2 text-sm font-medium">
 						<Mic className="h-4 w-4" />
-						Transcription Output
+						{i18n.t("supplemental.transcriptionOutput")}
 					</div>
 
 					<div className="space-y-4 p-6">
 						{!transcriptionOutput && isStreaming ? (
-							<div className="font-mono text-xs">Output was streamed and is not available.</div>
+							<div className="font-mono text-xs">{i18n.t("supplemental.streamedOutputUnavailable")}</div>
 						) : (
 							<>
 								{/* Main Transcription Text */}
@@ -64,7 +65,7 @@ export default function TranscriptionView({ transcriptionInput, transcriptionOut
 
 										{transcriptionOutput?.language && (
 											<div>
-												<div className="text-muted-foreground mb-2 text-xs font-medium">DETECTED LANGUAGE</div>
+												<div className="text-muted-foreground mb-2 text-xs font-medium">{i18n.t("supplemental.detectedLanguage")}</div>
 												<div className="font-mono text-xs">{transcriptionOutput.language}</div>
 											</div>
 										)}
@@ -81,7 +82,7 @@ export default function TranscriptionView({ transcriptionInput, transcriptionOut
 								{/* Words with Timing */}
 								{transcriptionOutput?.words && transcriptionOutput.words.length > 0 && (
 									<div>
-										<div className="text-muted-foreground mb-2 text-xs font-medium">WORD-LEVEL TIMING</div>
+										<div className="text-muted-foreground mb-2 text-xs font-medium">{i18n.t("supplemental.wordTiming")}</div>
 										<div className="max-h-40 overflow-y-auto">
 											<div className="flex flex-wrap gap-2">
 												{transcriptionOutput.words.map((word, index) => (
@@ -102,7 +103,7 @@ export default function TranscriptionView({ transcriptionInput, transcriptionOut
 								{/* Segments */}
 								{transcriptionOutput?.segments && transcriptionOutput.segments.length > 0 && (
 									<div>
-										<div className="text-muted-foreground mb-2 text-xs font-medium">SEGMENTS</div>
+										<div className="text-muted-foreground mb-2 text-xs font-medium">{i18n.t("supplemental.segments")}</div>
 										<div className="max-h-60 space-y-2 overflow-y-auto">
 											{transcriptionOutput.segments.map((segment) => (
 												<div key={segment.id} className="rounded border p-3">

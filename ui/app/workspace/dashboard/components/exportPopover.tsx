@@ -13,6 +13,7 @@ import { buildCSV, downloadCSV } from "@/lib/utils/csv";
 import { Download, FileSpreadsheet, FileText, Loader2 } from "lucide-react";
 import { useCallback, useState } from "react";
 import { type DashboardData, type DashboardTab, type ExportTab, getCSVSections, getExportTabLabel } from "../utils/exportUtils";
+import i18n from "@/lib/i18n";
 
 interface ExportPopoverProps {
 	getData: () => DashboardData;
@@ -102,7 +103,7 @@ export function ExportPopover({ getData, activeTab, onPreloadData, onPdfExport, 
 								This tab ({activeTabLabel})
 							</DropdownMenuItem>
 							<DropdownMenuItem onClick={() => handleCsvExport("all")} data-testid="export-csv-all-tabs">
-								All tabs
+								{i18n.t("supplemental.allTabs")}
 							</DropdownMenuItem>
 						</DropdownMenuSubContent>
 					</DropdownMenuPortal>
@@ -118,7 +119,7 @@ export function ExportPopover({ getData, activeTab, onPreloadData, onPdfExport, 
 								This tab ({activeTabLabel})
 							</DropdownMenuItem>
 							<DropdownMenuItem onClick={() => handlePdfExport("all")} data-testid="export-pdf-all-tabs">
-								All tabs
+								{i18n.t("supplemental.allTabs")}
 							</DropdownMenuItem>
 						</DropdownMenuSubContent>
 					</DropdownMenuPortal>

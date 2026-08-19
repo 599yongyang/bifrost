@@ -32,6 +32,7 @@ import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
+import i18n from "@/lib/i18n";
 
 interface ModelLimitSheetProps {
 	modelConfig?: ModelConfig | null;
@@ -320,7 +321,7 @@ export default function ModelLimitSheet({ modelConfig, onSave, onCancel }: Model
 								name="provider"
 								render={({ field }) => (
 									<FormItem>
-										<FormLabel>Provider</FormLabel>
+										<FormLabel>{i18n.t("workspace.logs.colProvider")}</FormLabel>
 										<Select
 											value={field.value || "all"}
 											onValueChange={(value) =>
@@ -330,11 +331,11 @@ export default function ModelLimitSheet({ modelConfig, onSave, onCancel }: Model
 										>
 											<FormControl>
 												<SelectTrigger className="w-full" data-testid="model-limit-provider-select">
-													<SelectValue placeholder="All Providers" />
+													<SelectValue placeholder={i18n.t("workspace.modelLimits.allProviders")} />
 												</SelectTrigger>
 											</FormControl>
 											<SelectContent>
-												<SelectItem value="all">All Providers</SelectItem>
+												<SelectItem value="all">{i18n.t("workspace.modelLimits.allProviders")}</SelectItem>
 												{availableProviders
 													.filter((p) => p.name)
 													.map((provider) => (
@@ -379,7 +380,7 @@ export default function ModelLimitSheet({ modelConfig, onSave, onCancel }: Model
 														provider={form.watch("provider") || undefined}
 														value={field.value}
 														onChange={field.onChange}
-														placeholder="Search for a model..."
+														placeholder={i18n.t("workspace.modelLimits.searchModelPlaceholder")}
 														isSingleSelect
 														loadModelsOnEmptyProvider="base_models"
 														allowAllOption
@@ -398,7 +399,7 @@ export default function ModelLimitSheet({ modelConfig, onSave, onCancel }: Model
 								name="scope"
 								render={({ field }) => (
 									<FormItem>
-										<FormLabel>Scope</FormLabel>
+										<FormLabel>{i18n.t("workspace.routingRules.scope")}</FormLabel>
 										<Select
 											value={field.value || "global"}
 											onValueChange={(value) => {
@@ -410,7 +411,7 @@ export default function ModelLimitSheet({ modelConfig, onSave, onCancel }: Model
 										>
 											<FormControl>
 												<SelectTrigger className="w-full" data-testid="model-limit-scope-select">
-													<SelectValue placeholder="Global" />
+													<SelectValue placeholder={i18n.t("workspace.customPricing.overrideSheet.global")} />
 												</SelectTrigger>
 											</FormControl>
 											<SelectContent>
@@ -483,7 +484,7 @@ export default function ModelLimitSheet({ modelConfig, onSave, onCancel }: Model
 
 							{/* Rate Limiting Configuration */}
 							<div className="space-y-4">
-								<Label className="text-sm font-medium">Rate Limits</Label>
+								<Label className="text-sm font-medium">{i18n.t("workspace.virtualKeys.rateLimits")}</Label>
 
 								<FormField
 									control={form.control}
@@ -532,7 +533,7 @@ export default function ModelLimitSheet({ modelConfig, onSave, onCancel }: Model
 								<>
 									<DottedSeparator />
 									<div className="space-y-3">
-										<Label className="text-sm font-medium">Current Usage</Label>
+										<Label className="text-sm font-medium">{i18n.t("workspace.providers.currentUsage")}</Label>
 										<div className="bg-muted/50 grid grid-cols-2 gap-4 rounded-lg p-4">
 											{(modelConfig?.budgets ?? []).map((b) => (
 												<div key={b.id} className="space-y-1">
@@ -571,7 +572,7 @@ export default function ModelLimitSheet({ modelConfig, onSave, onCancel }: Model
 							<div className="flex items-center justify-end gap-3">
 								{!canSubmit && <p className="text-destructive text-sm">You don't have permission to perform this action</p>}
 								<Button type="button" variant="outline" onClick={handleClose}>
-									Cancel
+									{i18n.t("common.cancel")}
 								</Button>
 								<Button type="submit" data-testid="model-limit-button-submit" disabled={isLoading || !form.formState.isDirty || !canSubmit}>
 									{isLoading ? "Saving..." : isEditing ? "Save Changes" : "Create Limit"}

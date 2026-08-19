@@ -8,6 +8,7 @@ import { type ChartType, ChartTypeToggle } from "./charts/chartTypeToggle";
 import { MCPCostChart } from "./charts/mcpCostChart";
 import { MCPTopToolsChart } from "./charts/mcpTopToolsChart";
 import { MCPVolumeChart } from "./charts/mcpVolumeChart";
+import i18n from "@/lib/i18n";
 
 export interface MCPTabProps {
 	// Data
@@ -76,11 +77,11 @@ function MCPTabImpl({
 					<div className={CHART_HEADER_LEGEND_CLASS}>
 						<span className="flex items-center gap-1">
 							<span className="h-2 w-2 rounded-full" style={{ backgroundColor: CHART_COLORS.success }} />
-							<span className="text-muted-foreground">Success</span>
+							<span className="text-muted-foreground">{i18n.t("workspace.mcpForm.successTitle")}</span>
 						</span>
 						<span className="flex items-center gap-1">
 							<span className="h-2 w-2 rounded-full" style={{ backgroundColor: CHART_COLORS.error }} />
-							<span className="text-muted-foreground">Error</span>
+							<span className="text-muted-foreground">{i18n.t("workspace.mcp.errorTitle")}</span>
 						</span>
 					</div>
 				}
@@ -115,7 +116,7 @@ function MCPTabImpl({
 					<div className={CHART_HEADER_LEGEND_CLASS}>
 						<span className="flex items-center gap-1">
 							<span className="h-2 w-2 rounded-full" style={{ backgroundColor: CHART_COLORS.cost }} />
-							<span className="text-muted-foreground">Cost</span>
+							<span className="text-muted-foreground">{i18n.t("workspace.logs.colCost")}</span>
 						</span>
 					</div>
 				}

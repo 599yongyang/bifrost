@@ -17,6 +17,7 @@ import { useGetAuthTypeQuery } from "@enterprise/lib/store/apis/scimApi";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import i18n from "@/lib/i18n";
 
 const PASSWORD_REQUIREMENTS = [
 	{ label: "at least 12 characters", test: (password: string) => password.length >= 12 },
@@ -208,7 +209,7 @@ export default function SecurityView() {
 					}
 					: {}),
 			}).unwrap();
-			toast.success("Security settings updated successfully.");
+			toast.success(i18n.t("workspace.config.security.successMessage"));
 		} catch (error) {
 			toast.error(getErrorMessage(error));
 		}
@@ -217,8 +218,8 @@ export default function SecurityView() {
 	return (
 		<div className="mx-auto w-full max-w-4xl space-y-4">
 			<div>
-				<h2 className="text-lg font-semibold tracking-tight">Security Settings</h2>
-				<p className="text-muted-foreground text-sm">Configure security and access control settings.</p>
+				<h2 className="text-lg font-semibold tracking-tight">{i18n.t("workspace.config.security.title")}</h2>
+				<p className="text-muted-foreground text-sm">{i18n.t("workspace.config.security.description")}</p>
 			</div>
 
 			<div className="space-y-4">
@@ -226,14 +227,14 @@ export default function SecurityView() {
 				{IS_ENTERPRISE && authTypeLoading ? (
 					<div className="flex items-center justify-center rounded-sm border p-8" data-testid="security-auth-type-loading">
 						<Loader2 className="text-muted-foreground h-5 w-5 animate-spin" aria-hidden />
-						<span className="sr-only">Loading authentication settings</span>
+						<span className="sr-only">{i18n.t("workspace.config.security.loadingAuthSettings")}</span>
 					</div>
 				) : null}
 				{IS_ENTERPRISE && !authTypeLoading && authTypeError ? (
 					<Alert variant="destructive" data-testid="security-auth-type-error">
 						<AlertTriangle className="h-4 w-4" />
 						<AlertDescription>
-							Could not load authentication type. Dashboard password settings are hidden until this request succeeds.{" "}
+							{i18n.t("workspace.config.security.authTypeLoadFailed")}{" "}
 							{getErrorMessage(authTypeError)}
 						</AlertDescription>
 					</Alert>
@@ -244,36 +245,35 @@ export default function SecurityView() {
 							<div className="flex items-center justify-between">
 								<div className="space-y-0.5">
 									<Label htmlFor="auth-enabled" className="text-sm font-medium">
-										Password protect the dashboard <Badge variant="secondary">BETA</Badge>
+										{i18n.t("workspace.config.security.passwordProtectDashboard")} <Badge variant="secondary">{i18n.t("workspace.config.security.beta")}</Badge>
 									</Label>
 									<p className="text-muted-foreground text-sm">
-										Set up authentication credentials to protect your Bifrost dashboard. Once configured, use the generated token for all
-										admin API calls.
+										{i18n.t("workspace.config.security.passwordProtectDashboardDesc")}
 									</p>
 								</div>
 								<Switch id="auth-enabled" checked={authConfig.is_enabled} onCheckedChange={handleAuthToggle} />
 							</div>
 							<div className="space-y-4">
 								<div className="space-y-2">
-									<Label htmlFor="admin-username">Username</Label>
+									<Label htmlFor="admin-username">{i18n.t("login.username")}</Label>
 									<SecretVarInput
 										id="admin-username"
 										type="text"
-										placeholder="Enter admin username or env.VAR_NAME"
+										placeholder={i18n.t("workspace.config.security.usernamePlaceholder")}
 										value={authConfig.admin_username}
 										disabled={!authConfig.is_enabled}
 										onChange={(value) => handleAuthFieldChange("admin_username", value)}
 									/>
 								</div>
 								<div className="space-y-2">
-									<Label htmlFor="admin-password">Password</Label>
+									<Label htmlFor="admin-password">{i18n.t("login.password")}</Label>
 									<SecretVarInput
 										ref={passwordInputRef}
 										id="admin-password"
 										aria-invalid={!!passwordError}
 										aria-describedby={passwordError ? "admin-password-error" : undefined}
 										type="password"
-										placeholder="Enter admin password or env.VAR_NAME"
+										placeholder={i18n.t("workspace.config.security.passwordPlaceholder")}
 										value={authConfig.admin_password}
 										disabled={!authConfig.is_enabled}
 										onChange={(value) => handleAuthFieldChange("admin_password", value)}
@@ -301,7 +301,7 @@ export default function SecurityView() {
 							{IS_ENTERPRISE
 								? "Require authentication (virtual key, API key, or user token) for all inference endpoints."
 								: "Require a virtual key for all inference requests."}{" "}
-							See{" "}
+							{i18n.t("workspace.config.security.see")}{" "}
 							<a
 								href="https://docs.getbifrost.ai/features/governance/virtual-keys"
 								target="_blank"
@@ -309,9 +309,9 @@ export default function SecurityView() {
 								className="text-primary underline"
 								data-testid="security-virtual-keys-docs-link"
 							>
-								documentation
+								{i18n.t("common.documentation")}
 							</a>{" "}
-							for details.
+							{i18n.t("workspace.config.security.forDetails")}
 						</p>
 					</div>
 					<Switch
@@ -355,7 +355,7 @@ export default function SecurityView() {
 				<div className="flex items-center justify-between space-x-2 rounded-sm border p-4">
 					<div className="space-y-0.5">
 						<label htmlFor="allow-direct-keys" className="text-sm font-medium">
-							Allow Direct API Keys
+							{i18n.t("workspace.config.security.allowDirectApiKeys")}
 						</label>
 						<p className="text-muted-foreground text-sm">
 							When enabled, callers can pass a provider API key directly in the <b>Authorization</b>, <b>x-api-key</b>, or{" "}
@@ -376,7 +376,7 @@ export default function SecurityView() {
 					<div className="space-y-2 rounded-sm border p-4">
 						<div className="space-y-0.5">
 							<label htmlFor="allowed-origins" className="text-sm font-medium">
-								Allowed Origins
+								{i18n.t("workspace.config.security.allowedOrigins")}
 							</label>
 							<p className="text-muted-foreground text-sm">
 								Comma-separated list of allowed origins for CORS and WebSocket connections. Localhost origins are always allowed. Each
@@ -398,9 +398,9 @@ export default function SecurityView() {
 					<div className="space-y-2 rounded-sm border p-4">
 						<div className="space-y-0.5">
 							<label htmlFor="allowed-headers" className="text-sm font-medium">
-								Allowed Headers
+								{i18n.t("workspace.config.security.allowedHeaders")}
 							</label>
-							<p className="text-muted-foreground text-sm">Comma-separated list of allowed headers for CORS.</p>
+							<p className="text-muted-foreground text-sm">{i18n.t("workspace.config.security.allowedHeadersDesc")}</p>
 						</div>
 						<Textarea
 							id="allowed-headers"
@@ -416,7 +416,7 @@ export default function SecurityView() {
 					<div className="space-y-2 rounded-sm border p-4">
 						<div className="space-y-0.5">
 							<label htmlFor="required-headers" className="text-sm font-medium">
-								Required Headers
+								{i18n.t("workspace.config.security.requiredHeaders")}
 							</label>
 							<p className="text-muted-foreground text-sm">
 								Comma-separated list of headers that must be present on every request. Requests missing any of these headers will be
@@ -438,12 +438,10 @@ export default function SecurityView() {
 					<div className="space-y-2 rounded-sm border p-4">
 						<div className="space-y-0.5">
 							<label htmlFor="whitelisted-routes" className="text-sm font-medium">
-								Whitelisted Routes
+								{i18n.t("workspace.config.security.whitelistedRoutes")}
 							</label>
 							<p className="text-muted-foreground text-sm">
-								Comma-separated list of routes that bypass the auth middleware. Requests to these routes will not require authentication.
-								System routes like <b>/health</b>, <b>/api/session/login</b>, and <b>/api/session/is-auth-enabled</b> are always whitelisted
-								regardless of this setting.
+								{i18n.t("workspace.config.security.whitelistedRoutesDescPrefix")} <b>/health</b>, <b>/api/session/login</b>, and <b>/api/session/is-auth-enabled</b> {i18n.t("workspace.config.security.whitelistedRoutesDescSuffix")}
 							</p>
 						</div>
 						<Textarea
@@ -470,7 +468,7 @@ const RestartWarning = () => {
 	return (
 		<Alert variant="destructive" className="mt-2">
 			<AlertTriangle className="h-4 w-4" />
-			<AlertDescription>Need to restart Bifrost to apply changes.</AlertDescription>
+			<AlertDescription>{i18n.t("workspace.config.security.restartRequired")}</AlertDescription>
 		</Alert>
 	);
 };

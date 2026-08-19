@@ -9,6 +9,7 @@ import { useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
+import i18n from "@/lib/i18n";
 
 const mcpLibrarySettingsSchema = z.object({
 	mcp_library_url: z
@@ -157,7 +158,7 @@ export function MCPLibrarySettingsSheet({ open, onClose }: MCPLibrarySettingsShe
 								{isForceSyncing ? "Syncing..." : "Force Sync Now"}
 							</Button>
 							<Button type="button" variant="outline" onClick={onClose} disabled={isLoading} data-testid="mcp-library-settings-cancel-btn">
-								Cancel
+								{i18n.t("common.cancel")}
 							</Button>
 							<Button
 								type="submit"
