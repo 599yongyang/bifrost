@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { useTheme } from "next-themes";
 import { useQueryState } from "nuqs";
 import { useEffect, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import BigQueryView from "./plugins/bigqueryView";
 import DatadogView from "./plugins/datadogView";
 import KafkaView from "./plugins/kafkaView";
@@ -84,6 +85,7 @@ const supportedPlatformsList = (resolvedTheme: string): SupportedPlatform[] => [
 ];
 
 export default function ObservabilityView() {
+	const { t } = useTranslation();
 	const dispatch = useAppDispatch();
 	const { data: plugins, isLoading } = useGetPluginsQuery();
 	const [selectedPluginId, setSelectedPluginId] = useQueryState("plugin");
@@ -171,7 +173,7 @@ export default function ObservabilityView() {
 									)}
 									{tab.disabled && (
 										<Badge variant="secondary" className="text-muted-foreground ml-auto text-[10px] font-medium">
-											{"Coming soon".toUpperCase()}
+											{t("workspace.observability.comingSoon").toUpperCase()}
 										</Badge>
 									)}
 								</button>

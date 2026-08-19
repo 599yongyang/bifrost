@@ -16,6 +16,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { ChevronDown, Info, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useFieldArray, useForm, type Control, type Resolver, type UseFormReturn } from "react-hook-form";
+import { useTranslation } from "react-i18next";
 
 // ProfileForm is a single profile's form shape, derived from the form schema.
 type ProfileForm = OtelFormSchema["profiles"][number];
@@ -220,6 +221,7 @@ export function OtelFormFragment({
 	isDeleting = false,
 	isLoading = false,
 }: OtelFormFragmentProps) {
+	const { t } = useTranslation();
 	const hasOtelAccess = useRbac(RbacResource.Observability, RbacOperation.Update);
 	const [isSaving, setIsSaving] = useState(false);
 	const [profileOpenState, setProfileOpenState] = useState<Record<number, boolean>>({});
@@ -291,7 +293,7 @@ export function OtelFormFragment({
 					disabled={!hasOtelAccess}
 					data-testid="otel-add-profile-btn"
 				>
-					<Plus className="size-4" /> Add Profile
+					<Plus className="size-4" /> {t("workspace.observability.otelForm.addProfile")}
 				</Button>
 
 				<SelectiveExportSection form={form} hasOtelAccess={hasOtelAccess} />
@@ -303,7 +305,7 @@ export function OtelFormFragment({
 						name="enabled"
 						render={({ field }) => (
 							<FormItem className="flex items-center gap-2 py-2">
-								<FormLabel className="text-muted-foreground text-sm font-medium">Enabled</FormLabel>
+								<FormLabel className="text-muted-foreground text-sm font-medium">{t("workspace.observability.otelForm.enabled")}</FormLabel>
 								<FormControl>
 									<Switch
 										checked={field.value}
@@ -323,8 +325,8 @@ export function OtelFormFragment({
 								onClick={onDelete}
 								disabled={isDeleting || !hasOtelAccess}
 								data-testid="otel-connector-delete-btn"
-								title="Delete connector"
-								aria-label="Delete connector"
+								title={t("workspace.observability.otelForm.deleteConnector")}
+								aria-label={t("workspace.observability.otelForm.deleteConnector")}
 							>
 								<Trash2 className="size-4" />
 							</Button>
@@ -343,7 +345,7 @@ export function OtelFormFragment({
 							<Tooltip>
 								<TooltipTrigger asChild>
 									<Button type="submit" disabled={!hasOtelAccess || !form.formState.isDirty} isLoading={isSaving}>
-										Save OTEL Configuration
+										{t("workspace.observability.otelForm.save")}
 									</Button>
 								</TooltipTrigger>
 								{!form.formState.isDirty && (
@@ -402,6 +404,7 @@ function SelectiveExportSection({
 	form: UseFormReturn<OtelFormSchema, unknown, OtelFormSchema>;
 	hasOtelAccess: boolean;
 }) {
+	const { t } = useTranslation();
 	const enabled = form.watch("selective_export.enabled");
 	const { fields, append, remove } = useFieldArray({
 		control: form.control,
@@ -411,11 +414,8 @@ function SelectiveExportSection({
 		<div className="space-y-4 rounded-sm border p-4" data-testid="otel-selective-export-section">
 			<div className="flex items-center justify-between gap-4">
 				<div>
-					<FormLabel className="text-base">Selective Complete Record Export</FormLabel>
-					<FormDescription>
-						Rules are evaluated by priority. Conditions inside one rule use AND; the first matching rule decides whether the complete record
-						is exported.
-					</FormDescription>
+					<FormLabel className="text-base">{t("workspace.observability.otelForm.selective.title")}</FormLabel>
+					<FormDescription>{t("workspace.observability.otelForm.selective.description")}</FormDescription>
 				</div>
 				<FormField
 					control={form.control}
@@ -443,8 +443,8 @@ function SelectiveExportSection({
 							render={({ field }) => (
 								<FormItem className="flex items-center justify-between rounded-sm border p-3">
 									<div>
-										<FormLabel>Dry Run</FormLabel>
-										<FormDescription>Export everything, but record which rule would select it.</FormDescription>
+										<FormLabel>{t("workspace.observability.otelForm.selective.dryRun")}</FormLabel>
+										<FormDescription>{t("workspace.observability.otelForm.selective.dryRunDescription")}</FormDescription>
 									</div>
 									<FormControl>
 										<Switch
@@ -458,8 +458,8 @@ function SelectiveExportSection({
 							)}
 						/>
 						<div className="rounded-sm border p-3">
-							<FormLabel>Atomic complete records</FormLabel>
-							<FormDescription>Selected records are dropped if required media cannot be captured or uploaded.</FormDescription>
+							<FormLabel>{t("workspace.observability.otelForm.selective.atomic")}</FormLabel>
+							<FormDescription>{t("workspace.observability.otelForm.selective.atomicDescription")}</FormDescription>
 						</div>
 						<FormField
 							control={form.control}
@@ -467,8 +467,8 @@ function SelectiveExportSection({
 							render={({ field }) => (
 								<FormItem>
 									<SelectionFieldLabel
-										label="Media Candidate %"
-										description="Head-sampling performed before the result is known. Only candidates retain image media and can later be selected by Error, Fallback, Latency, or Quality rules."
+										label={t("workspace.observability.otelForm.selective.mediaCandidate")}
+										description={t("workspace.observability.otelForm.selective.mediaCandidateHelp")}
 									/>
 									<FormControl>
 										<Input
@@ -482,9 +482,7 @@ function SelectiveExportSection({
 											onChange={(event) => field.onChange(Number(event.target.value) / 100)}
 										/>
 									</FormControl>
-									<FormDescription>
-										Only candidate requests copy multipart media or decode base64. Tail rules can select records only from this pool.
-									</FormDescription>
+									<FormDescription>{t("workspace.observability.otelForm.selective.mediaCandidateDescription")}</FormDescription>
 									<FormMessage />
 								</FormItem>
 							)}
@@ -495,8 +493,8 @@ function SelectiveExportSection({
 							render={({ field }) => (
 								<FormItem>
 									<SelectionFieldLabel
-										label="Process Max / Minute"
-										description="Maximum selected records exported by this Bifrost process per minute across all rules. Zero means unlimited."
+										label={t("workspace.observability.otelForm.selective.processMax")}
+										description={t("workspace.observability.otelForm.selective.processMaxHelp")}
 									/>
 									<FormControl>
 										<Input
@@ -509,7 +507,7 @@ function SelectiveExportSection({
 											onChange={(event) => field.onChange(Number(event.target.value))}
 										/>
 									</FormControl>
-									<FormDescription>Maximum selected records per Bifrost process. 0 means unlimited.</FormDescription>
+									<FormDescription>{t("workspace.observability.otelForm.selective.processMaxDescription")}</FormDescription>
 									<FormMessage />
 								</FormItem>
 							)}
@@ -530,8 +528,8 @@ function SelectiveExportSection({
 										render={({ field }) => (
 											<FormItem>
 												<SelectionFieldLabel
-													label="Rule ID"
-													description="A custom name for logs and metadata only. Names such as errors or aaa have no built-in matching meaning."
+													label={t("workspace.observability.otelForm.selective.ruleId")}
+													description={t("workspace.observability.otelForm.selective.ruleIdHelp")}
 												/>
 												<FormControl>
 													<Input disabled={!hasOtelAccess} data-testid={`otel-selective-export-rule-${index}-id`} {...field} />
@@ -546,8 +544,8 @@ function SelectiveExportSection({
 										render={({ field }) => (
 											<FormItem>
 												<SelectionFieldLabel
-													label="Priority"
-													description="Higher numbers are evaluated first. Evaluation stops at the first matching rule."
+													label={t("workspace.observability.otelForm.selective.priority")}
+													description={t("workspace.observability.otelForm.selective.priorityHelp")}
 												/>
 												<FormControl>
 													<Input
@@ -570,8 +568,8 @@ function SelectiveExportSection({
 										render={({ field }) => (
 											<FormItem>
 												<SelectionFieldLabel
-													label="Request Type"
-													description="Limits the rule to image generation, image edit, image variation, or all image requests. Stream variants are included in their family."
+													label={t("workspace.observability.otelForm.selective.requestType")}
+													description={t("workspace.observability.otelForm.selective.requestTypeHelp")}
 												/>
 												<Select
 													value={field.value?.[0] ?? "all"}
@@ -584,10 +582,10 @@ function SelectiveExportSection({
 														</SelectTrigger>
 													</FormControl>
 													<SelectContent>
-														<SelectItem value="all">All image requests</SelectItem>
-														<SelectItem value="image_generation">Generation</SelectItem>
-														<SelectItem value="image_edit">Edit</SelectItem>
-														<SelectItem value="image_variation">Variation</SelectItem>
+														<SelectItem value="all">{t("workspace.observability.otelForm.selective.allImageRequests")}</SelectItem>
+														<SelectItem value="image_generation">{t("workspace.observability.otelForm.selective.generation")}</SelectItem>
+														<SelectItem value="image_edit">{t("workspace.observability.otelForm.selective.edit")}</SelectItem>
+														<SelectItem value="image_variation">{t("workspace.observability.otelForm.selective.variation")}</SelectItem>
 													</SelectContent>
 												</Select>
 												<FormMessage />
@@ -600,8 +598,8 @@ function SelectiveExportSection({
 										render={({ field }) => (
 											<FormItem>
 												<SelectionFieldLabel
-													label="Export %"
-													description="Deterministic percentage of matching candidates to export. Zero drops every match; 100 exports every match, subject to quota and media completeness."
+													label={t("workspace.observability.otelForm.selective.exportRate")}
+													description={t("workspace.observability.otelForm.selective.exportRateHelp")}
 												/>
 												<FormControl>
 													<Input
@@ -625,14 +623,14 @@ function SelectiveExportSection({
 										render={({ field }) => (
 											<FormItem>
 												<SelectionFieldLabel
-													label="Min Latency ms"
-													description="Matches requests whose total elapsed time is greater than or equal to this value. Leave empty for no lower bound."
+													label={t("workspace.observability.otelForm.selective.minLatency")}
+													description={t("workspace.observability.otelForm.selective.minLatencyHelp")}
 												/>
 												<FormControl>
 													<Input
 														type="number"
 														min={0}
-														placeholder="Any"
+														placeholder={t("workspace.observability.otelForm.selective.any")}
 														disabled={!hasOtelAccess}
 														data-testid={`otel-selective-export-rule-${index}-min-latency`}
 														value={field.value ?? ""}
@@ -649,14 +647,14 @@ function SelectiveExportSection({
 										render={({ field }) => (
 											<FormItem>
 												<SelectionFieldLabel
-													label="Max Latency ms"
-													description="Matches requests whose total elapsed time is lower than this value. Leave empty for no upper bound."
+													label={t("workspace.observability.otelForm.selective.maxLatency")}
+													description={t("workspace.observability.otelForm.selective.maxLatencyHelp")}
 												/>
 												<FormControl>
 													<Input
 														type="number"
 														min={0}
-														placeholder="Any"
+														placeholder={t("workspace.observability.otelForm.selective.any")}
 														disabled={!hasOtelAccess}
 														data-testid={`otel-selective-export-rule-${index}-max-latency`}
 														value={field.value ?? ""}
@@ -673,8 +671,8 @@ function SelectiveExportSection({
 										render={({ field }) => (
 											<FormItem>
 												<SelectionFieldLabel
-													label="Min Technical Quality"
-													description="A 0–1 completeness score based on success, usable image output, expected image count, revised prompt, and fallback. It is not an aesthetic image-quality score."
+													label={t("workspace.observability.otelForm.selective.minQuality")}
+													description={t("workspace.observability.otelForm.selective.minQualityHelp")}
 												/>
 												<FormControl>
 													<Input
@@ -682,7 +680,7 @@ function SelectiveExportSection({
 														min={0}
 														max={1}
 														step={0.05}
-														placeholder="Any"
+														placeholder={t("workspace.observability.otelForm.selective.any")}
 														disabled={!hasOtelAccess}
 														data-testid={`otel-selective-export-rule-${index}-min-quality`}
 														value={field.value ?? ""}
@@ -699,8 +697,8 @@ function SelectiveExportSection({
 										render={({ field }) => (
 											<FormItem>
 												<SelectionFieldLabel
-													label="Rule Max / Minute"
-													description="Maximum exports from this rule per Bifrost process per minute. Zero means unlimited; the process-wide limit still applies."
+													label={t("workspace.observability.otelForm.selective.ruleMax")}
+													description={t("workspace.observability.otelForm.selective.ruleMaxHelp")}
 												/>
 												<FormControl>
 													<Input
@@ -723,8 +721,8 @@ function SelectiveExportSection({
 										render={({ field }) => (
 											<FormItem>
 												<SelectionFieldLabel
-													label="Error"
-													description="Required matches requests whose final image attempt failed. Exclude matches final success. A failed primary followed by a successful fallback is considered successful."
+													label={t("workspace.observability.otelForm.selective.error")}
+													description={t("workspace.observability.otelForm.selective.errorHelp")}
 												/>
 												<Select
 													value={field.value === undefined ? "any" : String(field.value)}
@@ -737,9 +735,9 @@ function SelectiveExportSection({
 														</SelectTrigger>
 													</FormControl>
 													<SelectContent>
-														<SelectItem value="any">Any</SelectItem>
-														<SelectItem value="true">Required</SelectItem>
-														<SelectItem value="false">Exclude</SelectItem>
+														<SelectItem value="any">{t("workspace.observability.otelForm.selective.any")}</SelectItem>
+														<SelectItem value="true">{t("workspace.observability.otelForm.selective.required")}</SelectItem>
+														<SelectItem value="false">{t("workspace.observability.otelForm.selective.exclude")}</SelectItem>
 													</SelectContent>
 												</Select>
 											</FormItem>
@@ -751,8 +749,8 @@ function SelectiveExportSection({
 										render={({ field }) => (
 											<FormItem>
 												<SelectionFieldLabel
-													label="Fallback"
-													description="Required matches requests completed through a configured fallback route. Exclude matches requests handled by the primary route."
+													label={t("workspace.observability.otelForm.selective.fallback")}
+													description={t("workspace.observability.otelForm.selective.fallbackHelp")}
 												/>
 												<Select
 													value={field.value === undefined ? "any" : String(field.value)}
@@ -765,9 +763,9 @@ function SelectiveExportSection({
 														</SelectTrigger>
 													</FormControl>
 													<SelectContent>
-														<SelectItem value="any">Any</SelectItem>
-														<SelectItem value="true">Required</SelectItem>
-														<SelectItem value="false">Exclude</SelectItem>
+														<SelectItem value="any">{t("workspace.observability.otelForm.selective.any")}</SelectItem>
+														<SelectItem value="true">{t("workspace.observability.otelForm.selective.required")}</SelectItem>
+														<SelectItem value="false">{t("workspace.observability.otelForm.selective.exclude")}</SelectItem>
 													</SelectContent>
 												</Select>
 											</FormItem>
@@ -782,7 +780,7 @@ function SelectiveExportSection({
 											disabled={!hasOtelAccess}
 											data-testid={`otel-selective-export-rule-${index}-remove`}
 										>
-											<Trash2 className="size-4" /> Remove
+											<Trash2 className="size-4" /> {t("workspace.observability.otelForm.selective.remove")}
 										</Button>
 									</div>
 								</div>
@@ -805,7 +803,7 @@ function SelectiveExportSection({
 						disabled={!hasOtelAccess || fields.length >= 32}
 						data-testid="otel-selective-export-add-rule"
 					>
-						<Plus className="size-4" /> Add Rule
+						<Plus className="size-4" /> {t("workspace.observability.otelForm.selective.addRule")}
 					</Button>
 				</>
 			)}
@@ -816,6 +814,7 @@ function SelectiveExportSection({
 // OtelProfileSection renders one collapsible profile. The header stays visible when collapsed
 // and surfaces the profile identity plus its enable toggle and remove control.
 function OtelProfileSection({ form, control, index, hasOtelAccess, canRemove, open, onOpenChange, onRemove }: OtelProfileSectionProps) {
+	const { t } = useTranslation();
 	const base = `profiles.${index}` as const;
 	const protocol = form.watch(`${base}.protocol`);
 	const metricsEnabled = form.watch(`${base}.metrics_enabled`);
@@ -893,8 +892,8 @@ function OtelProfileSection({ form, control, index, hasOtelAccess, canRemove, op
 						name={`${base}.service_name`}
 						render={({ field }) => (
 							<FormItem className="w-full">
-								<FormLabel>Service Name</FormLabel>
-								<FormDescription>If kept empty, the service name will be set to "bifrost"</FormDescription>
+								<FormLabel>{t("workspace.observability.otelForm.serviceName")}</FormLabel>
+								<FormDescription>{t("workspace.observability.otelForm.serviceNameDescription")}</FormDescription>
 								<FormControl>
 									<Input placeholder="bifrost" disabled={!hasOtelAccess} {...field} />
 								</FormControl>
@@ -907,7 +906,7 @@ function OtelProfileSection({ form, control, index, hasOtelAccess, canRemove, op
 						name={`${base}.collector_url`}
 						render={({ field }) => (
 							<FormItem className="w-full">
-								<FormLabel>OTLP Collector URL</FormLabel>
+								<FormLabel>{t("workspace.observability.otelForm.collectorUrl")}</FormLabel>
 								<div className="text-muted-foreground text-xs">
 									<code>{protocol === "http" ? "http(s)://<host>:<port>/v1/traces" : "<host>:<port>"}</code>
 								</div>
@@ -944,7 +943,8 @@ function OtelProfileSection({ form, control, index, hasOtelAccess, canRemove, op
 						render={({ field }) => (
 							<FormItem className="w-full">
 								<FormLabel>
-									Request Headers <span className="text-muted-foreground font-normal">(Optional)</span>
+									{t("workspace.observability.otelForm.requestHeaders")}{" "}
+									<span className="text-muted-foreground font-normal">({t("workspace.observability.otelForm.optional")})</span>
 								</FormLabel>
 								<FormDescription>
 									Comma-separated list of request headers to capture and emit as span attributes. Supports exact names and wildcard patterns
@@ -972,7 +972,7 @@ function OtelProfileSection({ form, control, index, hasOtelAccess, canRemove, op
 						render={({ field }) => (
 							<FormItem className="flex flex-row items-center justify-between">
 								<div className="space-y-0.5">
-									<FormLabel className="text-base">Disable Content Logging</FormLabel>
+									<FormLabel className="text-base">{t("workspace.observability.otelForm.disableContentLogging")}</FormLabel>
 									<FormDescription>
 										When enabled, message content (input/output messages, tool definitions, and tool call arguments/results) is dropped from
 										exported spans. Only metadata such as model, tokens, and latency is sent to the collector.
@@ -995,7 +995,7 @@ function OtelProfileSection({ form, control, index, hasOtelAccess, canRemove, op
 						render={({ field }) => (
 							<FormItem className="flex flex-row items-center justify-between">
 								<div className="space-y-0.5">
-									<FormLabel className="text-base">Group Traces by Session</FormLabel>
+									<FormLabel className="text-base">{t("workspace.observability.otelForm.groupTracesBySession")}</FormLabel>
 									<FormDescription>
 										When enabled, requests sharing the same x-bf-session-id header are grouped into a single trace, each request appearing
 										as a top-level sibling span. A request carrying an inbound W3C traceparent stays on its own distributed trace and is
@@ -1019,7 +1019,7 @@ function OtelProfileSection({ form, control, index, hasOtelAccess, canRemove, op
 						render={({ field }) => (
 							<FormItem className="flex flex-row items-center justify-between">
 								<div className="space-y-0.5">
-									<FormLabel className="text-base">Disable Root Span Content</FormLabel>
+									<FormLabel className="text-base">{t("workspace.observability.otelForm.disableRootSpanContent")}</FormLabel>
 									<FormDescription>
 										When enabled, input/output message content is dropped from the root span only; the underlying generation (llm.call) span
 										keeps the full content.
@@ -1042,7 +1042,7 @@ function OtelProfileSection({ form, control, index, hasOtelAccess, canRemove, op
 							name={`${base}.trace_type`}
 							render={({ field }) => (
 								<FormItem className="flex-1">
-									<FormLabel>Format</FormLabel>
+									<FormLabel>{t("workspace.observability.otelForm.traceType")}</FormLabel>
 									<Select onValueChange={field.onChange} value={field.value ?? traceTypeOptions[0].value} disabled={!hasOtelAccess}>
 										<FormControl>
 											<SelectTrigger className="w-full">
@@ -1057,7 +1057,11 @@ function OtelProfileSection({ form, control, index, hasOtelAccess, canRemove, op
 													disabled={option.disabled}
 													disabledReason={option.disabledReason}
 												>
-													{option.label}
+													{option.value === "genai_extension"
+														? t("workspace.observability.otelForm.traceTypeGenAi")
+														: option.value === "vercel"
+															? t("workspace.observability.otelForm.traceTypeVercel")
+															: t("workspace.observability.otelForm.traceTypeOpenInference")}
 												</SelectItem>
 											))}
 										</SelectContent>
@@ -1072,7 +1076,7 @@ function OtelProfileSection({ form, control, index, hasOtelAccess, canRemove, op
 							name={`${base}.protocol`}
 							render={({ field }) => (
 								<FormItem className="flex-1">
-									<FormLabel>Protocol</FormLabel>
+									<FormLabel>{t("workspace.observability.otelForm.protocol")}</FormLabel>
 									<Select onValueChange={field.onChange} value={field.value} disabled={!hasOtelAccess}>
 										<FormControl>
 											<SelectTrigger className="w-full">
@@ -1087,7 +1091,9 @@ function OtelProfileSection({ form, control, index, hasOtelAccess, canRemove, op
 													disabled={option.disabled}
 													disabledReason={option.disabledReason}
 												>
-													{option.label}
+													{option.value === "http"
+														? t("workspace.observability.otelForm.protocolHttp")
+														: t("workspace.observability.otelForm.protocolGrpc")}
 												</SelectItem>
 											))}
 										</SelectContent>
@@ -1103,7 +1109,7 @@ function OtelProfileSection({ form, control, index, hasOtelAccess, canRemove, op
 						name={`${base}.export_timeout`}
 						render={({ field }) => (
 							<FormItem className="w-full max-w-xs">
-								<FormLabel>Export Timeout (seconds)</FormLabel>
+								<FormLabel>{t("workspace.observability.otelForm.exportTimeout")}</FormLabel>
 								<FormControl>
 									<Input
 										type="number"
@@ -1133,10 +1139,8 @@ function OtelProfileSection({ form, control, index, hasOtelAccess, canRemove, op
 								<FormItem className="flex flex-row items-center gap-2">
 									<div className="flex w-full flex-row items-center gap-2">
 										<div className="flex flex-col gap-1">
-											<FormLabel>Insecure (Skip TLS)</FormLabel>
-											<FormDescription>
-												Skip TLS verification. Disable this to use TLS with system root CAs or a custom CA certificate.
-											</FormDescription>
+											<FormLabel>{t("workspace.observability.otelForm.insecure")}</FormLabel>
+											<FormDescription>{t("workspace.observability.otelForm.insecureDescription")}</FormDescription>
 										</div>
 										<div className="ml-auto">
 											<Switch
@@ -1160,10 +1164,8 @@ function OtelProfileSection({ form, control, index, hasOtelAccess, canRemove, op
 								name={`${base}.tls_ca_cert`}
 								render={({ field }) => (
 									<FormItem className="w-full">
-										<FormLabel>TLS CA Certificate Path</FormLabel>
-										<FormDescription>
-											File path to the CA certificate on the Bifrost server. Leave empty to use system root CAs.
-										</FormDescription>
+										<FormLabel>{t("workspace.observability.otelForm.tlsCaCertPath")}</FormLabel>
+										<FormDescription>{t("workspace.observability.otelForm.tlsCaCertPathDescription")}</FormDescription>
 										<FormControl>
 											<Input placeholder="/path/to/ca.crt" disabled={!hasOtelAccess} {...field} />
 										</FormControl>
@@ -1184,11 +1186,10 @@ function OtelProfileSection({ form, control, index, hasOtelAccess, canRemove, op
 									<div className="flex w-full flex-row items-center gap-2">
 										<div className="flex flex-col gap-1">
 											<h3 className="flex flex-row items-center gap-2 text-sm font-medium">
-												Enable Metrics Export <Badge variant="secondary">BETA</Badge>
+												{t("workspace.observability.otelForm.metricsEnabled")}{" "}
+												<Badge variant="secondary">{t("workspace.observability.otelForm.metricsEnabledBeta")}</Badge>
 											</h3>
-											<p className="text-muted-foreground text-xs">
-												Push metrics to an OTEL Collector for proper aggregation in cluster deployments
-											</p>
+											<p className="text-muted-foreground text-xs">{t("workspace.observability.otelForm.pushMetricsDescription")}</p>
 										</div>
 										<div className="ml-auto">
 											<Switch
@@ -1211,7 +1212,7 @@ function OtelProfileSection({ form, control, index, hasOtelAccess, canRemove, op
 									name={`${base}.metrics_endpoint`}
 									render={({ field }) => (
 										<FormItem className="w-full">
-											<FormLabel>Metrics Endpoint</FormLabel>
+											<FormLabel>{t("workspace.observability.otelForm.metricsEndpoint")}</FormLabel>
 											<div className="text-muted-foreground text-xs">
 												<code>{protocol === "http" ? "http(s)://<host>:<port>/v1/metrics" : "<host>:<port>"}</code>
 											</div>
@@ -1236,7 +1237,7 @@ function OtelProfileSection({ form, control, index, hasOtelAccess, canRemove, op
 									name={`${base}.metrics_push_interval`}
 									render={({ field }) => (
 										<FormItem className="w-full max-w-xs">
-											<FormLabel>Push Interval (seconds)</FormLabel>
+											<FormLabel>{t("workspace.observability.otelForm.pushInterval")}</FormLabel>
 											<FormControl>
 												<Input
 													type="number"
@@ -1248,7 +1249,7 @@ function OtelProfileSection({ form, control, index, hasOtelAccess, canRemove, op
 													onChange={(e) => field.onChange(e.target.value === "" ? null : Number(e.target.value))}
 												/>
 											</FormControl>
-											<FormDescription>How often to push metrics (1-300 seconds)</FormDescription>
+											<FormDescription>{t("workspace.observability.otelForm.pushIntervalDescription")}</FormDescription>
 											<FormMessage />
 										</FormItem>
 									)}

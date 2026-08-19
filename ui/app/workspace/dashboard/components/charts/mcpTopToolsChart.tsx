@@ -1,5 +1,6 @@
 import type { MCPTopToolsResponse } from "@/lib/types/logs";
 import { memo, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { formatCompactNumber } from "@/lib/utils/numbers";
 import { formatCost, getModelColor } from "../../utils/chartUtils";
@@ -33,6 +34,7 @@ function CustomTooltip({ active, payload }: any) {
 }
 
 function MCPTopToolsChartImpl({ data }: MCPTopToolsChartProps) {
+	const { t } = useTranslation();
 	const chartData = useMemo(() => {
 		if (!data?.tools || data.tools.length === 0) {
 			return [];
@@ -42,7 +44,7 @@ function MCPTopToolsChartImpl({ data }: MCPTopToolsChartProps) {
 	}, [data]);
 
 	if (!data?.tools || chartData.length === 0) {
-		return <div className="text-muted-foreground flex h-full items-center justify-center text-sm">No data available</div>;
+		return <div className="text-muted-foreground flex h-full items-center justify-center text-sm">{t("common.noDataAvailable")}</div>;
 	}
 
 	return (

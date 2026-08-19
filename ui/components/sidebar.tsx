@@ -80,6 +80,8 @@ import { ChevronRight } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useCookies } from "react-cookie";
+import { useTranslation } from "react-i18next";
+import { LanguageSwitcher } from "./languageSwitcher";
 import { ThemeToggle } from "./themeToggle";
 import { Badge } from "./ui/badge";
 import { PromoCardStack } from "./ui/promoCardStack";
@@ -183,6 +185,68 @@ const getSidebarItemHref = (item: Pick<SidebarItem, "url" | "queryParam">) => {
 
 const slug = (s: string) => s.toLowerCase().replace(/\s+/g, "-");
 
+const SIDEBAR_LABEL_KEYS: Record<string, string> = {
+	Observability: "sidebar.nav.observability",
+	Models: "sidebar.nav.models",
+	"MCP Gateway": "sidebar.nav.mcpGateway",
+	Plugins: "sidebar.nav.plugins",
+	Alerting: "sidebar.nav.alerting",
+	Governance: "sidebar.nav.governance",
+	Guardrails: "sidebar.nav.guardrails",
+	Webhooks: "sidebar.nav.webhooks",
+	"Cluster Config": "sidebar.nav.clusterConfig",
+	"Adaptive Routing": "sidebar.nav.adaptiveRouting",
+	"Prompt Repository": "sidebar.nav.promptRepository",
+	"Skills Repository": "sidebar.nav.skillsRepository",
+	Evals: "sidebar.nav.evals",
+	Settings: "sidebar.nav.settings",
+	Dashboard: "sidebar.sub.dashboard",
+	"LLM Logs": "sidebar.sub.llmLogs",
+	"MCP Logs": "sidebar.sub.mcpLogs",
+	Connectors: "sidebar.sub.connectors",
+	"Logs Settings": "sidebar.sub.logsSettings",
+	"Model Catalog": "sidebar.sub.modelCatalog",
+	"Model Providers": "sidebar.sub.modelProviders",
+	"Budgets & Limits": "sidebar.sub.budgetsLimits",
+	"Routing Rules": "sidebar.sub.routingRules",
+	"Complexity Router": "sidebar.sub.complexityRouter",
+	"Circuit Breaker": "sidebar.sub.circuitBreaker",
+	"Pricing Overrides": "sidebar.sub.pricingOverrides",
+	"Model Settings": "sidebar.sub.modelSettings",
+	"MCP Catalog": "sidebar.sub.mcpCatalog",
+	"MCP Library": "sidebar.sub.mcpLibrary",
+	"Tool Groups": "sidebar.sub.toolGroups",
+	"Auth Sessions": "sidebar.sub.authSessions",
+	"OAuth Grants": "sidebar.sub.oauthGrants",
+	"MCP Settings": "sidebar.sub.mcpSettings",
+	Channels: "sidebar.sub.channels",
+	Rules: "sidebar.sub.rules",
+	History: "sidebar.sub.history",
+	"Virtual Keys": "sidebar.sub.virtualKeys",
+	Users: "sidebar.sub.users",
+	Teams: "sidebar.sub.teams",
+	"Business Units": "sidebar.sub.businessUnits",
+	Customers: "sidebar.sub.customers",
+	"User Provisioning": "sidebar.sub.userProvisioning",
+	"Roles & Permissions": "sidebar.sub.rolesPermissions",
+	"Access Profiles": "sidebar.sub.accessProfiles",
+	"Audit Logs": "sidebar.sub.auditLogs",
+	Providers: "sidebar.sub.providers",
+	"Client Settings": "sidebar.sub.clientSettings",
+	Compatibility: "sidebar.sub.compatibility",
+	Caching: "sidebar.sub.caching",
+	Security: "sidebar.sub.security",
+	Proxy: "sidebar.sub.proxy",
+	"API Keys": "sidebar.sub.apiKeys",
+	"Performance Tuning": "sidebar.sub.performanceTuning",
+	"Feature Flags": "sidebar.sub.featureFlags",
+};
+
+const translateSidebarLabel = (t: ReturnType<typeof useTranslation>["t"], label: string) => {
+	const key = SIDEBAR_LABEL_KEYS[label];
+	return key ? t(key, { defaultValue: label }) : label;
+};
+
 const TimeFilterPages = new Set(["/workspace/dashboard", "/workspace/logs", "/workspace/mcp-logs"]);
 
 const preserveTimeFilters = (baseHref: string, subItemUrl: string, pathname: string, search: string): string => {
@@ -228,6 +292,8 @@ const SidebarItemView = ({
 	expandSidebar: () => void;
 	highlightedUrl?: string;
 }) => {
+	const { t } = useTranslation();
+	const itemLabel = translateSidebarLabel(t, item.title);
 	const [flyoutOpen, setFlyoutOpen] = useState(false);
 	const flyoutCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const openFlyout = () => {
@@ -294,7 +360,7 @@ const SidebarItemView = ({
 			<div className="flex w-full items-center gap-2">
 				<item.icon className={`h-4 w-4 shrink-0 ${isActive || isAnySubItemActive ? "text-primary" : "text-muted-foreground"}`} />
 				<span className={`text-sm group-data-[collapsible=icon]:hidden ${isActive || isAnySubItemActive ? "font-medium" : "font-normal"}`}>
-					{item.title}
+					{itemLabel}
 				</span>
 				{item.tag && (
 					<Badge variant="secondary" className="text-muted-foreground ml-auto text-xs group-data-[collapsible=icon]:hidden">
@@ -323,7 +389,7 @@ const SidebarItemView = ({
 	if (hasSubItems) {
 		menuButton = (
 			<SidebarMenuButton
-				tooltip={isSidebarCollapsed ? undefined : item.title}
+				tooltip={isSidebarCollapsed ? undefined : itemLabel}
 				className={buttonClassName}
 				onClick={handleClick}
 				data-testid={`sidebar-item-btn-${slug(item.title)}`}
@@ -333,13 +399,13 @@ const SidebarItemView = ({
 		);
 	} else if (!item.hasAccess) {
 		menuButton = (
-			<SidebarMenuButton tooltip={item.title} data-nav-url={item.url} className={buttonClassName}>
+			<SidebarMenuButton tooltip={itemLabel} data-nav-url={item.url} className={buttonClassName}>
 				{innerContent}
 			</SidebarMenuButton>
 		);
 	} else if (isExternal) {
 		menuButton = (
-			<SidebarMenuButton asChild tooltip={item.title} className={buttonClassName}>
+			<SidebarMenuButton asChild tooltip={itemLabel} className={buttonClassName}>
 				<a
 					href={item.url}
 					target="_blank"
@@ -353,7 +419,7 @@ const SidebarItemView = ({
 		);
 	} else {
 		menuButton = (
-			<SidebarMenuButton asChild tooltip={item.title} className={buttonClassName}>
+			<SidebarMenuButton asChild tooltip={itemLabel} className={buttonClassName}>
 				<Link
 					to={item.url}
 					preload="intent"
@@ -382,7 +448,7 @@ const SidebarItemView = ({
 						onMouseLeave={closeFlyout}
 						data-testid={`sidebar-flyout-content-${slug(item.title)}`}
 					>
-						<div className="text-muted-foreground px-2 py-1.5 text-xs font-medium">{item.title}</div>
+						<div className="text-muted-foreground px-2 py-1.5 text-xs font-medium">{itemLabel}</div>
 						{item.subItems?.map((subItem) => {
 							const baseHref = getSidebarItemHref(subItem);
 							const href = preserveTimeFilters(baseHref, subItem.url, pathname, search);
@@ -393,7 +459,7 @@ const SidebarItemView = ({
 								<div className="flex items-center gap-2">
 									{SubItemIcon && <SubItemIcon className={`h-3.5 w-3.5 ${isSubItemActive ? "text-primary" : "text-muted-foreground"}`} />}
 									<span className={`text-sm ${isSubItemActive ? "text-primary font-medium" : "text-slate-500 dark:text-zinc-400"}`}>
-										{subItem.title}
+										{translateSidebarLabel(t, subItem.title)}
 									</span>
 									{subItem.tag && (
 										<Badge variant="secondary" className="text-muted-foreground ml-auto text-xs">
@@ -450,7 +516,9 @@ const SidebarItemView = ({
 						const subInner = (
 							<div className="flex w-full items-center gap-2">
 								{SubItemIcon && <SubItemIcon className={`h-3.5 w-3.5 ${isSubItemActive ? "text-primary" : "text-muted-foreground"}`} />}
-								<span className={`text-sm ${isSubItemActive ? "font-medium" : "font-normal"}`}>{subItem.title}</span>
+								<span className={`text-sm ${isSubItemActive ? "font-medium" : "font-normal"}`}>
+									{translateSidebarLabel(t, subItem.title)}
+								</span>
 								{subItem.tag && (
 									<Badge variant="secondary" className="text-muted-foreground ml-auto text-xs">
 										{subItem.tag}
@@ -529,6 +597,7 @@ const compareVersions = (v1: string, v2: string): number => {
 };
 
 export default function AppSidebar() {
+	const { t } = useTranslation();
 	const pathname = useLocation({ select: (l) => l.pathname });
 	const search = useLocation({ select: (l) => l.searchStr ?? "" });
 	const tsNavigate = useNavigate();
@@ -1078,6 +1147,7 @@ export default function AppSidebar() {
 			hasClusterConfigAccess,
 			isAdaptiveRoutingAllowed,
 			hasSettingsAccess,
+			hasFeatureFlagsAccess,
 			hasPromptRepositoryAccess,
 			hasSkillsRepositoryAccess,
 			hasAccessProfilesAccess,
@@ -1467,7 +1537,7 @@ export default function AppSidebar() {
 						type="button"
 						data-testid="sidebar-collapse-btn"
 						className="text-muted-foreground hover:text-foreground hover:bg-sidebar-accent flex h-7 w-7 items-center justify-center rounded-md transition-colors"
-						aria-label="Collapse sidebar"
+						aria-label={t("sidebar.collapseSidebar")}
 					>
 						<PanelLeftClose className="h-4 w-4" />
 					</button>
@@ -1503,8 +1573,8 @@ export default function AppSidebar() {
 					<input
 						ref={searchInputRef}
 						type="text"
-						aria-label="Search sidebar navigation"
-						placeholder="Search..."
+						aria-label={t("sidebar.searchNavigation")}
+						placeholder={t("sidebar.searchPlaceholder")}
 						value={searchQuery}
 						onChange={(e) => {
 							setSearchQuery(e.target.value);
@@ -1574,13 +1644,14 @@ export default function AppSidebar() {
 									</a>
 								))}
 							<ThemeToggle />
+							<LanguageSwitcher />
 							{IS_ENTERPRISE && userInfo ? (
 								<Popover open={userPopoverOpen} onOpenChange={setUserPopoverOpen}>
 									<PopoverTrigger asChild>
 										<button
 											className="hover:text-primary text-muted-foreground flex cursor-pointer items-center space-x-3 p-0.5"
 											type="button"
-											aria-label="User menu"
+											aria-label={t("sidebar.userMenu")}
 										>
 											<User className="hover:text-primary text-muted-foreground h-4 w-4" size={20} strokeWidth={2} />
 										</button>
@@ -1597,7 +1668,7 @@ export default function AppSidebar() {
 												type="button"
 											>
 												<LogOut className="h-4 w-4" strokeWidth={2} />
-												<span>Logout</span>
+												<span>{t("common.logout")}</span>
 											</button>
 										</div>
 									</PopoverContent>
@@ -1608,7 +1679,7 @@ export default function AppSidebar() {
 										className="hover:text-primary text-muted-foreground flex cursor-pointer items-center space-x-3 p-0.5"
 										onClick={handleLogout}
 										type="button"
-										aria-label="Logout"
+										aria-label={t("common.logout")}
 									>
 										<LogOut className="hover:text-primary text-muted-foreground h-4 w-4" size={20} strokeWidth={2} />
 									</button>

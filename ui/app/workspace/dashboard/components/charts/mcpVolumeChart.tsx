@@ -1,5 +1,6 @@
 import type { MCPHistogramResponse } from "@/lib/types/logs";
 import { memo, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { formatCompactNumber } from "@/lib/utils/numbers";
 import { CHART_COLORS, formatFullTimestamp, formatTimestamp } from "../../utils/chartUtils";
@@ -47,6 +48,7 @@ function CustomTooltip({ active, payload }: any) {
 }
 
 function MCPVolumeChartImpl({ data, chartType, startTime, endTime }: MCPVolumeChartProps) {
+	const { t } = useTranslation();
 	const chartData = useMemo(() => {
 		if (!data?.buckets || !data.bucket_size_seconds) {
 			return [];
@@ -60,7 +62,7 @@ function MCPVolumeChartImpl({ data, chartType, startTime, endTime }: MCPVolumeCh
 	}, [data]);
 
 	if (!data?.buckets || chartData.length === 0) {
-		return <div className="text-muted-foreground flex h-full items-center justify-center text-sm">No data available</div>;
+		return <div className="text-muted-foreground flex h-full items-center justify-center text-sm">{t("common.noDataAvailable")}</div>;
 	}
 
 	const commonProps = {
