@@ -86,6 +86,11 @@ test.describe('LLM Logs', () => {
         .toMatch(/status=success/)
     })
 
+    test('should filter long-running requests by minimum latency', async ({ logsPage, page }) => {
+      await logsPage.filterByMinimumLatency(30)
+      await expect.poll(() => page.url(), { timeout: 5000 }).toContain('min_latency=30000')
+    })
+
     test('should search logs by content', async ({ logsPage }) => {
       const searchInput = logsPage.searchInput
       const isVisible = await searchInput.isVisible().catch(() => false)

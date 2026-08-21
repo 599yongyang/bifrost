@@ -1049,6 +1049,15 @@ const en = {
 			colLatency: "Latency",
 			colTokens: "Tokens",
 			colCost: "Cost",
+			latencyFilter: {
+				title: "Latency",
+				minimum: "Minimum (seconds)",
+				maximum: "Maximum (seconds)",
+				noLimit: "No limit",
+				preset: "≥ {{seconds}}s",
+				unitHelp: "Filters use total request latency.",
+				clear: "Clear",
+			},
 			emptyState: {
 				title: "Looks like you haven't configured the log store in your config file.",
 				integrateUnder60: "Integrate under 60 seconds",

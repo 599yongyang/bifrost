@@ -88,6 +88,8 @@ export default function LogsPage() {
 			customer_ids: parseAsSafeArrayOf.withDefault([]),
 			business_unit_ids: parseAsSafeArrayOf.withDefault([]),
 			content_search: parseAsSafeString.withDefault(""),
+			min_latency: parseAsInteger,
+			max_latency: parseAsInteger,
 			start_time: parseAsInteger.withDefault(defaultTimeRange.startTime),
 			end_time: parseAsInteger.withDefault(defaultTimeRange.endTime),
 			limit: parseAsInteger.withDefault(25), // Default fallback, actual value calculated based on table height
@@ -131,6 +133,8 @@ export default function LogsPage() {
 			customer_ids: urlState.customer_ids,
 			business_unit_ids: urlState.business_unit_ids,
 			content_search: urlState.content_search,
+			min_latency: urlState.min_latency ?? undefined,
+			max_latency: urlState.max_latency ?? undefined,
 			missing_cost_only: urlState.missing_cost_only,
 			cache_hit_types: urlState.cache_hit_types,
 			metadata_filters: urlState.metadata_filters
@@ -167,6 +171,8 @@ export default function LogsPage() {
 			urlState.customer_ids,
 			urlState.business_unit_ids,
 			urlState.content_search,
+			urlState.min_latency,
+			urlState.max_latency,
 			urlState.parent_request_id,
 			urlState.missing_cost_only,
 			urlState.cache_hit_types,
@@ -196,8 +202,7 @@ export default function LogsPage() {
 			// period mode `newFilters` carries no start/end, so only touch time when an
 			// explicit range is actually provided — otherwise we'd wipe the active period/range.
 			const hasExplicitTime = !!newFilters.start_time && !!newFilters.end_time;
-			const timeChanged =
-				hasExplicitTime && (newFilters.start_time !== filters.start_time || newFilters.end_time !== filters.end_time);
+			const timeChanged = hasExplicitTime && (newFilters.start_time !== filters.start_time || newFilters.end_time !== filters.end_time);
 			if (timeChanged) {
 				userModifiedTimeRange.current = true;
 			}
@@ -225,6 +230,8 @@ export default function LogsPage() {
 				customer_ids: newFilters.customer_ids || [],
 				business_unit_ids: newFilters.business_unit_ids || [],
 				content_search: newFilters.content_search || "",
+				min_latency: newFilters.min_latency ?? null,
+				max_latency: newFilters.max_latency ?? null,
 				missing_cost_only: newFilters.missing_cost_only ?? false,
 				cache_hit_types: newFilters.cache_hit_types || [],
 				metadata_filters: newFilters.metadata_filters ? JSON.stringify(newFilters.metadata_filters) : "",

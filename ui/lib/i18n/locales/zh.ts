@@ -1020,6 +1020,15 @@ const zh = {
 			colLatency: "延迟",
 			colTokens: "令牌",
 			colCost: "费用",
+			latencyFilter: {
+				title: "请求耗时",
+				minimum: "最小值（秒）",
+				maximum: "最大值（秒）",
+				noLimit: "不限制",
+				preset: "≥ {{seconds}} 秒",
+				unitHelp: "按照请求总耗时进行过滤。",
+				clear: "清除",
+			},
 			emptyState: {
 				title: "看起来您还没有在配置文件中配置日志存储。",
 				integrateUnder60: "60 秒内集成",
