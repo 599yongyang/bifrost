@@ -9,10 +9,12 @@ import { LogsFilterSidebar } from "@/components/filters/logsFilterSidebar";
 import { useColumnConfig } from "@/components/table";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
 	getErrorMessage,
 	useDeleteLogsMutation,
+	useExportLogsToObservabilityMutation,
 	useGetAvailableFilterDataQuery,
 	useGetLogsHistogramQuery,
 	useGetLogsQuery,
@@ -22,6 +24,7 @@ import { useLazyGetLogByIdQuery, useLazyGetLogsQuery } from "@/lib/store/apis/lo
 import type { LogEntry, LogFilters, Pagination } from "@/lib/types/logs";
 import { dateUtils } from "@/lib/types/logs";
 import { COMPACT_NUMBER_FORMAT } from "@/lib/utils/numbers";
+import i18n from "@/lib/i18n";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import NumberFlow from "@number-flow/react";
 import { useLocation } from "@tanstack/react-router";
@@ -29,6 +32,7 @@ import { AlertCircle, BarChart, CheckCircle, Clock, DollarSign, Hash, Info } fro
 import { parseAsSafeArrayOf, parseAsSafeString } from "@/lib/queryParamsParser";
 import { parseAsBoolean, parseAsInteger, parseAsString, useQueryStates } from "nuqs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 
 export default function LogsPage() {
 	const [error, setError] = useState<string | null>(null);
@@ -37,8 +41,12 @@ export default function LogsPage() {
 
 	const hasDeleteAccess = useRbac(RbacResource.Logs, RbacOperation.Delete);
 	const hasRevealAccess = useRbac(RbacResource.Logs, RbacOperation.Reveal);
+	const hasObservabilityUpdateAccess = useRbac(RbacResource.Observability, RbacOperation.Update);
 
 	const [deleteLogs] = useDeleteLogsMutation();
+	const [exportLogsToObservability] = useExportLogsToObservabilityMutation();
+	const [manualExportPendingIDs, setManualExportPendingIDs] = useState<Set<string>>(new Set());
+	const [selectedManualExportIDs, setSelectedManualExportIDs] = useState<Set<string>>(new Set());
 	// Lazy query kept only for handleLogNavigate (fetches adjacent pages on demand)
 	const [triggerGetLogs] = useLazyGetLogsQuery();
 
@@ -376,6 +384,56 @@ export default function LogsPage() {
 		[deleteLogs, urlState.selected_log, setUrlState, refetchLogs, refetchStats, refetchHistogram],
 	);
 
+	const queueManualExports = useCallback(
+		async (ids: string[]) => {
+			setManualExportPendingIDs((current) => new Set([...current, ...ids]));
+			try {
+				const response = await exportLogsToObservability({ ids }).unwrap();
+				const pendingCount = response.results.filter((result) => result.status === "pending").length;
+				const exportedCount = response.results.filter((result) => result.status === "exported").length;
+				if (pendingCount > 0) {
+					toast.success(i18n.t("workspace.logs.observability.queuedCount", { count: pendingCount }));
+				} else if (exportedCount === response.results.length) {
+					toast.success(i18n.t("workspace.logs.observability.alreadyExported"));
+				} else {
+					toast.error(i18n.t("workspace.logs.observability.unavailable"));
+				}
+			} catch (err) {
+				toast.error(i18n.t("workspace.logs.observability.exportFailed"), { description: getErrorMessage(err) });
+			} finally {
+				setManualExportPendingIDs((current) => {
+					const next = new Set(current);
+					ids.forEach((id) => next.delete(id));
+					return next;
+				});
+			}
+		},
+		[exportLogsToObservability],
+	);
+
+	const handleManualExport = useCallback((log: LogEntry) => queueManualExports([log.id]), [queueManualExports]);
+	const handleToggleManualExportSelected = useCallback((log: LogEntry, selected: boolean) => {
+		setSelectedManualExportIDs((current) => {
+			const next = new Set(current);
+			if (selected) {
+				if (next.size >= 50) {
+					toast.error(i18n.t("workspace.logs.observability.selectionLimit"));
+					return next;
+				}
+				next.add(log.id);
+			} else {
+				next.delete(log.id);
+			}
+			return next;
+		});
+	}, []);
+	const handleBulkManualExport = useCallback(async () => {
+		const ids = [...selectedManualExportIDs];
+		if (ids.length === 0) return;
+		await queueManualExports(ids);
+		setSelectedManualExportIDs(new Set());
+	}, [queueManualExports, selectedManualExportIDs]);
+
 	const handlePollToggle = useCallback(
 		(enabled: boolean) => {
 			setUrlState({ polling: enabled });
@@ -486,7 +544,28 @@ export default function LogsPage() {
 		return Object.keys(filterData.metadata_keys).sort();
 	}, [filterData?.metadata_keys]);
 
-	const columns = useMemo(() => createColumns(handleDelete, hasDeleteAccess, metadataKeys), [handleDelete, hasDeleteAccess, metadataKeys]);
+	const columns = useMemo(
+		() =>
+			createColumns(
+				handleDelete,
+				hasDeleteAccess,
+				metadataKeys,
+				hasObservabilityUpdateAccess ? handleManualExport : undefined,
+				manualExportPendingIDs,
+				selectedManualExportIDs,
+				hasObservabilityUpdateAccess ? handleToggleManualExportSelected : undefined,
+			),
+		[
+			handleDelete,
+			hasDeleteAccess,
+			hasObservabilityUpdateAccess,
+			metadataKeys,
+			handleManualExport,
+			manualExportPendingIDs,
+			selectedManualExportIDs,
+			handleToggleManualExportSelected,
+		],
+	);
 
 	const columnIds = useMemo(
 		() => columns.map((col) => ("id" in col && col.id ? col.id : "accessorKey" in col ? String(col.accessorKey) : "")).filter(Boolean),
@@ -501,6 +580,7 @@ export default function LogsPage() {
 			provider: "Provider",
 			model: "Model",
 			latency: "Latency",
+			observability: "Langfuse",
 			tokens: "Tokens",
 			cost: "Cost",
 			virtual_key: "Virtual Key",
@@ -656,6 +736,16 @@ export default function LogsPage() {
 								onToggleColumnVisibility={toggleColumnVisibility}
 								onResetColumns={resetColumns}
 							/>
+							{selectedManualExportIDs.size > 0 && (
+								<div className="bg-muted/40 mt-2 flex items-center justify-end gap-2 rounded-sm border px-3 py-2">
+									<span className="text-muted-foreground text-xs">
+										{i18n.t("workspace.logs.observability.selectedCount", { count: selectedManualExportIDs.size })}
+									</span>
+									<Button type="button" size="sm" onClick={() => void handleBulkManualExport()}>
+										{i18n.t("workspace.logs.observability.exportSelected")}
+									</Button>
+								</div>
+							)}
 						</div>
 						<div className="grid shrink-0 grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
 							{statCards.map((card) => (
@@ -749,6 +839,8 @@ export default function LogsPage() {
 						open={selectedLog !== null}
 						onOpenChange={(open) => !open && setUrlState({ selected_log: "" })}
 						handleDelete={hasDeleteAccess ? handleDelete : undefined}
+						onManualExport={hasObservabilityUpdateAccess ? handleManualExport : undefined}
+						manualExportPending={selectedLog ? manualExportPendingIDs.has(selectedLog.id) : false}
 						canReveal={hasRevealAccess}
 						onNavigate={handleLogNavigate}
 						hasPrev={selectedLogIndex > 0 || (selectedLogIndex !== -1 && pagination.offset > 0)}

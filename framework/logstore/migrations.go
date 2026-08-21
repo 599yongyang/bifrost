@@ -281,6 +281,7 @@ var logstoreMigrationSteps = []migrationStep{
 	{IDs: []string{"logs_add_content_hidden_column"}, run: migrationAddContentHiddenColumn},
 	{IDs: []string{"logs_add_server_side_fallback_model_column"}, run: migrationAddServerSideFallbackModelColumn},
 	{IDs: []string{"logs_add_billing_fidelity_columns"}, run: migrationAddBillingFidelityColumns},
+	{IDs: []string{"observability_exports_init"}, run: migrationCreateObservationExportsTable},
 }
 
 // areThereAnyPendingMigrations returns true if there are any pending migrations to be applied.
@@ -3846,6 +3847,35 @@ func migrationAddBillingFidelityColumns(ctx context.Context, db *gorm.DB, logger
 	}})
 	if err := m.Migrate(); err != nil {
 		return fmt.Errorf("error while adding billing fidelity columns: %s", err.Error())
+	}
+	return nil
+}
+
+func migrationCreateObservationExportsTable(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	migrationName := "observability_exports_init"
+	logger.Info("[logstore] starting migration %s", migrationName)
+	defer logger.Info("[logstore] finished migration %s", migrationName)
+	opts := *migrator.DefaultOptions
+	opts.UseTransaction = true
+	m := migrator.New(db, &opts, []*migrator.Migration{{
+		ID: migrationName,
+		Migrate: func(tx *gorm.DB) error {
+			tx = tx.WithContext(ctx)
+			if tx.Migrator().HasTable(&ObservationExport{}) {
+				return nil
+			}
+			return tx.Migrator().CreateTable(&ObservationExport{})
+		},
+		Rollback: func(tx *gorm.DB) error {
+			tx = tx.WithContext(ctx)
+			if !tx.Migrator().HasTable(&ObservationExport{}) {
+				return nil
+			}
+			return tx.Migrator().DropTable(&ObservationExport{})
+		},
+	}})
+	if err := m.Migrate(); err != nil {
+		return fmt.Errorf("error while creating observability exports table: %s", err.Error())
 	}
 	return nil
 }

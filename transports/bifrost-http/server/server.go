@@ -1728,10 +1728,24 @@ func (s *BifrostHTTPServer) SyncLoadedPlugin(ctx context.Context, name string, p
 	if _, ok := plugin.(schemas.ObservabilityPlugin); ok {
 		s.reloadObservabilityPlugins()
 	}
+	s.wireObservationExportStore()
 	// 5. Update plugin status
 	s.Config.UpdatePluginOverallStatus(plugin.GetName(), name, schemas.PluginStatusActive,
 		[]string{fmt.Sprintf("plugin %s reloaded successfully", name)}, InferPluginTypes(plugin))
 	return nil
+}
+
+func (s *BifrostHTTPServer) wireObservationExportStore() {
+	loggerPlugin, _ := lib.FindPluginAs[*logging.LoggerPlugin](s.Config, logging.PluginName)
+	otelPlugin, _ := lib.FindPluginAs[*otel.OtelPlugin](s.Config, otel.PluginName)
+	if otelPlugin == nil {
+		return
+	}
+	if loggerPlugin == nil {
+		otelPlugin.SetObservationExportStore(nil)
+		return
+	}
+	otelPlugin.SetObservationExportStore(loggerPlugin.GetPluginLogManager())
 }
 
 // ReloadPlugin reloads a plugin with new instance and updates Bifrost core.
@@ -1791,6 +1805,7 @@ func (s *BifrostHTTPServer) RemovePlugin(ctx context.Context, displayName string
 		// Plugin is being permanently deleted: remove its config marshaller too.
 		s.Config.RemoveConfigMarshaller(name)
 	}
+	s.wireObservationExportStore()
 
 	return nil
 }
@@ -1860,6 +1875,11 @@ func (s *BifrostHTTPServer) RegisterAPIRoutes(ctx context.Context, callbacks Ser
 	var govLogManager logging.LogManager
 	if loggerPlugin != nil {
 		loggingHandler = handlers.NewLoggingHandler(loggerPlugin.GetPluginLogManager(), s, s.Config)
+		s.wireObservationExportStore()
+		loggingHandler.SetManualObservationExporterProvider(func() handlers.ManualObservationExporter {
+			plugin, _ := lib.FindPluginAs[*otel.OtelPlugin](s.Config, otel.PluginName)
+			return plugin
+		})
 		if resolverProvider, ok := callbacks.(LogRedactionMappingResolverProvider); ok {
 			loggingHandler.SetLogRedactionMappingResolver(resolverProvider.GetLogRedactionMappingResolver())
 		}

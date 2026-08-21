@@ -264,6 +264,10 @@ type Log struct {
 	Speed        *string `gorm:"type:varchar(32)" json:"speed,omitempty"`         // Anthropic served speed: "fast" / "standard"
 	InferenceGeo *string `gorm:"type:varchar(32)" json:"inference_geo,omitempty"` // Anthropic data residency, e.g. "us"
 
+	ObservationExports                []ObservationExport `gorm:"-" json:"observability_exports,omitempty"`
+	ObservationExportConfigured       bool                `gorm:"-" json:"observability_export_configured"`
+	ObservationManualExportConfigured bool                `gorm:"-" json:"observability_manual_export_configured"`
+
 	CreatedAt time.Time `gorm:"index;not null" json:"created_at"`
 
 	// Virtual fields for JSON output - these will be populated when needed

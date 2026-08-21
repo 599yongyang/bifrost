@@ -7,6 +7,7 @@ import {
 	LogFilters,
 	LogSessionDetailResponse,
 	LogSessionSummaryResponse,
+	ManualObservationExportResponse,
 	LogsHistogramResponse,
 	LogStats,
 	ModelHistogramResponse,
@@ -402,6 +403,15 @@ export const logsApi = baseApi.injectEndpoints({
 			invalidatesTags: ["Logs"],
 		}),
 
+		exportLogsToObservability: builder.mutation<ManualObservationExportResponse, { ids: string[] }>({
+			query: ({ ids }) => ({
+				url: "/logs/observability/export",
+				method: "POST",
+				body: { ids },
+			}),
+			invalidatesTags: ["Logs"],
+		}),
+
 		recalculateLogCosts: builder.mutation<RecalculateCostResponse, { filters: LogFilters; limit?: number }>({
 			query: ({ filters, limit }) => ({
 				url: "/logs/recalculate-cost",
@@ -446,6 +456,7 @@ export const {
 	useGetAvailableFilterDataQuery,
 	useLazyGetLogSessionByIdQuery,
 	useLazyGetLogsQuery,
+	useExportLogsToObservabilityMutation,
 	useLazyGetLogsStatsQuery,
 	useLazyGetLogsHistogramQuery,
 	useLazyGetLogsTokenHistogramQuery,

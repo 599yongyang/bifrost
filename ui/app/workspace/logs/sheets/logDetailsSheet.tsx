@@ -1,11 +1,13 @@
 import { SheetNavigationButtons } from "@/components/sheetNavigationButtons";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { useGetLogByIdQuery } from "@/lib/store/apis/logsApi";
 import { useGetPromptQuery } from "@/lib/store/apis/promptsApi";
 import type { LogEntry } from "@/lib/types/logs";
+import { resolveObservabilityExport } from "@/app/workspace/logs/utils/observabilityExport";
 import { useSheetNavigation } from "@/hooks/useSheetNavigation";
-import { Loader2 } from "lucide-react";
+import { Loader2, RefreshCw, UploadCloud } from "lucide-react";
 import { useEffect, useState } from "react";
 import { LogDetailView } from "./logDetailView";
 import i18n from "@/lib/i18n";
@@ -21,6 +23,8 @@ interface LogDetailSheetProps {
 	canReveal?: boolean;
 	onViewSession?: (sessionId: string, logId: string) => void;
 	onFilterByParentRequestId?: (parentRequestId: string) => void;
+	onManualExport?: (log: LogEntry) => void;
+	manualExportPending?: boolean;
 }
 
 export function LogDetailSheet({
@@ -34,6 +38,8 @@ export function LogDetailSheet({
 	canReveal = false,
 	onViewSession,
 	onFilterByParentRequestId,
+	onManualExport,
+	manualExportPending = false,
 }: LogDetailSheetProps) {
 	const [pollingInterval, setPollingInterval] = useState(0);
 	const {
@@ -70,6 +76,7 @@ export function LogDetailSheet({
 
 	// Show a loader only on the initial fetch, not during background polling refetches.
 	const displayLog: LogEntry = isFullDataReady && fullLog ? fullLog : log;
+	const observability = resolveObservabilityExport(displayLog);
 	const resolvedSelectedPromptName = selectedPromptData?.prompt?.name ?? displayLog.selected_prompt_name ?? "";
 
 	return (
@@ -90,6 +97,27 @@ export function LogDetailSheet({
 						onFilterByParentRequestId={onFilterByParentRequestId}
 						headerAction={
 							<>
+								<Badge
+									variant={observability.status === "exported" ? "success" : observability.status === "failed" ? "destructive" : "outline"}
+								>
+									{observability.manual
+										? i18n.t("workspace.logs.observability.manual")
+										: i18n.t(`workspace.logs.observability.${observability.status}`)}
+								</Badge>
+								{observability.canManualExport && onManualExport ? (
+									<Button variant="outline" size="sm" disabled={manualExportPending} onClick={() => onManualExport(displayLog)}>
+										{manualExportPending ? (
+											<Loader2 className="size-4 animate-spin" />
+										) : observability.status === "failed" ? (
+											<RefreshCw className="size-4" />
+										) : (
+											<UploadCloud className="size-4" />
+										)}
+										{observability.status === "failed"
+											? i18n.t("workspace.logs.observability.retry")
+											: i18n.t("workspace.logs.observability.export")}
+									</Button>
+								) : null}
 								{displayLog.parent_request_id && onViewSession ? (
 									<Button
 										variant="outline"

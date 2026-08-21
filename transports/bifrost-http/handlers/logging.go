@@ -32,6 +32,7 @@ type LoggingHandler struct {
 	redactedKeysManager         RedactedKeysManager
 	config                      *lib.Config
 	logRedactionMappingResolver LogRedactionMappingResolver
+	manualExporterProvider      func() ManualObservationExporter
 
 	// filterDataCache memoizes /api/logs/filterdata response bodies. Filter
 	// dropdowns don't need request-fresh data and the underlying matview-backed
@@ -45,6 +46,79 @@ type LoggingHandler struct {
 	// in which case the recalculate-cost endpoints return 503.
 	sidekiqRunner *sidekiq.Runner
 	sidekiqStore  SidekiqJobStore
+}
+
+type ManualObservationExporter interface {
+	EnqueueManualExport(ctx context.Context, logID string) (status, reason string, err error)
+	ObservationTargetIDs() []string
+	ManualExportAvailable() bool
+}
+
+func (h *LoggingHandler) SetManualObservationExporterProvider(provider func() ManualObservationExporter) {
+	h.manualExporterProvider = provider
+}
+
+type ObservationExportStatusReader interface {
+	GetObservationExports(ctx context.Context, logIDs []string) ([]logstore.ObservationExport, error)
+}
+
+type ManualObservationExportAuthorizer interface {
+	AuthorizeManualObservationExport(ctx context.Context, id string) error
+}
+
+func (h *LoggingHandler) attachObservationExportStatuses(ctx context.Context, logs []*logstore.Log) {
+	if len(logs) == 0 {
+		return
+	}
+	if h.manualExporterProvider == nil {
+		return
+	}
+	exporter := h.manualExporterProvider()
+	if exporter == nil {
+		return
+	}
+	activeTargets := make(map[string]struct{})
+	for _, targetID := range exporter.ObservationTargetIDs() {
+		activeTargets[targetID] = struct{}{}
+	}
+	configured := len(activeTargets) > 0
+	for _, entry := range logs {
+		if entry != nil {
+			entry.ObservationExportConfigured = configured
+			entry.ObservationManualExportConfigured = exporter.ManualExportAvailable()
+		}
+	}
+	if !configured {
+		return
+	}
+	reader, ok := h.logManager.(ObservationExportStatusReader)
+	if !ok {
+		return
+	}
+	ids := make([]string, 0, len(logs))
+	byID := make(map[string]*logstore.Log, len(logs))
+	for _, entry := range logs {
+		if entry == nil || entry.ID == "" {
+			continue
+		}
+		ids = append(ids, entry.ID)
+		byID[entry.ID] = entry
+	}
+	states, err := reader.GetObservationExports(ctx, ids)
+	if err != nil {
+		if !errors.Is(err, logstore.ErrObservationExportUnsupported) {
+			logger.Warn("failed to load observability export statuses: %v", err)
+		}
+		return
+	}
+	for i := range states {
+		if _, active := activeTargets[states[i].TargetID]; !active {
+			continue
+		}
+		if entry := byID[states[i].LogID]; entry != nil {
+			entry.ObservationExports = append(entry.ObservationExports, states[i])
+		}
+	}
 }
 
 // SidekiqJobStore is the narrow read surface the recalculate-cost endpoints need
@@ -377,6 +451,7 @@ func (h *LoggingHandler) RegisterRoutes(r *router.Router, middlewares ...schemas
 	r.DELETE("/api/logs", lib.ChainMiddlewares(h.deleteLogs, middlewares...))
 	r.POST("/api/logs/recalculate-cost", lib.ChainMiddlewares(h.recalculateLogCosts, middlewares...))
 	r.GET("/api/logs/recalculate-cost/status", lib.ChainMiddlewares(h.getRecalculateCostStatus, middlewares...))
+	r.POST("/api/logs/observability/export", lib.ChainMiddlewares(h.exportLogsToObservability, middlewares...))
 
 	// MCP Tool Log retrieval with filtering, search, and pagination
 	r.GET("/api/mcp-logs", lib.ChainMiddlewares(h.getMCPLogs, middlewares...))
@@ -387,6 +462,72 @@ func (h *LoggingHandler) RegisterRoutes(r *router.Router, middlewares ...schemas
 	r.GET("/api/mcp-logs/histogram/top-tools", lib.ChainMiddlewares(h.getMCPTopTools, middlewares...))
 	r.GET("/api/mcp-logs/{id}", lib.ChainMiddlewares(h.getMCPLogByID, middlewares...))
 	r.DELETE("/api/mcp-logs", lib.ChainMiddlewares(h.deleteMCPLogs, middlewares...))
+}
+
+type manualObservationExportRequest struct {
+	IDs []string `json:"ids"`
+}
+
+type manualObservationExportResult struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
+	Reason string `json:"reason,omitempty"`
+}
+
+func (h *LoggingHandler) exportLogsToObservability(ctx *fasthttp.RequestCtx) {
+	var req manualObservationExportRequest
+	if err := sonic.Unmarshal(ctx.PostBody(), &req); err != nil || len(req.IDs) == 0 {
+		SendError(ctx, fasthttp.StatusBadRequest, "at least one log id is required")
+		return
+	}
+	if len(req.IDs) > 50 {
+		SendError(ctx, fasthttp.StatusBadRequest, "at most 50 logs can be exported at once")
+		return
+	}
+	if h.manualExporterProvider == nil {
+		SendError(ctx, fasthttp.StatusServiceUnavailable, "manual observability export is unavailable")
+		return
+	}
+	exporter := h.manualExporterProvider()
+	if exporter == nil {
+		SendError(ctx, fasthttp.StatusServiceUnavailable, "Langfuse OTel target is unavailable")
+		return
+	}
+	results := make([]manualObservationExportResult, 0, len(req.IDs))
+	seen := make(map[string]struct{}, len(req.IDs))
+	for _, rawID := range req.IDs {
+		id := strings.TrimSpace(rawID)
+		if id == "" {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		var accessErr error
+		if authorizer, ok := h.logManager.(ManualObservationExportAuthorizer); ok {
+			accessErr = authorizer.AuthorizeManualObservationExport(ctx, id)
+		} else {
+			_, accessErr = h.logManager.GetLog(ctx, id)
+		}
+		if accessErr != nil {
+			reason := "log_read_failed"
+			if errors.Is(accessErr, logstore.ErrNotFound) {
+				reason = "log_not_found"
+			}
+			results = append(results, manualObservationExportResult{ID: id, Status: logstore.ObservationExportStatusFailed, Reason: reason})
+			continue
+		}
+		status, reason, err := exporter.EnqueueManualExport(ctx, id)
+		result := manualObservationExportResult{ID: id, Status: status, Reason: reason}
+		if err != nil && status == "" {
+			result.Status = logstore.ObservationExportStatusUnavailable
+			result.Reason = "manual_export_unavailable"
+		}
+		results = append(results, result)
+	}
+	ctx.SetStatusCode(fasthttp.StatusAccepted)
+	SendJSON(ctx, map[string]any{"results": results})
 }
 
 // getLogSessionByID handles GET /api/logs/sessions/{session_id} - Get logs in a single session.
@@ -487,6 +628,11 @@ func (h *LoggingHandler) getLogSessionByID(ctx *fasthttp.RequestCtx) {
 			result.Logs[i].RoutingRule = findRedactedRoutingRule(redactedRoutingRules, *log.RoutingRuleID, *log.RoutingRuleName)
 		}
 	}
+	logPointers := make([]*logstore.Log, len(result.Logs))
+	for i := range result.Logs {
+		logPointers[i] = &result.Logs[i]
+	}
+	h.attachObservationExportStatuses(ctx, logPointers)
 
 	SendJSON(ctx, result)
 }
@@ -756,6 +902,7 @@ func (h *LoggingHandler) getLogByID(ctx *fasthttp.RequestCtx) {
 		redactedRoutingRules := h.redactedKeysManager.GetAllRedactedRoutingRules(ctx, []string{*log.RoutingRuleID})
 		log.RoutingRule = findRedactedRoutingRule(redactedRoutingRules, *log.RoutingRuleID, *log.RoutingRuleName)
 	}
+	h.attachObservationExportStatuses(ctx, []*logstore.Log{log})
 
 	SendJSON(ctx, log)
 }

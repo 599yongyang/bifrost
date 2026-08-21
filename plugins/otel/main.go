@@ -3,6 +3,8 @@ package otel
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"maps"
 	"os"
@@ -16,6 +18,7 @@ import (
 	"github.com/bytedance/sonic"
 	bifrost "github.com/maximhq/bifrost/core"
 	"github.com/maximhq/bifrost/core/schemas"
+	"github.com/maximhq/bifrost/framework/logstore"
 	"github.com/maximhq/bifrost/framework/modelcatalog"
 	"go.opentelemetry.io/otel/attribute"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
@@ -362,6 +365,7 @@ func hideResolvedEnvValue(v *schemas.SecretVar) *schemas.SecretVar {
 // plus an optional metrics exporter, along with the per-profile identity (service name)
 // used when converting traces for this destination.
 type otelTarget struct {
+	id                     string
 	serviceName            string
 	url                    string
 	traceType              TraceType
@@ -494,6 +498,44 @@ type OtelPlugin struct {
 	selectionDropped           atomic.Int64
 	selectionQuotaRejected     atomic.Int64
 	selectionIncompleteDropped atomic.Int64
+	exportStoreMu              sync.RWMutex
+	exportStore                logstore.ObservationExportStore
+	manualRepo                 ManualExportRepository
+	manualQueue                chan manualExportJob
+	manualWG                   sync.WaitGroup
+	statusQueue                chan logstore.ObservationExport
+	statusWG                   sync.WaitGroup
+	statusDropped              atomic.Int64
+}
+
+// SetObservationExportStore wires durable per-log export status without coupling
+// the OTel plugin to a concrete logging implementation.
+func (p *OtelPlugin) SetObservationExportStore(store logstore.ObservationExportStore) {
+	p.exportStoreMu.Lock()
+	defer p.exportStoreMu.Unlock()
+	p.exportStore = store
+	p.manualRepo = nil
+	if repo, ok := store.(ManualExportRepository); ok {
+		p.manualRepo = repo
+	}
+}
+
+func (p *OtelPlugin) ObservationTargetIDs() []string {
+	ids := make([]string, 0, len(p.targets))
+	for _, target := range p.targets {
+		if target != nil && target.mediaUploader != nil {
+			ids = append(ids, target.id)
+		}
+	}
+	return ids
+}
+
+func (p *OtelPlugin) ManualExportAvailable() bool { return len(p.manualTargets()) > 0 }
+
+func (p *OtelPlugin) observationExportStores() (logstore.ObservationExportStore, ManualExportRepository) {
+	p.exportStoreMu.RLock()
+	defer p.exportStoreMu.RUnlock()
+	return p.exportStore, p.manualRepo
 }
 
 // Init function for the OTEL plugin
@@ -568,6 +610,8 @@ func Init(ctx context.Context, config *Config, _logger schemas.Logger, pricingMa
 		pluginSpanFilter:          config.PluginSpanFilter,
 		selector:                  selector,
 		mediaSem:                  make(chan struct{}, mediaUploadConcurrency),
+		manualQueue:               make(chan manualExportJob, 100),
+		statusQueue:               make(chan logstore.ObservationExport, 4096),
 	}
 	p.ctx, p.cancel = context.WithCancel(ctx)
 
@@ -589,6 +633,8 @@ func Init(ctx context.Context, config *Config, _logger schemas.Logger, pricingMa
 		_ = p.Cleanup()
 		return nil, fmt.Errorf("selective_export requires a Langfuse OTLP HTTP collector URL with media support")
 	}
+	p.startManualExportWorkers(1)
+	p.startExportStatusWriter()
 
 	return p, nil
 }
@@ -622,7 +668,24 @@ func (p *OtelPlugin) buildTarget(index int, profile *Profile) (*otelTarget, erro
 	}
 
 	url := profile.CollectorURL.GetValue()
+	headerNames := make([]string, 0, len(headers))
+	for name := range headers {
+		headerNames = append(headerNames, name)
+	}
+	slices.Sort(headerNames)
+	var targetIdentity strings.Builder
+	targetIdentity.WriteString(serviceName)
+	targetIdentity.WriteByte(0)
+	targetIdentity.WriteString(url)
+	for _, name := range headerNames {
+		targetIdentity.WriteByte(0)
+		targetIdentity.WriteString(strings.ToLower(name))
+		targetIdentity.WriteByte('=')
+		targetIdentity.WriteString(headers[name])
+	}
+	targetDigest := sha256.Sum256([]byte(targetIdentity.String()))
 	target := &otelTarget{
+		id:                     "otel-" + hex.EncodeToString(targetDigest[:8]),
 		serviceName:            serviceName,
 		url:                    url,
 		traceType:              profile.TraceType,
@@ -888,6 +951,109 @@ func (p *OtelPlugin) RecordHTTPMetrics(ctx context.Context, path, method, status
 // Implements schemas.ObservabilityPlugin interface.
 // This method is called asynchronously by TracingMiddleware after the response
 // has been written to the client.
+func traceLogID(trace *schemas.Trace) string {
+	if trace == nil {
+		return ""
+	}
+	return firstNonEmpty(trace.RequestID, trace.InternalID, trace.TraceID)
+}
+
+func (p *OtelPlugin) persistExportState(ctx context.Context, trace *schemas.Trace, target *otelTarget, status, source, reason, rule string) {
+	if p == nil || target == nil || target.mediaUploader == nil {
+		return
+	}
+	store, _ := p.observationExportStores()
+	if store == nil {
+		return
+	}
+	logID := traceLogID(trace)
+	if logID == "" {
+		return
+	}
+	now := time.Now().UTC()
+	state := &logstore.ObservationExport{
+		LogID: logID, TargetID: target.id, Status: status, Source: source,
+		Reason: reason, SelectionRule: rule, ExternalTraceID: trace.TraceID,
+		Attempts: 1, UpdatedAt: now,
+	}
+	if status == logstore.ObservationExportStatusExported {
+		state.ExportedAt = &now
+	}
+	if p.statusQueue == nil {
+		if err := store.UpsertObservationExport(ctx, state); err != nil && logger != nil {
+			logger.Warn("failed to persist observability export status log_id=%s target_id=%s: %v", logID, target.id, err)
+		}
+		return
+	}
+	select {
+	case p.statusQueue <- *state:
+	default:
+		dropped := p.statusDropped.Add(1)
+		if logger != nil && (dropped == 1 || dropped%1000 == 0) {
+			logger.Warn("observability export status queue full; dropped %d updates", dropped)
+		}
+	}
+}
+
+func (p *OtelPlugin) startExportStatusWriter() {
+	p.statusWG.Add(1)
+	go func() {
+		defer p.statusWG.Done()
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+		batch := make([]logstore.ObservationExport, 0, 100)
+		flush := func() {
+			if len(batch) == 0 {
+				return
+			}
+			latest := make(map[string]logstore.ObservationExport, len(batch))
+			for _, state := range batch {
+				latest[state.LogID+"\x00"+state.TargetID] = state
+			}
+			deduped := make([]logstore.ObservationExport, 0, len(latest))
+			for _, state := range latest {
+				deduped = append(deduped, state)
+			}
+			store, _ := p.observationExportStores()
+			if store != nil {
+				flushCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				if err := store.BatchUpsertObservationExports(flushCtx, deduped); err != nil && logger != nil {
+					logger.Warn("failed to persist %d observability export statuses: %v", len(deduped), err)
+				}
+				cancel()
+			}
+			batch = batch[:0]
+		}
+		for {
+			select {
+			case state := <-p.statusQueue:
+				batch = append(batch, state)
+				if len(batch) >= cap(batch) {
+					flush()
+				}
+			case <-ticker.C:
+				flush()
+			case <-p.ctx.Done():
+				for {
+					select {
+					case state := <-p.statusQueue:
+						batch = append(batch, state)
+					default:
+						flush()
+						return
+					}
+				}
+			}
+		}
+	}()
+}
+
+func (p *OtelPlugin) persistExportStateForAllTargets(ctx context.Context, trace *schemas.Trace, status, reason, rule string) {
+	for _, target := range p.targets {
+		p.persistExportState(ctx, trace, target, status, logstore.ObservationExportSourceAutomatic, reason, rule)
+	}
+}
+
 func (p *OtelPlugin) Inject(ctx context.Context, trace *schemas.Trace) error {
 	if trace == nil {
 		return nil
@@ -903,33 +1069,36 @@ func (p *OtelPlugin) Inject(ctx context.Context, trace *schemas.Trace) error {
 			}
 		}
 	}
+	var selection selectionDecision
 	if selector != nil {
-		decision := selector.decide(trace)
+		selection = selector.decide(trace)
 		event := "selection"
 		if selector.dryRun {
 			event = "selection_dry_run"
 		}
-		p.recordObservabilityEvent(ctx, event, decision.reason)
+		p.recordObservabilityEvent(ctx, event, selection.reason)
 		for _, reason := range traceMediaCaptureFailureReasons(trace) {
 			p.recordObservabilityEvent(ctx, "media_capture_rejected", reason)
 		}
-		if decision.selected {
+		if selection.selected {
 			p.selectionSelected.Add(1)
 		} else {
 			p.selectionDropped.Add(1)
-			if decision.reason == "quota" {
+			if selection.reason == "quota" {
 				p.selectionQuotaRejected.Add(1)
 			}
 		}
-		if !decision.selected && !selector.dryRun {
+		if !selection.selected && !selector.dryRun {
+			p.persistExportStateForAllTargets(ctx, trace, logstore.ObservationExportStatusNotExported, selection.reason, selection.ruleID)
 			return nil
 		}
-		if decision.selected && !selector.dryRun && finalImageSpan(trace) != nil && !traceMediaSummariesComplete(trace) {
+		if selection.selected && !selector.dryRun && finalImageSpan(trace) != nil && !traceMediaSummariesComplete(trace) {
 			p.selectionIncompleteDropped.Add(1)
 			p.recordObservabilityEvent(ctx, "selection", "incomplete_capture")
+			p.persistExportStateForAllTargets(ctx, trace, logstore.ObservationExportStatusUnavailable, "incomplete_capture", selection.ruleID)
 			return nil
 		}
-		annotateSelectionDecision(trace, decision, selector.dryRun)
+		annotateSelectionDecision(trace, selection, selector.dryRun)
 	}
 	// Emit the trace to every configured profile's collector, and record metrics against
 	// each profile's exporter. Conversion is per-target because the resource service name
@@ -951,7 +1120,12 @@ func (p *OtelPlugin) Inject(ctx context.Context, trace *schemas.Trace) error {
 				p.recordMetricsFromTrace(ctx, t.metricsExporter, trace)
 				p.recordMCPMetricsFromTrace(ctx, t.metricsExporter, trace)
 			}
-			if t.client == nil || t.breakerOpen() {
+			if t.client == nil {
+				p.persistExportState(ctx, trace, t, logstore.ObservationExportStatusUnavailable, logstore.ObservationExportSourceAutomatic, "target_unavailable", selection.ruleID)
+				return
+			}
+			if t.breakerOpen() {
+				p.persistExportState(ctx, trace, t, logstore.ObservationExportStatusFailed, logstore.ObservationExportSourceAutomatic, "circuit_open", selection.ruleID)
 				return
 			}
 			mediaRefs := make(map[string]string)
@@ -1010,6 +1184,7 @@ func (p *OtelPlugin) Inject(ctx context.Context, trace *schemas.Trace) error {
 			if selector != nil && !selector.dryRun && !mediaComplete {
 				p.selectionIncompleteDropped.Add(1)
 				p.recordObservabilityEvent(ctx, "selection", "incomplete_upload")
+				p.persistExportState(ctx, trace, t, logstore.ObservationExportStatusFailed, logstore.ObservationExportSourceAutomatic, "media_upload_failed", selection.ruleID)
 				return
 			}
 			resourceSpan := p.convertTraceToResourceSpanWithMedia(t.serviceName, trace, t.requestHeaders, t.disableContentLogging, t.groupTracesBySession, t.disableRootSpanContent, mediaRefs)
@@ -1022,9 +1197,15 @@ func (p *OtelPlugin) Inject(ctx context.Context, trace *schemas.Trace) error {
 				if n := t.failedExports.Load(); n == 1 || n%exportLogThrottle == 0 {
 					logger.Error("failed to emit trace %s to %s: %v (%d failed exports so far)", trace.TraceID, t.url, err, n)
 				}
+				p.persistExportState(ctx, trace, t, logstore.ObservationExportStatusFailed, logstore.ObservationExportSourceAutomatic, "trace_emit_failed", selection.ruleID)
 				return
 			}
 			t.resetBreaker()
+			exportReason := selection.reason
+			if len(attachments) > 0 && !mediaComplete {
+				exportReason = "exported_without_media"
+			}
+			p.persistExportState(ctx, trace, t, logstore.ObservationExportStatusExported, logstore.ObservationExportSourceAutomatic, exportReason, selection.ruleID)
 		}(t)
 	}
 	wg.Wait()
@@ -1444,6 +1625,8 @@ func (p *OtelPlugin) Cleanup() error {
 	if p.cancel != nil {
 		p.cancel()
 	}
+	p.manualWG.Wait()
+	p.statusWG.Wait()
 	var firstErr error
 	for _, t := range p.targets {
 		// Shutdown metrics exporter first

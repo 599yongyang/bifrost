@@ -177,6 +177,52 @@ type PluginLogManager struct {
 	plugin *LoggerPlugin
 }
 
+func (p *PluginLogManager) observationExportStore() (logstore.ObservationExportStore, error) {
+	if p == nil || p.plugin == nil || p.plugin.store == nil {
+		return nil, fmt.Errorf("log store not initialized")
+	}
+	store, ok := p.plugin.store.(logstore.ObservationExportStore)
+	if !ok {
+		return nil, logstore.ErrObservationExportUnsupported
+	}
+	return store, nil
+}
+
+func (p *PluginLogManager) UpsertObservationExport(ctx context.Context, state *logstore.ObservationExport) error {
+	store, err := p.observationExportStore()
+	if err != nil {
+		return err
+	}
+	return store.UpsertObservationExport(ctx, state)
+}
+
+func (p *PluginLogManager) GetObservationExports(ctx context.Context, logIDs []string) ([]logstore.ObservationExport, error) {
+	store, err := p.observationExportStore()
+	if err != nil {
+		return nil, err
+	}
+	return store.GetObservationExports(ctx, logIDs)
+}
+
+func (p *PluginLogManager) BatchUpsertObservationExports(ctx context.Context, states []logstore.ObservationExport) error {
+	store, err := p.observationExportStore()
+	if err != nil {
+		return err
+	}
+	return store.BatchUpsertObservationExports(ctx, states)
+}
+
+func (p *PluginLogManager) AuthorizeManualObservationExport(ctx context.Context, id string) error {
+	if p == nil || p.plugin == nil || p.plugin.store == nil {
+		return fmt.Errorf("log store not initialized")
+	}
+	if store, ok := p.plugin.store.(logstore.LogAccessStore); ok {
+		return store.FindLogIDForAccess(ctx, id)
+	}
+	_, err := p.plugin.GetLog(ctx, id)
+	return err
+}
+
 func (p *PluginLogManager) GetLog(ctx context.Context, id string) (*logstore.Log, error) {
 	return p.plugin.GetLog(ctx, id)
 }

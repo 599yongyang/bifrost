@@ -58,6 +58,38 @@ type scopedDBLogStore interface {
 	ScopedDB(context.Context) *gorm.DB
 }
 
+func (h *HybridLogStore) UpsertObservationExport(ctx context.Context, state *ObservationExport) error {
+	store, ok := h.inner.(ObservationExportStore)
+	if !ok {
+		return ErrObservationExportUnsupported
+	}
+	return store.UpsertObservationExport(ctx, state)
+}
+
+func (h *HybridLogStore) GetObservationExports(ctx context.Context, logIDs []string) ([]ObservationExport, error) {
+	store, ok := h.inner.(ObservationExportStore)
+	if !ok {
+		return nil, ErrObservationExportUnsupported
+	}
+	return store.GetObservationExports(ctx, logIDs)
+}
+
+func (h *HybridLogStore) BatchUpsertObservationExports(ctx context.Context, states []ObservationExport) error {
+	store, ok := h.inner.(ObservationExportStore)
+	if !ok {
+		return ErrObservationExportUnsupported
+	}
+	return store.BatchUpsertObservationExports(ctx, states)
+}
+
+func (h *HybridLogStore) FindLogIDForAccess(ctx context.Context, id string) error {
+	if store, ok := h.inner.(LogAccessStore); ok {
+		return store.FindLogIDForAccess(ctx, id)
+	}
+	_, err := h.inner.FindByID(ctx, id)
+	return err
+}
+
 // newHybridLogStore creates a HybridLogStore wrapping the given inner store.
 // excludeFields lists payload field DB column names that should be kept in the
 // database rather than offloaded to object storage. Pass nil for the default

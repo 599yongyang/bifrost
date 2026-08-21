@@ -267,6 +267,53 @@ func TestRecalculateLogCostsResolvesPeriodFilter(t *testing.T) {
 	}
 }
 
+type manualExportLogManager struct{ *dashboardLogManager }
+
+func (m *manualExportLogManager) GetLog(_ context.Context, id string) (*logstore.Log, error) {
+	if id == "missing" {
+		return nil, logstore.ErrNotFound
+	}
+	return &logstore.Log{ID: id}, nil
+}
+
+type manualExporterStub struct {
+	mu  sync.Mutex
+	ids []string
+}
+
+func (s *manualExporterStub) EnqueueManualExport(_ context.Context, id string) (string, string, error) {
+	s.mu.Lock()
+	s.ids = append(s.ids, id)
+	s.mu.Unlock()
+	return logstore.ObservationExportStatusPending, "queued", nil
+}
+
+func (s *manualExporterStub) ObservationTargetIDs() []string { return []string{"otel-test"} }
+func (s *manualExporterStub) ManualExportAvailable() bool    { return true }
+
+func TestExportLogsToObservabilityQueuesAuthorizedLogs(t *testing.T) {
+	exporter := &manualExporterStub{}
+	h := &LoggingHandler{
+		logManager:             &manualExportLogManager{dashboardLogManager: &dashboardLogManager{}},
+		manualExporterProvider: func() ManualObservationExporter { return exporter },
+	}
+	var req fasthttp.Request
+	req.Header.SetMethod(fasthttp.MethodPost)
+	req.SetRequestURI("/api/logs/observability/export")
+	req.SetBodyString(`{"ids":["log-1","log-1","missing"]}`)
+	ctx := &fasthttp.RequestCtx{}
+	ctx.Init(&req, &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 12345}, nil)
+	h.exportLogsToObservability(ctx)
+	if got := ctx.Response.StatusCode(); got != fasthttp.StatusAccepted {
+		t.Fatalf("status = %d, body=%s", got, ctx.Response.Body())
+	}
+	exporter.mu.Lock()
+	defer exporter.mu.Unlock()
+	if len(exporter.ids) != 1 || exporter.ids[0] != "log-1" {
+		t.Fatalf("queued ids = %v", exporter.ids)
+	}
+}
+
 func TestRecalculateLogCostsRejectsDuplicateJob(t *testing.T) {
 	SetLogger(&mockLogger{})
 

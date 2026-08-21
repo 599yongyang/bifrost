@@ -603,6 +603,31 @@ export interface LogEntry {
 		input?: Record<string, string>;
 		output?: Record<string, string>;
 	}; // Phase-scoped placeholder-to-original mappings, present only when caller has Logs:Reveal
+	observability_exports?: ObservationExportStatus[];
+	observability_export_configured: boolean;
+	observability_manual_export_configured: boolean;
+}
+
+export interface ObservationExportStatus {
+	log_id: string;
+	target_id: string;
+	status: "pending" | "exported" | "not_exported" | "failed" | "unavailable";
+	source: "automatic" | "manual";
+	reason?: string;
+	selection_rule?: string;
+	external_trace_id?: string;
+	attempts: number;
+	exported_at?: string;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface ManualObservationExportResponse {
+	results: Array<{
+		id: string;
+		status: ObservationExportStatus["status"];
+		reason?: string;
+	}>;
 }
 
 export interface LogFilters {

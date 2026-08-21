@@ -1,15 +1,17 @@
 import { formatCost, formatLatency } from "@/app/workspace/dashboard/utils/chartUtils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdownMenu";
 import { ProviderIconType, RenderProviderIcon } from "@/lib/constants/icons";
 import { getProviderLabel, ProviderName, RequestTypeColors, RequestTypeLabels, Status, StatusBarColors } from "@/lib/constants/logs";
 import { ChatMessageContent, LogEntry, ResponsesMessageContentBlock } from "@/lib/types/logs";
 import { cn } from "@/lib/utils";
 import { formatCompactNumber } from "@/lib/utils/numbers";
+import { resolveObservabilityExport } from "@/app/workspace/logs/utils/observabilityExport";
 import { ColumnDef } from "@tanstack/react-table";
 import { format, formatDistanceToNow } from "date-fns";
-import { ArrowUpDown, MoreHorizontal, Trash2 } from "lucide-react";
+import { ArrowUpDown, Loader2, MoreHorizontal, RefreshCw, Trash2, UploadCloud } from "lucide-react";
 import { useState } from "react";
 import i18n from "@/lib/i18n";
 
@@ -19,7 +21,13 @@ function LogActionsMenu({ log, onDelete }: { log: LogEntry; onDelete: (log: LogE
 	return (
 		<DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
 			<DropdownMenuTrigger asChild onClick={(event) => event.stopPropagation()}>
-				<Button variant="ghost" size="icon" data-testid="log-actions-btn" aria-label={i18n.t("supplemental.logActions")} className="h-7 w-7">
+				<Button
+					variant="ghost"
+					size="icon"
+					data-testid="log-actions-btn"
+					aria-label={i18n.t("supplemental.logActions")}
+					className="h-7 w-7"
+				>
 					<MoreHorizontal className="h-4 w-4" />
 				</Button>
 			</DropdownMenuTrigger>
@@ -179,12 +187,18 @@ export function LogMessageCell({ log, contentClassName = "max-w-full" }: { log: 
 				</span>
 			)}
 			{realtimeMessages &&
-				(realtimeMessages.tool || realtimeMessages.user || realtimeMessages.assistantToolCall || realtimeMessages.assistant) ? (
+			(realtimeMessages.tool || realtimeMessages.user || realtimeMessages.assistantToolCall || realtimeMessages.assistant) ? (
 				<div className={cn(contentClassName, "font-mono text-sm font-normal leading-5")}>
-					{realtimeMessages.tool ? <div className="truncate">{i18n.t("supplemental.toolResult")} {realtimeMessages.tool}</div> : null}
+					{realtimeMessages.tool ? (
+						<div className="truncate">
+							{i18n.t("supplemental.toolResult")} {realtimeMessages.tool}
+						</div>
+					) : null}
 					{realtimeMessages.user ? <div className="truncate">User: {realtimeMessages.user}</div> : null}
 					{realtimeMessages.assistantToolCall ? (
-						<div className="truncate">{i18n.t("supplemental.assistantToolCall")} {realtimeMessages.assistantToolCall}</div>
+						<div className="truncate">
+							{i18n.t("supplemental.assistantToolCall")} {realtimeMessages.assistantToolCall}
+						</div>
 					) : null}
 					{realtimeMessages.assistant ? <div className="truncate">Assistant: {realtimeMessages.assistant}</div> : null}
 				</div>
@@ -206,17 +220,7 @@ const MAX_ATTRIBUTION_LINES = 1;
 // plural names -> singular name -> plural ids -> singular id. When a plural
 // (array) source is used, values render one per line, capped at
 // MAX_ATTRIBUTION_LINES with a "+N more" indicator for the remainder.
-function AttributionCell({
-	names,
-	name,
-	ids,
-	id,
-}: {
-	names?: string[];
-	name?: string | null;
-	ids?: string[];
-	id?: string | null;
-}) {
+function AttributionCell({ names, name, ids, id }: { names?: string[]; name?: string | null; ids?: string[]; id?: string | null }) {
 	let values: string[] = [];
 	if (Array.isArray(names) && names.filter(Boolean).length > 0) {
 		values = names.filter(Boolean);
@@ -247,10 +251,75 @@ function AttributionCell({
 	);
 }
 
+function ObservabilityExportCell({
+	log,
+	onManualExport,
+	pending,
+	selected,
+	onToggleSelected,
+}: {
+	log: LogEntry;
+	onManualExport?: (log: LogEntry) => void;
+	pending: boolean;
+	selected: boolean;
+	onToggleSelected?: (log: LogEntry, selected: boolean) => void;
+}) {
+	const resolved = resolveObservabilityExport(log);
+	const { state, canManualExport: canExport } = resolved;
+	const status = pending ? "pending" : resolved.status;
+	const label = resolved.manual ? i18n.t("workspace.logs.observability.manual") : i18n.t(`workspace.logs.observability.${status}`);
+	const reason = state?.reason ? i18n.t(`workspace.logs.observability.reasons.${state.reason}`, { defaultValue: state.reason }) : undefined;
+	return (
+		<div className="flex items-center gap-1.5" title={reason}>
+			{canExport && onToggleSelected && (
+				<Checkbox
+					checked={selected}
+					onClick={(event) => event.stopPropagation()}
+					onCheckedChange={(checked) => onToggleSelected(log, checked === true)}
+					aria-label={i18n.t("workspace.logs.observability.selectForExport")}
+				/>
+			)}
+			<Badge
+				variant={status === "exported" ? "success" : status === "failed" ? "destructive" : "outline"}
+				className="text-[10px] whitespace-nowrap"
+			>
+				{label}
+			</Badge>
+			{canExport && onManualExport && (
+				<Button
+					type="button"
+					variant="ghost"
+					size="icon"
+					className="size-7"
+					onClick={(event) => {
+						event.stopPropagation();
+						onManualExport(log);
+					}}
+					disabled={pending}
+					title={status === "failed" ? i18n.t("workspace.logs.observability.retry") : i18n.t("workspace.logs.observability.export")}
+					data-testid={`log-observability-export-${log.id}`}
+				>
+					{pending ? (
+						<Loader2 className="size-3.5 animate-spin" />
+					) : status === "failed" ? (
+						<RefreshCw className="size-3.5" />
+					) : (
+						<UploadCloud className="size-3.5" />
+					)}
+				</Button>
+			)}
+		</div>
+	);
+}
+
 export const createColumns = (
 	onDelete: (log: LogEntry) => void,
 	hasDeleteAccess = true,
 	metadataKeys: string[] = [],
+	onManualExport?: (log: LogEntry) => void,
+	manualExportPendingIDs: ReadonlySet<string> = new Set(),
+	selectedManualExportIDs: ReadonlySet<string> = new Set(),
+	onToggleManualExportSelected?: (log: LogEntry, selected: boolean) => void,
 ): ColumnDef<LogEntry>[] => {
 	const baseColumns: ColumnDef<LogEntry>[] = [
 		{
@@ -354,6 +423,20 @@ export const createColumns = (
 					</div>
 				);
 			},
+		},
+		{
+			id: "observability",
+			header: i18n.t("workspace.logs.observability.column"),
+			size: 145,
+			cell: ({ row }) => (
+				<ObservabilityExportCell
+					log={row.original}
+					onManualExport={onManualExport}
+					pending={manualExportPendingIDs.has(row.original.id)}
+					selected={selectedManualExportIDs.has(row.original.id)}
+					onToggleSelected={onToggleManualExportSelected}
+				/>
+			),
 		},
 		{
 			accessorKey: "tokens",
@@ -487,20 +570,20 @@ export const createColumns = (
 
 	const actionsColumn: ColumnDef<LogEntry>[] = hasDeleteAccess
 		? [
-			{
-				id: "actions",
-				header: "",
-				size: 56,
-				cell: ({ row }) => {
-					const log = row.original;
-					return (
-						<div className="flex justify-center">
-							<LogActionsMenu log={log} onDelete={onDelete} />
-						</div>
-					);
+				{
+					id: "actions",
+					header: "",
+					size: 56,
+					cell: ({ row }) => {
+						const log = row.original;
+						return (
+							<div className="flex justify-center">
+								<LogActionsMenu log={log} onDelete={onDelete} />
+							</div>
+						);
+					},
 				},
-			},
-		]
+			]
 		: [];
 
 	return [...baseColumns, ...attributionColumns, ...metadataColumns, ...actionsColumn];
