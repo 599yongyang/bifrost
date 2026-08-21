@@ -34,9 +34,31 @@ type SelectionRule struct {
 	MaxLatencyMS        *int64                `json:"max_latency_ms,omitempty"`
 	RequireError        *bool                 `json:"require_error,omitempty"`
 	RequireFallback     *bool                 `json:"require_fallback,omitempty"`
+	RequireRetry        *bool                 `json:"require_retry,omitempty"`
+	ErrorCategories     []string              `json:"error_categories,omitempty"`
+	Providers           []string              `json:"providers,omitempty"`
+	Models              []string              `json:"models,omitempty"`
+	RoutingRules        []string              `json:"routing_rules,omitempty"`
+	MinCost             *float64              `json:"min_cost,omitempty"`
 	MinTechnicalQuality *float64              `json:"min_technical_quality,omitempty"`
 	ExportRate          float64               `json:"export_rate"`
 	MaxPerMinute        int                   `json:"max_per_minute,omitempty"`
+}
+
+const (
+	errorCategoryTimeout    = "timeout"
+	errorCategoryConnection = "connection"
+	errorCategoryClient     = "client_error"
+	errorCategoryServer     = "server_error"
+	errorCategoryOther      = "other"
+)
+
+var supportedErrorCategories = []string{
+	errorCategoryTimeout,
+	errorCategoryConnection,
+	errorCategoryClient,
+	errorCategoryServer,
+	errorCategoryOther,
 }
 
 type traceSelector struct {
@@ -86,6 +108,28 @@ func newTraceSelector(config *SelectiveExportConfig) (*traceSelector, error) {
 				return nil, fmt.Errorf("selective_export rule %q has unsupported request type %q", rules[i].ID, requestType)
 			}
 		}
+		for _, category := range rules[i].ErrorCategories {
+			if !slices.Contains(supportedErrorCategories, category) {
+				return nil, fmt.Errorf("selective_export rule %q has unsupported error category %q", rules[i].ID, category)
+			}
+		}
+		if len(rules[i].ErrorCategories) > 0 && rules[i].RequireError != nil && !*rules[i].RequireError {
+			return nil, fmt.Errorf("selective_export rule %q cannot combine error_categories with require_error=false", rules[i].ID)
+		}
+		for _, dimension := range []struct {
+			name   string
+			values []string
+		}{
+			{name: "providers", values: rules[i].Providers},
+			{name: "models", values: rules[i].Models},
+			{name: "routing_rules", values: rules[i].RoutingRules},
+		} {
+			for _, value := range dimension.values {
+				if strings.TrimSpace(value) == "" {
+					return nil, fmt.Errorf("selective_export rule %q %s cannot contain an empty value", rules[i].ID, dimension.name)
+				}
+			}
+		}
 		if rules[i].ExportRate < 0 || rules[i].ExportRate > 1 {
 			return nil, fmt.Errorf("selective_export rule %q export_rate must be between 0 and 1", rules[i].ID)
 		}
@@ -97,6 +141,9 @@ func newTraceSelector(config *SelectiveExportConfig) (*traceSelector, error) {
 		}
 		if rules[i].MinTechnicalQuality != nil && (*rules[i].MinTechnicalQuality < 0 || *rules[i].MinTechnicalQuality > 1) {
 			return nil, fmt.Errorf("selective_export rule %q min_technical_quality must be between 0 and 1", rules[i].ID)
+		}
+		if rules[i].MinCost != nil && *rules[i].MinCost < 0 {
+			return nil, fmt.Errorf("selective_export rule %q min_cost must be non-negative", rules[i].ID)
 		}
 		if rules[i].MaxPerMinute < 0 {
 			return nil, fmt.Errorf("selective_export rule %q max_per_minute must be non-negative", rules[i].ID)
@@ -304,6 +351,13 @@ type selectionFacts struct {
 	latencyMS        int64
 	hasError         bool
 	isFallback       bool
+	hasRetry         bool
+	errorCategory    string
+	provider         string
+	model            string
+	routingRuleID    string
+	routingRuleName  string
+	cost             float64
 	technicalQuality float64
 }
 
@@ -324,6 +378,20 @@ func selectionFactsFromTrace(trace *schemas.Trace) selectionFacts {
 		}
 		facts.hasError = span.Status == schemas.SpanStatusError
 		facts.isFallback = getIntAttr(span.Attributes, schemas.AttrBifrostFallbackIndex) > 0
+		facts.hasRetry = getIntAttr(span.Attributes, schemas.AttrBifrostRetries) > 0
+		facts.errorCategory = selectionErrorCategory(span)
+		facts.provider = firstNonEmpty(
+			getStringAttr(span.Attributes, schemas.AttrBifrostProviderName),
+			getStringAttr(span.Attributes, schemas.AttrProviderName),
+		)
+		facts.model = firstNonEmpty(
+			getStringAttr(span.Attributes, schemas.AttrBifrostProviderModel),
+			getStringAttr(span.Attributes, schemas.AttrResponseModel),
+			getStringAttr(span.Attributes, schemas.AttrRequestModel),
+		)
+		facts.routingRuleID = getStringAttr(span.Attributes, schemas.AttrBifrostRoutingRuleID)
+		facts.routingRuleName = getStringAttr(span.Attributes, schemas.AttrBifrostRoutingRuleName)
+		facts.cost = getFloat64Attr(span.Attributes, schemas.AttrUsageCost)
 		facts.technicalQuality = technicalQualityScore(span)
 	}
 	return facts
@@ -371,10 +439,68 @@ func (r *SelectionRule) matches(facts selectionFacts) bool {
 	if r.RequireFallback != nil && facts.isFallback != *r.RequireFallback {
 		return false
 	}
+	if r.RequireRetry != nil && facts.hasRetry != *r.RequireRetry {
+		return false
+	}
+	if len(r.ErrorCategories) > 0 && !containsFold(r.ErrorCategories, facts.errorCategory) {
+		return false
+	}
+	if len(r.Providers) > 0 && !containsFold(r.Providers, facts.provider) {
+		return false
+	}
+	if len(r.Models) > 0 && !containsFold(r.Models, facts.model) {
+		return false
+	}
+	if len(r.RoutingRules) > 0 && !containsFold(r.RoutingRules, facts.routingRuleID) && !containsFold(r.RoutingRules, facts.routingRuleName) {
+		return false
+	}
+	if r.MinCost != nil && facts.cost < *r.MinCost {
+		return false
+	}
 	if r.MinTechnicalQuality != nil && facts.technicalQuality < *r.MinTechnicalQuality {
 		return false
 	}
 	return true
+}
+
+func containsFold(values []string, target string) bool {
+	for _, value := range values {
+		if strings.EqualFold(strings.TrimSpace(value), target) {
+			return true
+		}
+	}
+	return false
+}
+
+func selectionErrorCategory(span *schemas.Span) string {
+	if span == nil || span.Status != schemas.SpanStatusError {
+		return ""
+	}
+	timeoutSource := getStringAttr(span.Attributes, schemas.AttrBifrostTimeoutSource)
+	if timeoutSource == string(schemas.TimeoutSourceUpstreamDisconnect) {
+		return errorCategoryConnection
+	}
+	if timeoutSource != "" {
+		return errorCategoryTimeout
+	}
+	status := getIntAttr(span.Attributes, schemas.AttrHTTPResponseStatusCode)
+	if status >= 400 && status < 500 {
+		return errorCategoryClient
+	}
+	if status >= 500 {
+		return errorCategoryServer
+	}
+	errorType := strings.ToLower(firstNonEmpty(
+		getStringAttr(span.Attributes, schemas.AttrErrorTypeSpec),
+		getStringAttr(span.Attributes, schemas.AttrErrorType),
+	))
+	if strings.Contains(errorType, "timeout") || strings.Contains(errorType, "deadline") {
+		return errorCategoryTimeout
+	}
+	if strings.Contains(errorType, "connection") || strings.Contains(errorType, "disconnect") || strings.Contains(errorType, "eof") {
+		return errorCategoryConnection
+	}
+	return errorCategoryOther
 }
 
 func normalizeImageRequestType(requestType schemas.RequestType) schemas.RequestType {

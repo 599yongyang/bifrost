@@ -292,9 +292,13 @@ func appendImageObservationAttributes(otelSpan *Span, span *schemas.Span, disabl
 		otelSpan.Attributes = append(otelSpan.Attributes, kvStr("langfuse.observation.cost_details", mustJSON(map[string]any{"total": cost})))
 	}
 	for key, target := range map[string]string{
-		schemas.AttrErrorTypeSpec:          "langfuse.observation.metadata.error_type",
-		schemas.AttrErrorCode:              "langfuse.observation.metadata.error_code",
-		schemas.AttrHTTPResponseStatusCode: "langfuse.observation.metadata.http_status_code",
+		schemas.AttrErrorTypeSpec:            "langfuse.observation.metadata.error_type",
+		schemas.AttrErrorCode:                "langfuse.observation.metadata.error_code",
+		schemas.AttrHTTPResponseStatusCode:   "langfuse.observation.metadata.http_status_code",
+		schemas.AttrBifrostTimeoutSource:     "langfuse.observation.metadata.timeout_source",
+		schemas.AttrBifrostConfiguredTimeout: "langfuse.observation.metadata.configured_timeout_seconds",
+		schemas.AttrBifrostTimeoutElapsedMs:  "langfuse.observation.metadata.timeout_elapsed_ms",
+		schemas.AttrBifrostUpstreamResponded: "langfuse.observation.metadata.upstream_response_received",
 	} {
 		if value := fmt.Sprint(attrs[key]); value != "<nil>" && value != "" {
 			otelSpan.Attributes = append(otelSpan.Attributes, kvStr(target, value))

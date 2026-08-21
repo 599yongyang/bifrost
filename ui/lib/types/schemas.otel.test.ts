@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { otelFormSchema, otelSelectiveExportSchema } from "./schemas";
+import { otelFormSchema, otelSelectionRuleSchema, otelSelectiveExportSchema } from "./schemas";
 
 describe("otel selective export schema", () => {
 	it("accepts ordered image classification rules", () => {
@@ -99,5 +99,37 @@ describe("otel selective export schema", () => {
 		};
 		expect(otelFormSchema.safeParse(base).success).toBe(false);
 		expect(otelFormSchema.safeParse({ ...base, profiles: [{ ...base.profiles[0], protocol: "http" }] }).success).toBe(true);
+	});
+
+	it("accepts extended selective export conditions and applies array defaults", () => {
+		const parsed = otelSelectionRuleSchema.parse({
+			id: "expensive-retry",
+			priority: 10,
+			request_types: ["image_edit"],
+			require_retry: true,
+			error_categories: ["timeout"],
+			providers: ["openai"],
+			models: ["gpt-image-2"],
+			routing_rules: ["premium-images"],
+			min_cost: 0.2,
+			export_rate: 1,
+			max_per_minute: 100,
+		});
+		expect(parsed.require_retry).toBe(true);
+		expect(parsed.error_categories).toEqual(["timeout"]);
+		expect(parsed.min_cost).toBe(0.2);
+
+		const legacy = otelSelectionRuleSchema.parse({ id: "legacy", priority: 0, export_rate: 0.1 });
+		expect(legacy.error_categories).toEqual([]);
+		expect(legacy.providers).toEqual([]);
+		expect(legacy.models).toEqual([]);
+		expect(legacy.routing_rules).toEqual([]);
+	});
+
+	it("rejects unsupported error categories and negative costs", () => {
+		const base = { id: "invalid", priority: 0, export_rate: 1 };
+		expect(otelSelectionRuleSchema.safeParse({ ...base, error_categories: ["mystery"] }).success).toBe(false);
+		expect(otelSelectionRuleSchema.safeParse({ ...base, min_cost: -0.01 }).success).toBe(false);
+		expect(otelSelectionRuleSchema.safeParse({ ...base, require_error: false, error_categories: ["timeout"] }).success).toBe(false);
 	});
 });

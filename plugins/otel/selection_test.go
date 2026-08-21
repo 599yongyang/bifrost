@@ -74,6 +74,94 @@ func TestSelectionMatchesErrorAndFallbackClasses(t *testing.T) {
 	}
 }
 
+func TestSelectionMatchesRetryProviderModelRoutingAndCost(t *testing.T) {
+	required := true
+	minCost := 0.2
+	selector, err := newTraceSelector(&SelectiveExportConfig{Enabled: true, Rules: []SelectionRule{
+		{
+			ID: "expensive-retry", Priority: 10, RequireRetry: &required,
+			Providers: []string{"openai"}, Models: []string{"gpt-image-wire"}, RoutingRules: []string{"premium-images"},
+			MinCost: &minCost, ExportRate: 1,
+		},
+		{ID: "drop", ExportRate: 0},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trace := imageSelectionTrace("rich-facts", time.Second)
+	attrs := trace.Spans[0].Attributes
+	attrs[schemas.AttrBifrostRetries] = 1
+	attrs[schemas.AttrBifrostProviderName] = "openai"
+	attrs[schemas.AttrBifrostProviderModel] = "gpt-image-wire"
+	attrs[schemas.AttrBifrostRoutingRuleName] = "premium-images"
+	attrs[schemas.AttrUsageCost] = 0.25
+	if !selector.shouldExport(trace) {
+		t.Fatal("rule did not match retry/provider/model/routing/cost facts")
+	}
+	attrs[schemas.AttrBifrostRoutingRuleName] = ""
+	attrs[schemas.AttrBifrostRoutingRuleID] = "premium-images"
+	if !selector.shouldExport(trace) {
+		t.Fatal("rule did not match routing rule ID when name was absent")
+	}
+	attrs[schemas.AttrUsageCost] = 0.1
+	if selector.shouldExport(trace) {
+		t.Fatal("rule matched a request below min_cost")
+	}
+}
+
+func TestSelectionClassifiesErrorCategories(t *testing.T) {
+	tests := []struct {
+		name      string
+		configure func(map[string]any)
+		want      string
+	}{
+		{name: "timeout", configure: func(attrs map[string]any) {
+			attrs[schemas.AttrBifrostTimeoutSource] = string(schemas.TimeoutSourceUpstreamConnection)
+		}, want: errorCategoryTimeout},
+		{name: "disconnect", configure: func(attrs map[string]any) {
+			attrs[schemas.AttrBifrostTimeoutSource] = string(schemas.TimeoutSourceUpstreamDisconnect)
+		}, want: errorCategoryConnection},
+		{name: "client", configure: func(attrs map[string]any) { attrs[schemas.AttrHTTPResponseStatusCode] = 429 }, want: errorCategoryClient},
+		{name: "server", configure: func(attrs map[string]any) { attrs[schemas.AttrHTTPResponseStatusCode] = 502 }, want: errorCategoryServer},
+		{name: "other", configure: func(attrs map[string]any) { attrs[schemas.AttrErrorTypeSpec] = "provider_error" }, want: errorCategoryOther},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			trace := imageSelectionTrace(tt.name, time.Second)
+			trace.Spans[0].Status = schemas.SpanStatusError
+			tt.configure(trace.Spans[0].Attributes)
+			if got := selectionFactsFromTrace(trace).errorCategory; got != tt.want {
+				t.Fatalf("error category = %q, want %q", got, tt.want)
+			}
+			selector, err := newTraceSelector(&SelectiveExportConfig{Enabled: true, Rules: []SelectionRule{
+				{ID: "category", ErrorCategories: []string{tt.want}, ExportRate: 1},
+				{ID: "drop", ExportRate: 0},
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !selector.shouldExport(trace) {
+				t.Fatalf("%s category rule did not match", tt.want)
+			}
+		})
+	}
+}
+
+func TestSelectionRejectsInvalidExtendedConditions(t *testing.T) {
+	negative := -0.01
+	falseValue := false
+	for _, rule := range []SelectionRule{
+		{ID: "bad-category", ErrorCategories: []string{"mystery"}, ExportRate: 1},
+		{ID: "bad-cost", MinCost: &negative, ExportRate: 1},
+		{ID: "empty-provider", Providers: []string{" "}, ExportRate: 1},
+		{ID: "contradictory-error", RequireError: &falseValue, ErrorCategories: []string{"timeout"}, ExportRate: 1},
+	} {
+		if _, err := newTraceSelector(&SelectiveExportConfig{Enabled: true, Rules: []SelectionRule{rule}}); err == nil {
+			t.Fatalf("accepted invalid rule %+v", rule)
+		}
+	}
+}
+
 func TestSelectiveExportRejectsIncompleteRecordOptOut(t *testing.T) {
 	value := false
 	if _, err := newTraceSelector(&SelectiveExportConfig{

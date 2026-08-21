@@ -220,7 +220,7 @@ func TestMarshalForStorageRoundTrip(t *testing.T) {
 			"enabled": true,
 			"dry_run": true,
 			"max_exports_per_minute": 500,
-			"rules": [{"id":"slow","priority":80,"min_latency_ms":30000,"export_rate":0.3,"max_per_minute":100}]
+			"rules": [{"id":"slow","priority":80,"min_latency_ms":30000,"require_retry":true,"error_categories":["timeout"],"providers":["openai"],"models":["gpt-image-2"],"routing_rules":["premium-images"],"min_cost":0.2,"export_rate":0.3,"max_per_minute":100}]
 		}
 	}`
 
@@ -263,6 +263,13 @@ func TestMarshalForStorageRoundTrip(t *testing.T) {
 	}
 	if back.SelectiveExport == nil || !back.SelectiveExport.Enabled || !back.SelectiveExport.DryRun || len(back.SelectiveExport.Rules) != 1 {
 		t.Fatalf("round-trip selective_export = %+v", back.SelectiveExport)
+	}
+	selectionRule := back.SelectiveExport.Rules[0]
+	if selectionRule.RequireRetry == nil || !*selectionRule.RequireRetry || len(selectionRule.ErrorCategories) != 1 || selectionRule.ErrorCategories[0] != "timeout" {
+		t.Fatalf("round-trip extended selection conditions = %+v", selectionRule)
+	}
+	if selectionRule.MinCost == nil || *selectionRule.MinCost != 0.2 || len(selectionRule.Providers) != 1 || len(selectionRule.Models) != 1 || len(selectionRule.RoutingRules) != 1 {
+		t.Fatalf("round-trip selection dimensions = %+v", selectionRule)
 	}
 	if len(back.PluginSpanFilter.Plugins) != 1 || back.PluginSpanFilter.Plugins[0] != "logging" {
 		t.Errorf("round-trip plugin_span_filter plugins = %v, want [logging]", back.PluginSpanFilter.Plugins)

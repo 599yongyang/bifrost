@@ -206,6 +206,45 @@ func TestConvertTraceToResourceSpan_ImageGenerationLangfuseObservation(t *testin
 	}
 }
 
+func TestConvertTraceToResourceSpan_TimeoutMetadata(t *testing.T) {
+	p := &OtelPlugin{pluginSpanFilter: &PluginSpanFilter{}}
+	root := makeSpan("aaaa", "", "request", schemas.SpanKindInternal)
+	child := makeSpan("bbbb", "aaaa", "generate_content gpt-image-2", schemas.SpanKindLLMCall)
+	child.Status = schemas.SpanStatusError
+	child.Attributes = map[string]any{
+		schemas.AttrLegacyRequestType:        "image_generation",
+		schemas.AttrErrorTypeSpec:            "timeout",
+		schemas.AttrBifrostTimeoutSource:     string(schemas.TimeoutSourceUpstreamConnection),
+		schemas.AttrBifrostConfiguredTimeout: 600,
+		schemas.AttrBifrostTimeoutElapsedMs:  int64(27_000),
+		schemas.AttrBifrostUpstreamResponded: false,
+		schemas.AttrHTTPResponseStatusCode:   502,
+		schemas.AttrBifrostImageInput:        `{"prompt":"test","n":1}`,
+	}
+	trace := &schemas.Trace{TraceID: "00000000000000000000000000000013", RootSpan: root, Spans: []*schemas.Span{root, child}}
+	rs := p.convertTraceToResourceSpan("svc", trace, nil, false, false, false)
+	var got *Span
+	for _, span := range rs.ScopeSpans[0].Spans {
+		if bytes.Equal(span.SpanId, hexToBytes("bbbb", 8)) {
+			got = span
+			break
+		}
+	}
+	if got == nil {
+		t.Fatal("timeout span was not exported")
+	}
+	for key, want := range map[string]string{
+		"langfuse.observation.metadata.timeout_source":             string(schemas.TimeoutSourceUpstreamConnection),
+		"langfuse.observation.metadata.configured_timeout_seconds": "600",
+		"langfuse.observation.metadata.timeout_elapsed_ms":         "27000",
+		"langfuse.observation.metadata.upstream_response_received": "false",
+	} {
+		if value := attrString(got, key); value != want {
+			t.Errorf("%s = %q, want %q", key, value, want)
+		}
+	}
+}
+
 func TestConvertImageEditAndVariationToLangfuseObservations(t *testing.T) {
 	for _, requestType := range []schemas.RequestType{schemas.ImageEditRequest, schemas.ImageVariationRequest} {
 		t.Run(string(requestType), func(t *testing.T) {

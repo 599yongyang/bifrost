@@ -1013,6 +1013,10 @@ const (
 	AttrBifrostUserEmail           = "bifrost.user.email"
 	AttrBifrostRetries             = "bifrost.retries"
 	AttrBifrostFallbackIndex       = "bifrost.fallback_index"
+	AttrBifrostTimeoutSource       = "bifrost.timeout.source"
+	AttrBifrostConfiguredTimeout   = "bifrost.timeout.configured_seconds"
+	AttrBifrostTimeoutElapsedMs    = "bifrost.timeout.elapsed_ms"
+	AttrBifrostUpstreamResponded   = "bifrost.timeout.upstream_response_received"
 	AttrBifrostAlias               = "bifrost.alias"               // original requested model when it differs from the resolved model
 	AttrBifrostRoutingEngineUsed   = "bifrost.routing_engine_used" // comma-joined routing engines that handled the request
 	AttrBifrostStopSequencesJoined = "bifrost.request.stop_sequences"

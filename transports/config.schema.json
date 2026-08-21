@@ -3290,6 +3290,17 @@
         "max_latency_ms": { "type": "integer", "minimum": 0 },
         "require_error": { "type": "boolean" },
         "require_fallback": { "type": "boolean" },
+        "require_retry": { "type": "boolean", "description": "When set, requires the final request to have (true) or not have (false) one or more provider retries." },
+        "error_categories": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["timeout", "connection", "client_error", "server_error", "other"] },
+          "uniqueItems": true,
+          "description": "Safe final-error categories. Values inside the array use OR; this condition is ANDed with the other rule conditions."
+        },
+        "providers": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true, "description": "Final Bifrost provider names to match, using OR." },
+        "models": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true, "description": "Final provider model names to match, using OR." },
+        "routing_rules": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true, "description": "Routing rule names or IDs to match, using OR." },
+        "min_cost": { "type": "number", "minimum": 0, "description": "Minimum calculated request cost required to match." },
         "min_technical_quality": { "type": "number", "minimum": 0, "maximum": 1 },
         "export_rate": { "type": "number", "minimum": 0, "maximum": 1 },
         "max_per_minute": { "type": "integer", "minimum": 0, "maximum": 10000, "default": 0 }

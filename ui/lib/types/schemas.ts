@@ -999,6 +999,12 @@ export const otelSelectionRuleSchema = z
 		max_latency_ms: z.number().int().min(0).optional(),
 		require_error: z.boolean().optional(),
 		require_fallback: z.boolean().optional(),
+		require_retry: z.boolean().optional(),
+		error_categories: z.array(z.enum(["timeout", "connection", "client_error", "server_error", "other"])).default([]),
+		providers: z.array(z.string().trim().min(1)).default([]),
+		models: z.array(z.string().trim().min(1)).default([]),
+		routing_rules: z.array(z.string().trim().min(1)).default([]),
+		min_cost: z.number().min(0).optional(),
 		min_technical_quality: z.number().min(0).max(1).optional(),
 		export_rate: z.number().min(0).max(1),
 		max_per_minute: z.number().int().min(0).max(10000).default(0),
@@ -1006,6 +1012,10 @@ export const otelSelectionRuleSchema = z
 	.refine((rule) => rule.min_latency_ms === undefined || rule.max_latency_ms === undefined || rule.min_latency_ms <= rule.max_latency_ms, {
 		message: "Minimum latency cannot exceed maximum latency",
 		path: ["min_latency_ms"],
+	})
+	.refine((rule) => rule.require_error !== false || rule.error_categories.length === 0, {
+		message: "Error categories cannot be combined with a successful final result",
+		path: ["error_categories"],
 	});
 
 export const otelSelectiveExportSchema = z
