@@ -54,13 +54,14 @@ COPY --from=ui-builder /app/out ./transports/bifrost-http/ui
 ARG VERSION=unknown
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/tmp/bifrost-go-tmp \
     test "$(go list -m -f '{{.Dir}}' github.com/maximhq/bifrost/core)" = "/app/core" && \
     test "$(go list -m -f '{{.Dir}}' github.com/maximhq/bifrost/framework)" = "/app/framework" && \
     test "$(go list -m -f '{{.Dir}}' github.com/maximhq/bifrost/plugins/logging)" = "/app/plugins/logging" && \
     test "$(go list -m -f '{{.Dir}}' github.com/maximhq/bifrost/plugins/otel)" = "/app/plugins/otel" && \
-    go build \
+    GOTMPDIR=/tmp/bifrost-go-tmp go build \
     -ldflags="-w -s -X main.Version=v${VERSION}" \
-    -a -trimpath \
+    -p=2 -trimpath \
     -o /app/main \
     ./transports/bifrost-http
 
