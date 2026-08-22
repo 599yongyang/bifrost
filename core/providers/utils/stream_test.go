@@ -33,6 +33,29 @@ func TestCheckFirstStreamChunk_ErrorInFirstChunk(t *testing.T) {
 	}
 }
 
+func TestCheckFirstStreamChunk_RejectsCompletedImageWithoutPayload(t *testing.T) {
+	stream := make(chan *schemas.BifrostStreamChunk, 1)
+	stream <- &schemas.BifrostStreamChunk{
+		BifrostImageGenerationStreamResponse: &schemas.BifrostImageGenerationStreamResponse{
+			Type:          schemas.ImageGenerationEventTypeCompleted,
+			RevisedPrompt: "a ceramic coffee cup",
+		},
+	}
+	close(stream)
+
+	_, drainDone, err := CheckFirstStreamChunkForError(context.Background(), stream)
+	if err == nil {
+		t.Fatal("expected metadata-only completed image event to be rejected")
+	}
+	<-drainDone
+	if err.Type == nil || *err.Type != "invalid_image_response" {
+		t.Fatalf("error type = %v, want invalid_image_response", err.Type)
+	}
+	if err.AllowFallbacks == nil || !*err.AllowFallbacks {
+		t.Fatal("invalid image response must allow configured fallbacks")
+	}
+}
+
 func TestCheckFirstStreamChunk_ValidFirstChunk(t *testing.T) {
 	stream := make(chan *schemas.BifrostStreamChunk, 3)
 	chunk1 := &schemas.BifrostStreamChunk{

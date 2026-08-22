@@ -2,6 +2,8 @@ package utils
 
 import (
 	"context"
+	"net/http"
+	"strings"
 
 	schemas "github.com/maximhq/bifrost/core/schemas"
 )
@@ -52,6 +54,18 @@ func CheckFirstStreamChunkForError(
 		return nil, done, firstChunk.BifrostError
 	}
 
+	if image := firstChunk.BifrostImageGenerationStreamResponse; image != nil &&
+		(image.Type == schemas.ImageGenerationEventTypeCompleted || image.Type == schemas.ImageEditEventTypeCompleted) &&
+		strings.TrimSpace(image.URL) == "" && strings.TrimSpace(image.B64JSON) == "" {
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			for range stream {
+			}
+		}()
+		return nil, done, invalidImageStreamResponseError()
+	}
+
 	// First chunk is valid data — wrap channel to re-inject it
 	done := make(chan struct{})
 	wrapped := make(chan *schemas.BifrostStreamChunk, max(cap(stream), 1))
@@ -72,4 +86,19 @@ func CheckFirstStreamChunkForError(
 		}
 	}()
 	return wrapped, done, nil
+}
+
+func invalidImageStreamResponseError() *schemas.BifrostError {
+	statusCode := http.StatusBadGateway
+	errorType := "invalid_image_response"
+	allowFallbacks := true
+	return &schemas.BifrostError{
+		StatusCode:     &statusCode,
+		Type:           &errorType,
+		AllowFallbacks: &allowFallbacks,
+		Error: &schemas.ErrorField{
+			Type:    &errorType,
+			Message: "upstream provider completed image generation without url or b64_json",
+		},
+	}
 }
