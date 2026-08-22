@@ -4,7 +4,6 @@ import {
 	BookUser,
 	Boxes,
 	BoxIcon,
-	BugIcon,
 	Building,
 	Building2,
 	ChartColumnBig,
@@ -74,7 +73,7 @@ import { useGetCoreConfigQuery, useGetLatestReleaseQuery, useGetVersionQuery, us
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import type { UserInfo } from "@enterprise/lib/store/utils/tokenManager";
 import { getUserInfo } from "@enterprise/lib/store/utils/tokenManager";
-import { BooksIcon, DiscordLogoIcon, GithubLogoIcon } from "@phosphor-icons/react";
+import { BooksIcon, GithubLogoIcon } from "@phosphor-icons/react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { ChevronRight } from "lucide-react";
 import { useTheme } from "next-themes";
@@ -118,20 +117,9 @@ const MCPIcon = ({ className }: { className?: string }) => (
 // External links
 const externalLinks = [
 	{
-		title: "Discord Server",
-		url: "https://discord.gg/exN5KAydbU",
-		icon: DiscordLogoIcon,
-	},
-	{
 		title: "GitHub Repository",
 		url: "https://github.com/maximhq/bifrost",
 		icon: GithubLogoIcon,
-	},
-	{
-		title: "Report a bug",
-		url: "https://github.com/maximhq/bifrost/issues/new?title=[Bug Report]&labels=bug&type=bug&projects=maximhq/1",
-		icon: BugIcon,
-		strokeWidth: 1.5,
 	},
 	{
 		title: "Full Documentation",

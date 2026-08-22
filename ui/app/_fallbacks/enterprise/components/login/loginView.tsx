@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { getErrorMessage, useLoginMutation } from "@/lib/store/apis";
-import { BooksIcon, DiscordLogoIcon, GithubLogoIcon } from "@phosphor-icons/react";
+import { BooksIcon, GithubLogoIcon } from "@phosphor-icons/react";
 import { useNavigate } from "@tanstack/react-router";
 import { Eye, EyeOff } from "lucide-react";
 import { useTheme } from "next-themes";
@@ -10,11 +10,6 @@ import { useEffect, useState } from "react";
 import i18n from "@/lib/i18n";
 
 const externalLinks = [
-	{
-		title: "Discord Server",
-		url: "https://discord.gg/exN5KAydbU",
-		icon: DiscordLogoIcon,
-	},
 	{
 		title: "GitHub Repository",
 		url: "https://github.com/maximhq/bifrost",
