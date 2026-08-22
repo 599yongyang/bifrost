@@ -2609,15 +2609,7 @@ func (g *GenericRouter) handleStreamingRequest(ctx *fasthttp.RequestCtx, config 
 		return
 	}
 
-	// Forward provider response headers stored in context by streaming handlers
-	if headers, ok := bifrostCtx.Value(schemas.BifrostContextKeyProviderResponseHeaders).(map[string]string); ok {
-		for key, value := range headers {
-			ctx.Response.Header.Set(key, value)
-		}
-	}
-
-	// Routed-identity headers from the context snapshot — routing is final once
-	// the stream channel is returned, before any chunk arrives.
+	// Provider and routed-identity headers are intentionally hidden from clients.
 	lib.ApplyBifrostStreamResponseHeaders(ctx, bifrostCtx, requestType)
 
 	// Large payload streaming passthrough — bypass SSE event processing, pipe raw upstream
@@ -3300,9 +3292,7 @@ func (g *GenericRouter) handlePassthroughNonStream(
 	ctx.SetStatusCode(resp.StatusCode)
 	for k, v := range resp.Headers {
 		switch strings.ToLower(k) {
-		case "connection", "transfer-encoding", "set-cookie", "proxy-authenticate", "www-authenticate":
-			// drop
-		default:
+		case "content-type", "content-disposition":
 			ctx.Response.Header.Set(k, v)
 		}
 	}
@@ -3402,13 +3392,7 @@ func (g *GenericRouter) handlePassthroughStream(
 	ctx.Response.Header.Set("Connection", "keep-alive")
 	ctx.Response.Header.Set("X-Accel-Buffering", "no")
 	for k, v := range passthroughResp.Headers {
-		switch strings.ToLower(k) {
-		case "connection", "transfer-encoding", "content-length", "content-type",
-			"cache-control", "x-accel-buffering",
-			"set-cookie", "proxy-authenticate", "www-authenticate":
-			// drop — streaming invariants are set explicitly above (Content-Type is set from the
-			// upstream value before this loop); upstream must not override them here
-		default:
+		if strings.EqualFold(k, "content-disposition") {
 			ctx.Response.Header.Set(k, v)
 		}
 	}

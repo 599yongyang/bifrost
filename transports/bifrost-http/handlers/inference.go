@@ -28,15 +28,12 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-// forwardProviderHeaders forwards provider response headers to the HTTP response.
-func forwardProviderHeaders(ctx *fasthttp.RequestCtx, headers map[string]string) {
-	for key, value := range headers {
-		ctx.Response.Header.Set(key, value)
-	}
+// forwardProviderHeaders intentionally does not expose provider response headers.
+func forwardProviderHeaders(_ *fasthttp.RequestCtx, _ map[string]string) {
 }
 
-// forwardProviderHeadersFromContext extracts provider response headers from the bifrost context
-// and forwards them to the HTTP response. This ensures error responses also include provider headers.
+// forwardProviderHeadersFromContext preserves the call sites that handle provider
+// errors without exposing the provider's response headers.
 func forwardProviderHeadersFromContext(ctx *fasthttp.RequestCtx, bifrostCtx *schemas.BifrostContext) {
 	if headers, ok := bifrostCtx.Value(schemas.BifrostContextKeyProviderResponseHeaders).(map[string]string); ok {
 		forwardProviderHeaders(ctx, headers)
@@ -1917,13 +1914,7 @@ func (h *CompletionHandler) handleStreamingResponse(ctx *fasthttp.RequestCtx, bi
 	ctx.Response.Header.Set("Cache-Control", "no-cache")
 	ctx.Response.Header.Set("Connection", "keep-alive")
 
-	// Forward provider response headers stored in context by streaming handlers
-	if headers, ok := bifrostCtx.Value(schemas.BifrostContextKeyProviderResponseHeaders).(map[string]string); ok {
-		forwardProviderHeaders(ctx, headers)
-	}
-
-	// Routed-identity headers from the context snapshot — routing is final once
-	// the stream channel is returned, before any chunk arrives.
+	// Routed identity is intentionally not exposed on public responses.
 	lib.ApplyBifrostStreamResponseHeaders(ctx, bifrostCtx, requestType)
 
 	// Signal to tracing middleware that trace completion should be deferred
