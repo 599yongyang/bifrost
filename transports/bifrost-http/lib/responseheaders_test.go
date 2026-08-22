@@ -2,6 +2,7 @@ package lib
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -9,6 +10,32 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/valyala/fasthttp"
 )
+
+func TestRoutedIdentityHeaderNamesUseMoonPrefix(t *testing.T) {
+	headerNames := []string{
+		HeaderBifrostProvider,
+		HeaderBifrostOriginalModel,
+		HeaderBifrostResolvedModel,
+		HeaderBifrostFallbackIndex,
+		HeaderBifrostRequestType,
+		HeaderBifrostUpstreamLatency,
+		HeaderBifrostRoutingInfoProvider,
+		HeaderBifrostRoutingInfoModel,
+		HeaderBifrostRoutingInfoKey,
+		HeaderBifrostRoutingInfoAliasModelID,
+		HeaderBifrostRoutingInfoAliasModelName,
+		HeaderBifrostRoutingInfoAliasModelFamily,
+		HeaderBifrostRoutingInfoIsFallback,
+		HeaderBifrostRoutingInfoPrimaryProvider,
+		HeaderBifrostRoutingInfoPrimaryModel,
+		HeaderBifrostRoutingInfoServerSideFallbackModel,
+	}
+
+	for _, headerName := range headerNames {
+		assert.True(t, strings.HasPrefix(headerName, "x-moon-"), "header %q must use the Moon prefix", headerName)
+		assert.NotContains(t, headerName, "bifrost")
+	}
+}
 
 // TestApplyBifrostResponseHeaders covers the routed-identity headers added so
 // drop-in integration callers (Anthropic SDK against `/anthropic/v1/messages`,
@@ -112,7 +139,7 @@ func TestApplyBifrostResponseHeaders(t *testing.T) {
 			"FallbackIndex=0 means primary succeeded; absence of header is the signal")
 	})
 
-	t.Run("routing info emits full x-bifrost-routing-info-* header set", func(t *testing.T) {
+	t.Run("routing info emits full x-moon-routing-info-* header set", func(t *testing.T) {
 		ctx := &fasthttp.RequestCtx{}
 		bifrostCtx := newBifrostCtx()
 

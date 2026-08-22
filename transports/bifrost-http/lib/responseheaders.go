@@ -1,7 +1,7 @@
 package lib
 
 // Routed-identity response headers. Shared by the native `/v1` handlers and
-// the drop-in integration routes: both surfaces emit the same `x-bifrost-*`
+// the drop-in integration routes: both surfaces emit the same `x-moon-*`
 // header contract on successful responses, so the writer lives here rather
 // than in either package.
 
@@ -27,32 +27,32 @@ import (
 // Naming follows the existing `x-bf-*` request-side convention (see
 // `x-bf-vk`, `x-bf-key-id`, etc.).
 const (
-	HeaderBifrostProvider      = "x-bifrost-provider"
-	HeaderBifrostOriginalModel = "x-bifrost-original-model"
-	HeaderBifrostResolvedModel = "x-bifrost-resolved-model"
-	HeaderBifrostFallbackIndex = "x-bifrost-fallback-index"
-	HeaderBifrostRequestType   = "x-bifrost-request-type"
+	HeaderBifrostProvider      = "x-moon-provider"
+	HeaderBifrostOriginalModel = "x-moon-original-model"
+	HeaderBifrostResolvedModel = "x-moon-resolved-model"
+	HeaderBifrostFallbackIndex = "x-moon-fallback-index"
+	HeaderBifrostRequestType   = "x-moon-request-type"
 	// Cumulative milliseconds this request spent blocked on upstream sockets,
 	// summed across every attempt and fallback. Subtract from the caller's own
 	// elapsed time to get what Bifrost cost. Distinct from the per-attempt
 	// latency in the response body's extra_fields, which only holds the last try.
-	HeaderBifrostUpstreamLatency = "x-bifrost-upstream-latency-ms"
+	HeaderBifrostUpstreamLatency = "x-moon-upstream-latency-ms"
 )
 
 // Headers mirroring the non-deprecated ExtraFields.RoutingInfo fields 1:1.
 // Emitted alongside the deprecated set above so header consumers get both
 // generations, matching the JSON body contract on native routes.
 const (
-	HeaderBifrostRoutingInfoProvider                = "x-bifrost-routing-info-provider"
-	HeaderBifrostRoutingInfoModel                   = "x-bifrost-routing-info-model"
-	HeaderBifrostRoutingInfoKey                     = "x-bifrost-routing-info-key"
-	HeaderBifrostRoutingInfoAliasModelID            = "x-bifrost-routing-info-alias-model-id"
-	HeaderBifrostRoutingInfoAliasModelName          = "x-bifrost-routing-info-alias-model-name"
-	HeaderBifrostRoutingInfoAliasModelFamily        = "x-bifrost-routing-info-alias-model-family"
-	HeaderBifrostRoutingInfoIsFallback              = "x-bifrost-routing-info-is-fallback"
-	HeaderBifrostRoutingInfoPrimaryProvider         = "x-bifrost-routing-info-primary-provider"
-	HeaderBifrostRoutingInfoPrimaryModel            = "x-bifrost-routing-info-primary-model"
-	HeaderBifrostRoutingInfoServerSideFallbackModel = "x-bifrost-routing-info-server-side-fallback-model"
+	HeaderBifrostRoutingInfoProvider                = "x-moon-routing-info-provider"
+	HeaderBifrostRoutingInfoModel                   = "x-moon-routing-info-model"
+	HeaderBifrostRoutingInfoKey                     = "x-moon-routing-info-key"
+	HeaderBifrostRoutingInfoAliasModelID            = "x-moon-routing-info-alias-model-id"
+	HeaderBifrostRoutingInfoAliasModelName          = "x-moon-routing-info-alias-model-name"
+	HeaderBifrostRoutingInfoAliasModelFamily        = "x-moon-routing-info-alias-model-family"
+	HeaderBifrostRoutingInfoIsFallback              = "x-moon-routing-info-is-fallback"
+	HeaderBifrostRoutingInfoPrimaryProvider         = "x-moon-routing-info-primary-provider"
+	HeaderBifrostRoutingInfoPrimaryModel            = "x-moon-routing-info-primary-model"
+	HeaderBifrostRoutingInfoServerSideFallbackModel = "x-moon-routing-info-server-side-fallback-model"
 )
 
 // ApplyBifrostStreamResponseHeaders emits the routed-identity headers for a
@@ -91,7 +91,7 @@ func ApplyBifrostErrorResponseHeaders(ctx *fasthttp.RequestCtx, bifrostCtx *sche
 }
 
 // ApplyBifrostResponseHeaders writes both the upstream provider response
-// headers (forwarded verbatim) and the bifrost-level `x-bifrost-*` routing
+// headers (forwarded verbatim) and the gateway-level `x-moon-*` routing
 // identity headers onto the fasthttp response. Empty fields are skipped so
 // the headers never appear with a blank value. Safe to call when the caller
 // didn't populate `extra` — the zero value for ExtraFields produces no

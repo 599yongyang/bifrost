@@ -1232,7 +1232,7 @@ func (m *TracingMiddleware) Middleware() schemas.BifrostHTTPMiddleware {
 				headerTraceID = traceID
 			}
 			ctx.Response.Header.Set("x-request-id", requestID)
-			ctx.Response.Header.Set("x-bifrost-trace-id", headerTraceID)
+			ctx.Response.Header.Set("x-moon-trace-id", headerTraceID)
 			// Store dimensions and session ID at the trace level (not as span
 			// attributes) so connectors like BigQuery can export them without
 			// changing the OTEL/Datadog span payloads.
