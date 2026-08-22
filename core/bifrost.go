@@ -5325,6 +5325,45 @@ func (bifrost *Bifrost) handleStreamRequest(ctx *schemas.BifrostContext, req *sc
 	return nil, primaryErr
 }
 
+// validateImageResponse rejects successful-looking image responses that do not
+// contain a usable image. Some OpenAI-compatible providers return HTTP 200 with
+// only revised_prompt or usage metadata when generation failed internally.
+func validateImageResponse(requestType schemas.RequestType, response *schemas.BifrostResponse) *schemas.BifrostError {
+	switch requestType {
+	case schemas.ImageGenerationRequest, schemas.ImageEditRequest, schemas.ImageVariationRequest:
+	default:
+		return nil
+	}
+
+	if response == nil || response.ImageGenerationResponse == nil {
+		return invalidImageResponseError("response contains no image data")
+	}
+	if len(response.ImageGenerationResponse.Data) == 0 {
+		return invalidImageResponseError("response contains no generated images")
+	}
+	for index, image := range response.ImageGenerationResponse.Data {
+		if strings.TrimSpace(image.URL) == "" && strings.TrimSpace(image.B64JSON) == "" {
+			return invalidImageResponseError(fmt.Sprintf("image %d has neither url nor b64_json", index))
+		}
+	}
+	return nil
+}
+
+func invalidImageResponseError(reason string) *schemas.BifrostError {
+	statusCode := fasthttp.StatusBadGateway
+	errorType := "invalid_image_response"
+	allowFallbacks := true
+	return &schemas.BifrostError{
+		StatusCode:     &statusCode,
+		Type:           &errorType,
+		AllowFallbacks: &allowFallbacks,
+		Error: &schemas.ErrorField{
+			Type:    &errorType,
+			Message: "upstream provider returned an invalid image response: " + reason,
+		},
+	}
+}
+
 // tryRequest is a generic function that handles common request processing logic
 // It consolidates queue setup, plugin pipeline execution, enqueue logic, and response handling
 func (bifrost *Bifrost) tryRequest(ctx *schemas.BifrostContext, req *schemas.BifrostRequest) (*schemas.BifrostResponse, *schemas.BifrostError) {
@@ -5477,7 +5516,12 @@ func (bifrost *Bifrost) tryRequest(ctx *schemas.BifrostContext, req *schemas.Bif
 	pluginCount := len(*bifrost.llmPlugins.Load())
 	select {
 	case result = <-msg.Response:
-		resp, bifrostErr := pipeline.RunPostLLMHooks(msg.Context, result, nil, pluginCount)
+		providerResultErr := validateImageResponse(req.RequestType, result)
+		postHookResult := result
+		if providerResultErr != nil {
+			postHookResult = nil
+		}
+		resp, bifrostErr := pipeline.RunPostLLMHooks(msg.Context, postHookResult, providerResultErr, pluginCount)
 		if bifrostErr != nil {
 			bifrostErr.PopulateExtraFields(req.RequestType, provider, model, model)
 		} else if resp != nil {
