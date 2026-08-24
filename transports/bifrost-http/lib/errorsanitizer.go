@@ -16,6 +16,10 @@ func SanitizeBifrostErrorForClient(err *schemas.BifrostError) *schemas.BifrostEr
 	}
 
 	sanitized := *err
+	// Upstream IDs are an operator-only log correlation aid. Keep them out of
+	// public API error bodies even when the rest of the error is client-safe.
+	sanitized.ExtraFields.UpstreamRequestID = ""
+	sanitized.ExtraFields.UpstreamResponseHeaders = nil
 	if err.ExtraFields.TimeoutSource != "" {
 		sanitized.ExtraFields.RawRequest = nil
 		sanitized.ExtraFields.RawResponse = nil

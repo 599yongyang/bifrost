@@ -1049,6 +1049,8 @@ const en = {
 			colLatency: "Latency",
 			colTokens: "Tokens",
 			colCost: "Cost",
+			upstreamRequestId: "Upstream Request ID",
+			upstreamResponseInfo: "Upstream Response Information",
 			latencyFilter: {
 				title: "Latency",
 				minimum: "Minimum (seconds)",

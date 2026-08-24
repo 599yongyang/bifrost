@@ -2019,6 +2019,14 @@ type BifrostErrorExtraFields struct {
 	ConfiguredTimeoutSeconds  int                   `json:"configured_timeout_seconds,omitempty"`
 	ElapsedMS                 int64                 `json:"elapsed_ms,omitempty"`
 	UpstreamResponseReceived  *bool                 `json:"upstream_response_received,omitempty"`
+	// UpstreamRequestID is a safe, provider-issued correlation ID captured from
+	// an allowlisted response header. It is persisted for operator support but
+	// removed from HTTP error responses before they reach API callers.
+	UpstreamRequestID         string                `json:"upstream_request_id,omitempty"`
+	// UpstreamResponseHeaders contains a small allowlist of safe, operational
+	// response headers (request IDs, rate-limit state, and retry timing). It is
+	// persisted for internal troubleshooting and stripped from API error bodies.
+	UpstreamResponseHeaders   map[string]string     `json:"upstream_response_headers,omitempty"`
 	KeyStatuses               []KeyStatus           `json:"key_statuses,omitempty"`
 	MCPAuthRequired           *MCPAuthRequiredError `json:"mcp_auth_required,omitempty"` // Set when a per-user MCP tool requires the caller to complete an inline auth flow (OAuth or headers)
 	// BilledUsage carries provider-reported token usage that was consumed even

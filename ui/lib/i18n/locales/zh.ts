@@ -1020,6 +1020,8 @@ const zh = {
 			colLatency: "延迟",
 			colTokens: "令牌",
 			colCost: "费用",
+			upstreamRequestId: "上游请求 ID",
+			upstreamResponseInfo: "上游响应信息",
 			latencyFilter: {
 				title: "请求耗时",
 				minimum: "最小值（秒）",

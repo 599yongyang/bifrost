@@ -2292,6 +2292,35 @@ export function LogDetailView({
 									))}
 								</div>
 							) : null}
+							{log.error_details?.extra_fields?.upstream_request_id ? (
+								<div className="mt-3 grid grid-cols-[minmax(120px,auto)_1fr] gap-3 rounded-sm border border-red-200/70 bg-white/40 px-3 py-2 text-[12px] dark:border-red-900/70 dark:bg-red-950/40">
+									<span className="font-medium text-red-700 dark:text-red-400">{i18n.t("workspace.logs.upstreamRequestId")}</span>
+									<span className="flex min-w-0 items-center gap-2 break-all font-mono text-red-900 dark:text-red-300">
+										{log.error_details.extra_fields.upstream_request_id}
+										<CopyInlineButton text={log.error_details.extra_fields.upstream_request_id} />
+									</span>
+								</div>
+							) : null}
+							{log.error_details?.extra_fields?.upstream_response_headers &&
+							Object.keys(log.error_details.extra_fields.upstream_response_headers).length > 0 ? (
+								<details className="group mt-3 rounded-sm border border-red-200/70 bg-white/40 dark:border-red-900/70 dark:bg-red-950/40">
+									<summary className="flex cursor-pointer items-center justify-between px-3 py-2 text-[12px] text-red-700 hover:bg-red-50/80 dark:text-red-400 dark:hover:bg-red-950/60">
+										<span className="font-medium">{i18n.t("workspace.logs.upstreamResponseInfo")}</span>
+										<ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
+									</summary>
+									<div className="grid gap-2 border-t border-red-200/70 px-3 py-2 text-[12px] dark:border-red-900/70">
+										{Object.entries(log.error_details.extra_fields.upstream_response_headers).map(([name, value]) => (
+											<div key={name} className="grid grid-cols-[minmax(120px,auto)_1fr] gap-3">
+												<span className="font-medium text-red-700 dark:text-red-400">{name}</span>
+												<span className="flex min-w-0 items-center gap-2 break-all font-mono text-red-900 dark:text-red-300">
+													{value}
+													<CopyInlineButton text={value} />
+												</span>
+											</div>
+										))}
+									</div>
+								</details>
+							) : null}
 							{log.error_details?.error.error != null ? (
 								<details className="group mt-3 rounded-sm border border-red-200/70 bg-white/40 dark:border-red-900/70 dark:bg-red-950/40">
 									<summary className="flex cursor-pointer items-center justify-between px-3 py-2 text-[12px] text-red-700 hover:bg-red-50/80 dark:text-red-400 dark:hover:bg-red-950/60">

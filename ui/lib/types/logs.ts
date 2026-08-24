@@ -467,6 +467,8 @@ export interface BifrostError {
 		configured_timeout_seconds?: number;
 		elapsed_ms?: number;
 		upstream_response_received?: boolean;
+		upstream_request_id?: string;
+		upstream_response_headers?: Record<string, string>;
 		[key: string]: unknown;
 	};
 }
