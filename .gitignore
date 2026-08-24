@@ -191,6 +191,8 @@ tests/e2e/api/routing/ledger-*
 
 # Build artifacts
 */build/
+*.tar
+.tmp-go-cache/
 *.so
 *.dll
 *.dylib
