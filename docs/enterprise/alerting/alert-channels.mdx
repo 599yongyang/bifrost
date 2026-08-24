@@ -1,8 +1,8 @@
 ---
 title: "Alert Channels"
-description: "Configure where Bifrost Enterprise delivers alerts - Slack, Microsoft Teams, PagerDuty, or any HTTP webhook - with encrypted configuration, SSRF protection, and per-channel cooldowns."
+description: "Configure where Bifrost Enterprise delivers alerts - Slack, Microsoft Teams, WeCom, PagerDuty, or any HTTP webhook - with encrypted configuration and SSRF protection."
 icon: "megaphone"
-keywords: ["alert channels", "slack", "microsoft teams", "pagerduty", "webhook", "notifications"]
+keywords: ["alert channels", "slack", "microsoft teams", "wecom", "企业微信", "pagerduty", "webhook", "notifications"]
 ---
 
 ## Overview
@@ -15,10 +15,22 @@ An **alert channel** is a notification destination. When an [alert rule](/enterp
 | --- | --- | --- | --- |
 | **Slack** | `slack` | `webhook_url` (or `url`) | Slack Block Kit message with header and message section. |
 | **Microsoft Teams** | `microsoft_teams` | `webhook_url` (or `url`) | Adaptive Card (28 KB payload limit). |
+| **WeCom (企业微信)** | `wecom` | `webhook_url` (or `url`) | Dynamic Markdown message (4,096-byte content limit). |
 | **PagerDuty** | `pagerduty` | `routing_key` (or `integration_key`) | PagerDuty Events API v2 event. |
 | **Webhook** | `webhook` | `url` (or `webhook_url`) | Generic JSON payload. |
 
-Every channel also accepts an optional `name`, an optional `description`, and an optional per-channel cooldown.
+Every channel also accepts a display name and an optional description. Repeated notifications are controlled by the alert rule's cooldown, not by the destination.
+
+## Test a channel
+
+Use **Send test** in the Channels list to verify the saved destination and credentials before attaching the channel to production rules. The test uses the same validation, SSRF protection, payload formatter, and HTTP client as a real notification, but it does not create an alert-history record.
+
+```bash
+curl -X POST https://your-bifrost-gateway/api/alerting/channels/{channel-id}/test \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+Test payloads are explicitly marked: generic webhooks receive `event: "alert.test"`, PagerDuty receives `severity: "info"`, and human-facing messages include **Bifrost test notification**.
 
 ---
 
@@ -63,6 +75,24 @@ Provide a Teams incoming webhook or Workflows URL.
 ```
 
 Notifications are sent as Adaptive Cards. Teams enforces a **28 KB** payload limit.
+
+---
+
+## WeCom (企业微信)
+
+Create a group robot in WeCom and copy its webhook URL. Bifrost generates the Markdown body at delivery time from the matched rule and its current evaluation input, including provider, model, error rate, request counts, rolling window, expression, and trigger time when available.
+
+```json
+{
+  "name": "平台告警群",
+  "type": "wecom",
+  "config": {
+    "webhook_url": "env.WECOM_WEBHOOK_URL"
+  }
+}
+```
+
+WeCom may return HTTP 200 for an application-level failure. Bifrost parses `errcode` and only records the delivery as successful when it is `0`. Markdown content is truncated safely to WeCom's 4,096-byte limit.
 
 ---
 
@@ -134,16 +164,6 @@ Send a generic JSON payload to any HTTPS endpoint.
 
 ---
 
-## Cooldowns
-
-Each channel can define an optional cooldown that applies on top of the rule's cooldown. When a channel is within its cooldown window, matched alerts that would have been delivered through that channel are recorded as `skipped` in [alert history](/enterprise/alerting/alert-history) with reason `"channel_cooldown"`.
-
-- A channel cooldown of `0` means no additional suppression beyond the rule cooldown.
-- The API accepts `cooldown_milliseconds`, which must be a multiple of 1000.
-- `config.json` accepts `cooldown_seconds`, a whole-second integer.
-
----
-
 ## Security
 
 All channels enforce network safety controls:
@@ -166,13 +186,13 @@ Enabling `allow_http` or `allow_private_network` weakens TLS or SSRF protections
 Open **Alerting** in the Bifrost dashboard, go to the **Channels** tab, and click **Add Channel**.
 
 <Frame>
-  <img src="/media/alerting/alerting-channels-list.png" alt="Alert Channels list showing name, type, cooldown, and status columns" />
+  <img src="/media/alerting/alerting-channels-list.png" alt="Alert Channels list showing name, type, and status columns" />
 </Frame>
 
 1. Enter a **Channel Name** and optional **Description**.
-2. Select a **Channel Type**: Slack, Microsoft Teams, PagerDuty, or Webhook.
+2. Select a **Channel Type**: Slack, Microsoft Teams, WeCom, PagerDuty, or Webhook.
 3. Provide the type-specific configuration (webhook URL, routing key, etc.).
-4. Optionally set a **Channel Cooldown** and, for webhooks, **Custom Headers**.
+4. For generic webhooks, optionally provide **Custom Headers**.
 
 <Frame>
   <img src="/media/alerting/alerting-create-channel.png" alt="Create Alert Channel dialog showing name, channel type, and Slack webhook URL fields" />
@@ -204,7 +224,7 @@ curl -X POST https://your-bifrost-gateway/api/alerting/channels \
   }'
 ```
 
-To create a webhook with a per-channel cooldown:
+To create a generic webhook:
 
 ```bash
 curl -X POST https://your-bifrost-gateway/api/alerting/channels \
@@ -216,8 +236,7 @@ curl -X POST https://your-bifrost-gateway/api/alerting/channels \
     "config": {
       "url": "https://hooks.example.com/alerts",
       "headers": { "X-API-Key": "secret" }
-    },
-    "cooldown_milliseconds": 60000
+    }
   }'
 ```
 
@@ -238,8 +257,7 @@ Channels can be declared statically in the `alerting` section of `config.json`. 
         "enabled": true,
         "config": {
           "webhook_url": "https://hooks.slack.com/services/xxx"
-        },
-        "cooldown_seconds": 60
+        }
       },
       {
         "id": "pagerduty-critical",

@@ -1196,15 +1196,15 @@ bifrost:
   # Rendered directly as top-level `alerting` in config.json.
   # alerting:
   #   history_retention_days: 365   # Days to retain alert history (0 = no pruning)
+  #   evaluation_interval_seconds: 60 # Alert rule sweep interval (5-3600)
   #   webhook_network:
   #     allow_http: false            # Allow http (not just https) webhook URLs
   #     allow_private_network: false # Allow webhooks targeting private/loopback addresses
   #   channels:
   #     - id: "slack-ops"
   #       name: "Ops Slack"
-  #       type: slack                # Options: slack, microsoft_teams, pagerduty, webhook
+  #       type: slack                # Options: slack, microsoft_teams, wecom, pagerduty, webhook
   #       enabled: true
-  #       cooldown_seconds: 300
   #       config:
   #         webhook_url: "env.SLACK_WEBHOOK_URL"
   #     - id: "pagerduty-critical"
@@ -1231,7 +1231,7 @@ bifrost:
   #     - id: "budget-80pct"
   #       name: "Budget 80% Alert"
   #       enabled: true
-  #       scope_type: virtual_key    # Options: virtual_key, team, customer
+  #       scope_type: virtual_key    # Options: virtual_key, team, customer, provider
   #       scope_id: "vk-1"
   #       cel_expression: "budget_usage_percent >= 80"
   #       cooldown_seconds: 3600
@@ -1240,6 +1240,19 @@ bifrost:
   #       # Optionally target a specific budget:
   #       # target_type: budget
   #       # target_id: "budget-1"
+  #     - id: "openai-error-rate"
+  #       name: "OpenAI error rate above 10%"
+  #       enabled: true
+  #       scope_type: provider
+  #       scope_id: "openai"
+  #       cel_expression: "provider_request_count >= 100 && provider_error_rate >= 10.0"
+  #       window_seconds: 300
+  #       min_requests: 100
+  #       cooldown_seconds: 900
+  #       channel_ids: ["slack-ops"]
+  #       # Optionally restrict the provider rule to one model:
+  #       # target_type: model
+  #       # target_id: "gpt-4o"
 
   # Webhooks: endpoint declarations synced into the database at startup, reconciled by name.
   # Rendered directly as top-level `webhooks` in config.json.

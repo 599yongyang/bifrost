@@ -239,7 +239,7 @@ export function CELRuleBuilder({
 
 			{mode === "builder" && (
 				<div className="rounded-md border">
-					<div className="custom-scrollbar flex w-full flex-col overflow-scroll">
+					<div className="custom-scrollbar flex w-full min-w-0 flex-col overflow-x-hidden overflow-y-visible">
 						<QueryBuilderWrapper>
 							<QueryBuilder
 								fields={fields}
@@ -275,14 +275,7 @@ export function CELRuleBuilder({
 				<div className="space-y-2">
 					<div className="flex items-center justify-between">
 						<Label>{mode === "cel" ? "CEL Expression" : "CEL Expression Preview"}</Label>
-						<Button
-							variant="outline"
-							size="sm"
-							onClick={() => copy(copyValue)}
-							disabled={!copyValue}
-							className="gap-2"
-							type="button"
-						>
+						<Button variant="outline" size="sm" onClick={() => copy(copyValue)} disabled={!copyValue} className="gap-2" type="button">
 							{copied ? (
 								<>
 									<Check className="h-4 w-4" />
@@ -326,8 +319,8 @@ export function CELRuleBuilder({
 					<AlertDialogHeader>
 						<AlertDialogTitle>{i18n.t("supplemental.switchVisualBuilder")}</AlertDialogTitle>
 						<AlertDialogDescription>
-							The visual builder can&apos;t import a hand-written CEL expression, so your current CEL will be discarded and the builder
-							will start empty. Copy it first if you want to keep it.
+							The visual builder can&apos;t import a hand-written CEL expression, so your current CEL will be discarded and the builder will
+							start empty. Copy it first if you want to keep it.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>

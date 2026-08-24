@@ -49,6 +49,7 @@ import (
 	"github.com/maximhq/bifrost/plugins/prompts"
 	"github.com/maximhq/bifrost/plugins/semanticcache"
 	"github.com/maximhq/bifrost/plugins/telemetry"
+	alertengine "github.com/maximhq/bifrost/transports/bifrost-http/alerting"
 	"gorm.io/gorm"
 )
 
@@ -178,6 +179,7 @@ type ConfigData struct {
 	Plugins           []*schemas.PluginConfig               `json:"plugins,omitempty"`
 	WebSocket         *schemas.WebSocketConfig              `json:"websocket,omitempty"`
 	FeatureFlags      *FeatureFlagsFileConfig               `json:"feature_flags,omitempty"`
+	Alerting          *alertengine.Config                   `json:"alerting,omitempty"`
 
 	presentSections           map[string]bool
 	presentGovernanceSections map[string]bool
@@ -435,6 +437,7 @@ func (cd *ConfigData) UnmarshalJSON(data []byte) error {
 		Plugins           []*schemas.PluginConfig               `json:"plugins,omitempty"`
 		WebSocket         *schemas.WebSocketConfig              `json:"websocket,omitempty"`
 		FeatureFlags      *FeatureFlagsFileConfig               `json:"feature_flags,omitempty"`
+		Alerting          *alertengine.Config                   `json:"alerting,omitempty"`
 		SkillsRegistry    *SkillsRegistryConfig                 `json:"skills_registry,omitempty"`
 	}
 
@@ -458,6 +461,7 @@ func (cd *ConfigData) UnmarshalJSON(data []byte) error {
 	cd.Plugins = temp.Plugins
 	cd.WebSocket = temp.WebSocket
 	cd.FeatureFlags = temp.FeatureFlags
+	cd.Alerting = temp.Alerting
 	cd.presentGovernanceSections = nil
 	if rawGovernance, ok := raw["governance"]; ok && len(rawGovernance) > 0 {
 		var rawGovernanceFields map[string]json.RawMessage
@@ -605,7 +609,8 @@ type Config struct {
 	// featureflags.Register; this struct holds the effective state with
 	// layered overrides (DB then file). May be wired with a SyncDelegate
 	// by enterprise for cluster-wide gossip.
-	FeatureFlags *featureflags.Store
+	FeatureFlags   *featureflags.Store
+	AlertingConfig *alertengine.Config
 
 	// Catalog managers
 	ModelCatalog *modelcatalog.ModelCatalog
@@ -913,6 +918,7 @@ func LoadConfig(ctx context.Context, configDirPath string) (*Config, error) {
 			applyV1Compat(&configData)
 		}
 	}
+	config.AlertingConfig = configData.Alerting
 
 	// 1. Encryption (before stores so BeforeSave hooks work correctly)
 	if err := initEncryption(&configData); err != nil {

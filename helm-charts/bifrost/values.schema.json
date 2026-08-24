@@ -3399,6 +3399,13 @@
               "default": 365,
               "description": "Days to retain alert history (0 = no pruning)"
             },
+            "evaluation_interval_seconds": {
+              "type": "integer",
+              "minimum": 5,
+              "maximum": 3600,
+              "default": 60,
+              "description": "Seconds between alert rule evaluation sweeps"
+            },
             "webhook_network": {
               "type": "object",
               "description": "Outbound URL validation controls for webhook-based alert channels",
@@ -3418,7 +3425,7 @@
             },
             "channels": {
               "type": "array",
-              "description": "Declarative alert channels (Slack, Microsoft Teams, PagerDuty, generic webhook)",
+              "description": "Declarative alert channels (Slack, Microsoft Teams, WeCom, PagerDuty, generic webhook)",
               "items": {
                 "type": "object",
                 "properties": {
@@ -3427,18 +3434,13 @@
                   "description": { "type": "string" },
                   "type": {
                     "type": "string",
-                    "enum": ["slack", "microsoft_teams", "pagerduty", "webhook"],
+                    "enum": ["slack", "microsoft_teams", "wecom", "pagerduty", "webhook"],
                     "description": "Channel delivery type"
                   },
                   "enabled": { "type": "boolean" },
-                  "cooldown_seconds": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "description": "Minimum seconds between sends for this channel"
-                  },
                   "config": {
                     "type": "object",
-                    "description": "Channel-specific delivery configuration. Slack and Microsoft Teams use webhook_url or url. PagerDuty uses routing_key or integration_key. Generic webhook uses url or webhook_url, plus optional string headers.",
+                    "description": "Channel-specific delivery configuration. Slack, Microsoft Teams, and WeCom use webhook_url or url. PagerDuty uses routing_key or integration_key. Generic webhook uses url or webhook_url, plus optional string headers.",
                     "additionalProperties": true
                   }
                 },
@@ -3489,6 +3491,36 @@
                               "minLength": 1,
                               "anyOf": [{ "format": "uri" }, { "pattern": "^env\\.[A-Za-z_][A-Za-z0-9_]*$" }],
                               "description": "Microsoft Teams incoming webhook or workflow URL. Supports env.VAR_NAME references."
+                            },
+                            "url": {
+                              "type": "string",
+                              "minLength": 1,
+                              "anyOf": [{ "format": "uri" }, { "pattern": "^env\\.[A-Za-z_][A-Za-z0-9_]*$" }],
+                              "description": "Alias for webhook_url. Supports env.VAR_NAME references."
+                            }
+                          },
+                          "oneOf": [{ "required": ["webhook_url"] }, { "required": ["url"] }],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": ["config"]
+                    }
+                  },
+                  {
+                    "if": {
+                      "properties": { "type": { "const": "wecom" } },
+                      "required": ["type"]
+                    },
+                    "then": {
+                      "properties": {
+                        "config": {
+                          "type": "object",
+                          "properties": {
+                            "webhook_url": {
+                              "type": "string",
+                              "minLength": 1,
+                              "anyOf": [{ "format": "uri" }, { "pattern": "^env\\.[A-Za-z_][A-Za-z0-9_]*$" }],
+                              "description": "WeCom group robot webhook URL. Supports env.VAR_NAME references."
                             },
                             "url": {
                               "type": "string",
@@ -3583,8 +3615,8 @@
                   "enabled": { "type": "boolean" },
                   "scope_type": {
                     "type": "string",
-                    "enum": ["virtual_key", "team", "customer"],
-                    "description": "Governance owner scope to evaluate"
+                    "enum": ["virtual_key", "team", "customer", "provider"],
+                    "description": "Scope to evaluate; provider scopes aggregate completed attempts from the logs store"
                   },
                   "scope_id": { "type": "string", "description": "ID of the virtual key, team, or customer" },
                   "cel_expression": {
@@ -3602,6 +3634,19 @@
                     "default": 60,
                     "description": "Minimum seconds between notifications for this rule"
                   },
+                  "window_seconds": {
+                    "type": "integer",
+                    "minimum": 60,
+                    "maximum": 2592000,
+                    "default": 300,
+                    "description": "Rolling logs window used by provider error-rate rules"
+                  },
+                  "min_requests": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 1,
+                    "description": "Minimum completed requests before a provider rule may trigger"
+                  },
                   "notify_once_per_reset_cycle": {
                     "type": "boolean",
                     "default": false,
@@ -3611,17 +3656,26 @@
                     "type": "array",
                     "description": "IDs of channels to notify when this rule matches",
                     "items": { "type": "string", "minLength": 1 },
-                    "minItems": 1
+                    "minItems": 1,
+                    "uniqueItems": true
                   },
                   "target_type": {
                     "type": "string",
-                    "enum": ["budget"],
-                    "description": "Explicit target type; pair with target_id to evaluate one specific budget"
+                    "enum": ["budget", "model"],
+                    "description": "Governance scopes support budget targets; provider scopes support model targets"
                   },
                   "target_id": { "type": "string", "description": "ID of the explicit target" }
                 },
                 "required": ["id", "name", "enabled", "scope_type", "scope_id", "cel_expression", "channel_ids"],
                 "allOf": [
+                  {
+                    "if": {
+                      "properties": { "scope_type": { "const": "provider" } },
+                      "required": ["scope_type"]
+                    },
+                    "then": { "properties": { "target_type": { "const": "model" } } },
+                    "else": { "properties": { "target_type": { "const": "budget" } } }
+                  },
                   {
                     "if": {
                       "required": ["target_type"]

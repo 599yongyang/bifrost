@@ -34,6 +34,9 @@ export enum RbacResource {
 	Metrics = "Metrics",
 	FeatureFlags = "FeatureFlags",
 	CircuitBreaker = "CircuitBreaker",
+	AlertRules = "AlertRules",
+	AlertChannels = "AlertChannels",
+	AlertHistory = "AlertHistory",
 }
 
 // RBAC Operation Names (must match backend definitions)

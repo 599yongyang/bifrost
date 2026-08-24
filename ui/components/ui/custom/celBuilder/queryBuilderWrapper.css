@@ -1,5 +1,7 @@
 .query-builder-wrapper .queryBuilder {
 	font-family: inherit;
+	min-width: 0;
+	max-width: 100%;
 }
 
 .query-builder-wrapper .ruleGroup {
@@ -8,6 +10,8 @@
 	border-radius: 0.5rem;
 	margin-left: 0.07rem;
 	margin-bottom: 0.5rem;
+	min-width: 0;
+	max-width: 100%;
 }
 
 .query-builder-wrapper .ruleGroup .ruleGroup {
@@ -26,20 +30,45 @@
 	display: flex;
 	flex-direction: column;
 	padding-left: 1rem;
+	min-width: 0;
+	max-width: 100%;
 }
 
 .query-builder-wrapper .rule {
-	display: flex;
+	display: grid;
+	grid-template-columns: minmax(130px, 180px) minmax(110px, 160px) minmax(140px, 1fr) auto;
 	gap: 0.5rem;
 	align-items: center;
 	padding: 0.5rem;
 	background-color: hsl(var(--background));
 	border: 1px solid hsl(var(--border));
 	border-radius: 0.375rem;
+	min-width: 0;
+	max-width: 100%;
 }
 
 .query-builder-wrapper .rule > * {
-	flex-shrink: 0;
+	min-width: 0;
+	max-width: 100%;
+}
+
+.query-builder-wrapper .rule .rule-fields,
+.query-builder-wrapper .rule .rule-operators,
+.query-builder-wrapper .rule .rule-value,
+.query-builder-wrapper .rule .rule-fields > div,
+.query-builder-wrapper .rule [data-slot="select-trigger"] {
+	width: 100% !important;
+	min-width: 0;
+}
+
+.query-builder-wrapper .rule .rule-remove {
+	justify-self: end;
+}
+
+@media (max-width: 640px) {
+	.query-builder-wrapper .rule {
+		grid-template-columns: minmax(0, 1fr);
+	}
 }
 
 .query-builder-wrapper .ruleGroup-addRule,

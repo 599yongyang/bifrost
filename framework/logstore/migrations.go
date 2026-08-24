@@ -275,6 +275,7 @@ var logstoreMigrationSteps = []migrationStep{
 	{IDs: []string{"logs_add_canonical_model_columns_v2"}, run: migrationAddCanonicalModelColumns},
 	{IDs: []string{"logs_add_redaction_mapping_column"}, run: migrationAddRedactionMappingColumn},
 	{IDs: []string{"webhook_deliveries_init"}, run: migrationCreateWebhookDeliveriesTable},
+	{IDs: []string{"enterprise_alert_history_init"}, run: migrationCreateAlertHistoryTable},
 	{IDs: []string{"async_jobs_add_webhook_endpoint_id_column"}, run: migrationAddWebhookEndpointIDColumn},
 	{IDs: []string{"async_jobs_add_request_id_column"}, run: migrationAddAsyncJobRequestIDColumn},
 	{IDs: []string{"webhook_deliveries_add_request_id_column"}, run: migrationAddWebhookDeliveryRequestIDColumn},
@@ -1609,6 +1610,25 @@ func migrationCreateWebhookDeliveriesTable(ctx context.Context, db *gorm.DB, log
 	err := m.Migrate()
 	if err != nil {
 		return fmt.Errorf("error while creating webhook_deliveries table: %s", err.Error())
+	}
+	return nil
+}
+
+func migrationCreateAlertHistoryTable(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	migrationName := "enterprise_alert_history_init"
+	logger.Info("[logstore] starting migration %s", migrationName)
+	defer logger.Info("[logstore] finished migration %s", migrationName)
+	m := migrator.New(db, migrator.DefaultOptions, []*migrator.Migration{{
+		ID: migrationName,
+		Migrate: func(tx *gorm.DB) error {
+			return tx.WithContext(ctx).AutoMigrate(&AlertHistory{})
+		},
+		Rollback: func(tx *gorm.DB) error {
+			return tx.WithContext(ctx).Migrator().DropTable(&AlertHistory{})
+		},
+	}})
+	if err := m.Migrate(); err != nil {
+		return fmt.Errorf("error creating alert history table: %w", err)
 	}
 	return nil
 }

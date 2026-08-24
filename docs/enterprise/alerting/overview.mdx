@@ -1,15 +1,15 @@
 ---
 title: "Alerting"
-description: "Define CEL-based alert rules over governance metrics and dispatch notifications to Slack, Microsoft Teams, PagerDuty, and webhooks when budgets or rate limits cross your thresholds."
+description: "Define CEL-based alert rules over governance and provider reliability metrics, then dispatch notifications to Slack, Microsoft Teams, WeCom, PagerDuty, and webhooks."
 icon: "bell"
 keywords: ["alerting", "alerts", "notifications", "monitoring", "slack", "pagerduty", "webhook", "cel", "budget", "rate limit"]
 ---
 
 ## Overview
 
-**Alerting** in Bifrost Enterprise evaluates [CEL](https://github.com/google/cel-spec) expressions against live governance metrics - budgets and rate limits - and dispatches notifications through [alert channels](/enterprise/alerting/alert-channels) when a threshold is crossed. Rules are scoped to virtual keys, teams, or customers and can optionally target a specific budget.
+**Alerting** in Bifrost evaluates [CEL](https://github.com/google/cel-spec) expressions against live governance usage or rolling provider reliability metrics. Rules can monitor budgets and rate limits for virtual keys, teams, and customers, or track request errors for a provider and optional model.
 
-Every evaluation and delivery attempt is recorded in [alert history](/enterprise/alerting/alert-history) so you can audit what fired, what was skipped by cooldowns, and what failed to deliver.
+Matched delivery attempts and evaluation failures are recorded in [alert history](/enterprise/alerting/alert-history) so you can audit what fired, what was skipped by cooldowns, and what failed to deliver. Ordinary non-matches are not stored.
 
 Open **Alerting** in the Bifrost dashboard to manage rules, channels, and history.
 
@@ -21,14 +21,16 @@ Open **Alerting** in the Bifrost dashboard to manage rules, channels, and histor
 
 | Feature | Description |
 | --- | --- |
-| **CEL-based rules** | Express conditions as CEL expressions over governance metrics, including compound conditions with `&&` and `\|\|`. |
+| **CEL-based rules** | Express compound conditions over governance usage or provider reliability metrics with `&&` and `\|\|`. |
 | **Governance scopes** | Scope rules to a specific virtual key, team, or customer. |
 | **Budget targeting** | Optionally target a specific budget ID so the rule only evaluates against that budget. |
-| **Multiple channels** | Notify Slack, Microsoft Teams, PagerDuty, or any HTTP webhook. |
+| **Provider reliability** | Evaluate error rate, failures, successes, and request volume over a rolling window with a minimum sample size. |
+| **Multiple channels** | Notify Slack, Microsoft Teams, WeCom, PagerDuty, or any HTTP webhook. |
+| **Channel testing** | Send a clearly marked test notification through a saved channel without creating alert history. |
 | **Periodic evaluation** | Rules are evaluated on a 60-second sweep against current governance snapshots. |
 | **Leader-aware** | In a cluster, only the leader evaluates and dispatches, avoiding duplicate alerts. |
-| **Cooldowns** | Per-rule and optional per-channel cooldowns prevent alert storms. |
-| **Alert history** | Every evaluation outcome is recorded with the rule, scope, metrics, and delivery status. |
+| **Cooldowns** | Per-rule cooldowns prevent repeated notifications without suppressing unrelated rules. |
+| **Alert history** | Matched sends, skips, and failures are recorded with the rule, scope, metrics, and delivery status. |
 
 ---
 
@@ -37,14 +39,14 @@ Open **Alerting** in the Bifrost dashboard to manage rules, channels, and histor
 Bifrost evaluates alert rules on a periodic sweep and dispatches notifications subject to cooldowns.
 
 <Steps>
-  <Step title="Governance snapshots are collected">
-    The alert engine reads the current governance state - budget consumption and rate limit usage - from the in-memory governance store. This includes per-budget spend versus its limit and per-rate-limit request and token usage versus their configured maximums.
+  <Step title="Current metrics are collected">
+    Governance rules read budget and rate-limit usage from the governance snapshot. Provider rules aggregate completed success and error attempts from the logs store for their configured rolling window and optional model.
   </Step>
   <Step title="Rules are evaluated">
-    Each enabled rule's CEL expression is evaluated against the governance metrics for its scope. If the rule has a `target_type` of `"budget"` and a specific `target_id`, only metrics for that budget are used. If no target is specified, the expression is evaluated against every budget in the scope.
+    Each enabled rule's CEL expression is evaluated against its current metrics. Provider rules remain quiet until their minimum sample size is reached.
   </Step>
   <Step title="Cooldowns are applied">
-    When a rule matches, its cooldown suppresses repeat notifications for the same rule, scope, and target. Bifrost checks compact successful-send state in the shared key-value store. Channels can define their own optional cooldown on top of the rule cooldown.
+    When a rule matches, its cooldown suppresses repeat notifications for the same rule, scope, and target. Bifrost checks compact successful-send state in the shared key-value store.
   </Step>
   <Step title="Notifications are dispatched">
     The rule's channels are notified. Every outcome - `sent`, `failed`, or `skipped` - is written to [alert history](/enterprise/alerting/alert-history).
@@ -69,6 +71,13 @@ Each rule's CEL expression can reference the following variables, which are popu
 | `scope_id` | `string` | The rule's scope ID. |
 | `target_type` | `string` | The target type (`"budget"`) if the rule targets a specific budget; empty string otherwise. |
 | `target_id` | `string` | The target budget ID if the rule targets a specific budget; empty string otherwise. |
+| `provider` | `string` | Provider name for provider reliability rules. |
+| `model` | `string` | Optional model restriction for provider reliability rules. |
+| `provider_error_rate` | `double` | Percentage of completed attempts that failed in the rolling window. |
+| `provider_error_count` | `int` | Failed attempts in the rolling window. |
+| `provider_success_count` | `int` | Successful attempts in the rolling window. |
+| `provider_request_count` | `int` | Total completed attempts in the rolling window. |
+| `window_seconds` | `int` | Configured rolling provider window in seconds. |
 
 <Note>
 It's advisable to set `scope_type`, `scope_id`, and `target_type`/`target_id` through the UI's **Scope Type**, **Scope ID**, and **Evaluate On** fields or through `config.json` rather than the condition builder.
@@ -114,7 +123,6 @@ When a target is set, only metrics for that specific budget are evaluated. Rate 
 Alerting uses a dual-layer cooldown system to prevent alert storms:
 
 - **Rule cooldown**: Suppresses repeat notifications for the same rule, scope, and target until the cooldown window elapses. Default is 60 seconds. The cooldown window is measured from the latest successful send for that rule and target.
-- **Channel cooldown**: An optional per-channel cooldown that suppresses a channel after it receives any alert. Default is 0 seconds (no suppression). Useful when one channel (such as PagerDuty) should be notified less frequently than another (such as Slack) for the same rule.
 
 Cooldowns are enforced from compact state in Bifrost's shared key-value store. Successful deliveries update that state before their [alert history](/enterprise/alerting/alert-history) row is appended. On startup, leadership changes, or relevant rule configuration changes, Bifrost rebuilds the required state with bounded aggregate reads from alert history.
 
@@ -162,7 +170,7 @@ Leaving `webhook_network.allow_http` and `webhook_network.allow_private_network`
 
 <CardGroup cols={2}>
   <Card title="Alert Channels" icon="megaphone" href="/enterprise/alerting/alert-channels">
-    Configure where alerts are delivered: Slack, Microsoft Teams, PagerDuty, and webhooks.
+    Configure where alerts are delivered: Slack, Microsoft Teams, WeCom, PagerDuty, and webhooks.
   </Card>
   <Card title="Alert Rules" icon="gavel" href="/enterprise/alerting/alert-rules">
     Define the conditions, scopes, and channels that trigger alerts.

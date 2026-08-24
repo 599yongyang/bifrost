@@ -105,9 +105,23 @@ func SSRFSafeDialContext(dialTimeout time.Duration) func(ctx context.Context, ne
 	return ssrfSafeDialContext(net.DefaultResolver, dialer.DialContext)
 }
 
+// SSRFSafeDialContextAllowPrivate is the private-network counterpart used by
+// explicitly opted-in internal webhooks. It permits loopback and RFC1918/ULA
+// addresses while retaining the dial-time DNS-rebinding guard and always
+// rejecting link-local, unspecified, multicast, broadcast, CGNAT and unsafe
+// IPv4-in-IPv6 transition addresses.
+func SSRFSafeDialContextAllowPrivate(dialTimeout time.Duration) func(ctx context.Context, netw, addr string) (net.Conn, error) {
+	dialer := &net.Dialer{Timeout: dialTimeout}
+	return ssrfSafeDialContextWithPolicy(net.DefaultResolver, dialer.DialContext, true)
+}
+
 // ssrfSafeDialContext is the seam behind SSRFSafeDialContext with injectable
 // resolver and dial for tests.
 func ssrfSafeDialContext(resolver ipLookuper, dial func(ctx context.Context, network, addr string) (net.Conn, error)) func(ctx context.Context, netw, addr string) (net.Conn, error) {
+	return ssrfSafeDialContextWithPolicy(resolver, dial, false)
+}
+
+func ssrfSafeDialContextWithPolicy(resolver ipLookuper, dial func(ctx context.Context, network, addr string) (net.Conn, error), allowPrivate bool) func(ctx context.Context, netw, addr string) (net.Conn, error) {
 	return func(ctx context.Context, netw, addr string) (net.Conn, error) {
 		host, port, err := net.SplitHostPort(addr)
 		if err != nil {
@@ -121,10 +135,28 @@ func ssrfSafeDialContext(resolver ipLookuper, dial func(ctx context.Context, net
 			return nil, fmt.Errorf("DNS lookup for %s returned no addresses", host)
 		}
 		for _, ip := range ips {
-			if !IsPublicIP(ip) {
+			if !isSafeDialIP(ip, allowPrivate) {
 				return nil, fmt.Errorf("blocked connection to non-public address %s (host %s)", ip, host)
 			}
 		}
 		return dial(ctx, netw, net.JoinHostPort(ips[0].String(), port))
 	}
+}
+
+func isSafeDialIP(ip net.IP, allowPrivate bool) bool {
+	if IsPublicIP(ip) {
+		return true
+	}
+	if !allowPrivate {
+		return false
+	}
+	addr, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		return false
+	}
+	addr = addr.Unmap()
+	if embedded, ok := embeddedIPv4(addr); ok {
+		addr = embedded
+	}
+	return addr.IsLoopback() || addr.IsPrivate()
 }

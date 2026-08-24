@@ -170,3 +170,33 @@ func TestSSRFSafeDialContextBlocksLoopbackLiteral(t *testing.T) {
 		t.Fatalf("expected blocked-connection error, got %v", err)
 	}
 }
+
+func TestSSRFSafeDialContextAllowPrivateStillBlocksLinkLocal(t *testing.T) {
+	tests := []struct {
+		name    string
+		ip      string
+		allowed bool
+	}{
+		{"private rfc1918", "10.0.0.5", true},
+		{"loopback", "127.0.0.1", true},
+		{"public", "93.184.216.34", true},
+		{"metadata link-local", "169.254.169.254", false},
+		{"ipv6 link-local", "fe80::1", false},
+		{"cgnat", "100.64.0.1", false},
+		{"unspecified", "0.0.0.0", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resolver := &fakeResolver{ips: []net.IP{net.ParseIP(tt.ip)}}
+			dialErr := errors.New("dial reached")
+			dial := ssrfSafeDialContextWithPolicy(resolver, func(context.Context, string, string) (net.Conn, error) { return nil, dialErr }, true)
+			_, err := dial(context.Background(), "tcp", "target.example:80")
+			if tt.allowed && !errors.Is(err, dialErr) {
+				t.Fatalf("expected dial for %s, got %v", tt.ip, err)
+			}
+			if !tt.allowed && (err == nil || errors.Is(err, dialErr)) {
+				t.Fatalf("expected %s to be blocked, got %v", tt.ip, err)
+			}
+		})
+	}
+}

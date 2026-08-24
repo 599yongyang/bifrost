@@ -451,6 +451,11 @@ var configstoreMigrationSteps = []migrationStep{
 	{IDs: []string{"add_dual_credential_conflict_behavior_column"}, run: migrationAddDualCredentialConflictBehaviorColumn},
 	{IDs: []string{"add_webhook_endpoints_table"}, run: migrationAddWebhookEndpointsTable},
 	{IDs: []string{"add_webhook_jobs_table"}, run: migrationAddWebhookJobsTable},
+	{IDs: []string{"add_alerting_tables"}, run: migrationAddAlertingTables},
+	{IDs: []string{"add_provider_error_alert_fields"}, run: migrationAddProviderErrorAlertFields},
+	{IDs: []string{"add_alert_cooldowns_table"}, run: migrationAddAlertCooldownsTable},
+	{IDs: []string{"add_alert_notify_once_field"}, run: migrationAddAlertNotifyOnceField},
+	{IDs: []string{"add_alert_config_managed_fields"}, run: migrationAddAlertConfigManagedFields},
 	{IDs: []string{"add_webhook_config_client_column"}, run: migrationAddWebhookConfigClientColumn},
 	{IDs: []string{"add_oauth_config_resource_column"}, run: migrationAddOauthConfigResourceColumn},
 	{IDs: []string{"add_use_anthropic_endpoints_column"}, run: migrationAddUseAnthropicEndpointsColumn},
@@ -11149,6 +11154,115 @@ func migrationAddPricingOverrideUserIDColumn(ctx context.Context, db *gorm.DB, l
 	}})
 	if err := m.Migrate(); err != nil {
 		return fmt.Errorf("error while running pricing override user_id column migration: %s", err.Error())
+	}
+	return nil
+}
+
+// migrationAddAlertingTables creates the durable OSS alerting store. It is a
+// single additive migration so older binaries safely ignore the new tables.
+func migrationAddAlertingTables(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	migrationName := "add_alerting_tables"
+	logger.Info("[configstore] starting migration %s", migrationName)
+	defer logger.Info("[configstore] finished migration %s", migrationName)
+	m := migrator.New(db, migrator.DefaultOptions, []*migrator.Migration{{
+		ID: migrationName,
+		Migrate: func(tx *gorm.DB) error {
+			tx = tx.WithContext(ctx)
+			return tx.AutoMigrate(
+				&tables.TableAlertChannel{},
+				&tables.TableAlertRule{},
+				&tables.TableAlertCooldown{},
+			)
+		},
+		Rollback: func(tx *gorm.DB) error {
+			return tx.WithContext(ctx).Migrator().DropTable(
+				&tables.TableAlertCooldown{},
+				&tables.TableAlertRule{},
+				&tables.TableAlertChannel{},
+			)
+		},
+	}})
+	if err := m.Migrate(); err != nil {
+		return fmt.Errorf("error running %s migration: %w", migrationName, err)
+	}
+	return nil
+}
+
+func migrationAddAlertCooldownsTable(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	migrationName := "add_alert_cooldowns_table"
+	logger.Info("[configstore] starting migration %s", migrationName)
+	defer logger.Info("[configstore] finished migration %s", migrationName)
+	m := migrator.New(db, migrator.DefaultOptions, []*migrator.Migration{{
+		ID: migrationName,
+		Migrate: func(tx *gorm.DB) error {
+			return tx.WithContext(ctx).AutoMigrate(&tables.TableAlertCooldown{})
+		},
+		Rollback: func(tx *gorm.DB) error {
+			return tx.WithContext(ctx).Migrator().DropTable(&tables.TableAlertCooldown{})
+		},
+	}})
+	if err := m.Migrate(); err != nil {
+		return fmt.Errorf("error running %s migration: %w", migrationName, err)
+	}
+	return nil
+}
+
+func migrationAddAlertNotifyOnceField(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	migrationName := "add_alert_notify_once_field"
+	logger.Info("[configstore] starting migration %s", migrationName)
+	defer logger.Info("[configstore] finished migration %s", migrationName)
+	m := migrator.New(db, migrator.DefaultOptions, []*migrator.Migration{{
+		ID: migrationName,
+		Migrate: func(tx *gorm.DB) error {
+			return tx.WithContext(ctx).AutoMigrate(&tables.TableAlertRule{})
+		},
+		Rollback: func(*gorm.DB) error {
+			return fmt.Errorf("%s is non-rollbackable: dropping reset-cycle state would destroy alert rule configuration", migrationName)
+		},
+	}})
+	if err := m.Migrate(); err != nil {
+		return fmt.Errorf("error running %s migration: %w", migrationName, err)
+	}
+	return nil
+}
+
+func migrationAddAlertConfigManagedFields(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	migrationName := "add_alert_config_managed_fields"
+	logger.Info("[configstore] starting migration %s", migrationName)
+	defer logger.Info("[configstore] finished migration %s", migrationName)
+	m := migrator.New(db, migrator.DefaultOptions, []*migrator.Migration{{
+		ID: migrationName,
+		Migrate: func(tx *gorm.DB) error {
+			return tx.WithContext(ctx).AutoMigrate(&tables.TableAlertChannel{}, &tables.TableAlertRule{})
+		},
+		Rollback: func(*gorm.DB) error {
+			return fmt.Errorf("%s is non-rollbackable: dropping ownership fields can resurrect stale declarative alerts", migrationName)
+		},
+	}})
+	if err := m.Migrate(); err != nil {
+		return fmt.Errorf("error running %s migration: %w", migrationName, err)
+	}
+	return nil
+}
+
+// migrationAddProviderErrorAlertFields adds rolling-window configuration used
+// by provider/model reliability rules. AutoMigrate is additive for both SQLite
+// and PostgreSQL and preserves every existing governance alert rule.
+func migrationAddProviderErrorAlertFields(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	migrationName := "add_provider_error_alert_fields"
+	logger.Info("[configstore] starting migration %s", migrationName)
+	defer logger.Info("[configstore] finished migration %s", migrationName)
+	m := migrator.New(db, migrator.DefaultOptions, []*migrator.Migration{{
+		ID: migrationName,
+		Migrate: func(tx *gorm.DB) error {
+			return tx.WithContext(ctx).AutoMigrate(&tables.TableAlertRule{})
+		},
+		Rollback: func(*gorm.DB) error {
+			return fmt.Errorf("%s is non-rollbackable: dropping reliability fields would destroy alert rule configuration", migrationName)
+		},
+	}})
+	if err := m.Migrate(); err != nil {
+		return fmt.Errorf("error running %s migration: %w", migrationName, err)
 	}
 	return nil
 }

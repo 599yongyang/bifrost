@@ -1,14 +1,14 @@
 ---
 title: "Alerting"
-description: "Configure Bifrost Enterprise alert channels, rules, evaluation frequency, history retention, and webhook network controls in config.json"
+description: "Configure Bifrost alert channels, rules, evaluation frequency, history retention, and webhook network controls in config.json"
 icon: "bell"
 ---
 
 <Note>
-Alerting is an **enterprise-only** feature and requires the enterprise Bifrost image.
+Alert history uses the configured logs store. Provider error-rate rules also require request logging to be enabled.
 </Note>
 
-The `alerting` block lets you seed alert channels and CEL-based alert rules directly in `config.json`. Rules evaluate governance metrics, such as budget usage and rate limit usage, and send notifications to Slack, Microsoft Teams, PagerDuty, or generic webhooks.
+The `alerting` block lets you seed alert channels and CEL-based alert rules directly in `config.json`. Rules evaluate governance and provider reliability metrics and send notifications to Slack, Microsoft Teams, WeCom, PagerDuty, or generic webhooks.
 
 Use this page when you want alerting to be managed as code. For the UI workflow and runtime concepts, see [Alerting](/enterprise/alerting/overview), [Alert Rules](/enterprise/alerting/alert-rules), [Alert Channels](/enterprise/alerting/alert-channels), and [Alert History](/enterprise/alerting/alert-history).
 
@@ -39,8 +39,7 @@ This example creates one Slack channel, one generic webhook channel, and two rul
         "enabled": true,
         "config": {
           "webhook_url": "env.SLACK_WEBHOOK_URL"
-        },
-        "cooldown_seconds": 60
+        }
       },
       {
         "id": "ops-webhook",
@@ -130,9 +129,8 @@ Each channel needs a stable `id`, a display `name`, a `type`, an `enabled` flag,
 | `id` | Yes | Stable channel ID. Rules reference this ID in `channel_ids`. |
 | `name` | Yes | Operator-facing channel name. |
 | `description` | No | Optional description. |
-| `type` | Yes | `slack`, `microsoft_teams`, `pagerduty`, or `webhook`. |
+| `type` | Yes | `slack`, `microsoft_teams`, `wecom`, `pagerduty`, or `webhook`. |
 | `enabled` | Yes | Whether this channel can receive notifications. |
-| `cooldown_seconds` | No | Minimum seconds between sends for this channel. Set `0` for no channel-level cooldown. |
 | `config` | Conditional | Required for every supported channel type. |
 
 ### Channel config
@@ -143,6 +141,7 @@ Credential and endpoint fields support `env.VAR_NAME` references. Bifrost resolv
 |--------------|-----------------|-------|
 | `slack` | Exactly one of `webhook_url` or `url` | Slack incoming webhook URL. |
 | `microsoft_teams` | Exactly one of `webhook_url` or `url` | Teams incoming webhook or Workflows URL. |
+| `wecom` | Exactly one of `webhook_url` or `url` | WeCom group robot webhook; Bifrost sends dynamic Markdown. |
 | `pagerduty` | Exactly one of `routing_key` or `integration_key` | PagerDuty Events API v2 integration key. |
 | `webhook` | Exactly one of `url` or `webhook_url` | Generic webhook URL. Optional `headers` values also support `env.VAR_NAME`. |
 
@@ -181,7 +180,7 @@ For each alias pair, provide exactly one key. For example, use either `webhook_u
 
 ## Rules
 
-Rules evaluate CEL expressions against governance metrics collected for a virtual key, team, or customer.
+Rules evaluate CEL expressions against governance metrics collected for a virtual key, team, or customer, or against rolling reliability metrics for a provider.
 
 | Field | Required | Description |
 |-------|----------|-------------|
@@ -189,8 +188,8 @@ Rules evaluate CEL expressions against governance metrics collected for a virtua
 | `name` | Yes | Operator-facing rule name. |
 | `description` | No | Optional description. |
 | `enabled` | Yes | Whether this rule is evaluated. |
-| `scope_type` | Yes | `virtual_key`, `team`, or `customer`. |
-| `scope_id` | Yes | ID of the scoped virtual key, team, or customer. |
+| `scope_type` | Yes | `virtual_key`, `team`, `customer`, or `provider`. |
+| `scope_id` | Yes | Governance entity ID, or the provider name such as `openai`. |
 | `cel_expression` | Yes | CEL expression that evaluates to a boolean. |
 | `query` | No | Optional UI query-builder representation of `cel_expression`. |
 | `cooldown_seconds` | No | Minimum seconds between notifications for this rule. Default is `60`. Set `0` to disable rule-level cooldown. |
@@ -198,6 +197,8 @@ Rules evaluate CEL expressions against governance metrics collected for a virtua
 | `channel_ids` | Yes | One or more alert channel IDs. |
 | `target_type` | Conditional | Use `budget` with `target_id` to evaluate one specific budget. |
 | `target_id` | Conditional | Required when `target_type` is set. |
+| `window_seconds` | Provider rules | Rolling completed-request window, from `60` seconds to `30` days (`2592000`). Default `300`. |
+| `min_requests` | Provider rules | Minimum sample size before the rule may trigger. Default `1`. |
 
 ### Scopes and targets
 
@@ -233,6 +234,31 @@ budget_usage_percent >= 100.0 || rate_limit_token_usage_percent >= 100.0
 ```
 
 For the complete variable list, see [Alerting CEL variables](/enterprise/alerting/overview#cel-variables).
+
+### Provider error-rate rules
+
+Provider rules read completed `success` and `error` attempts from the configured logs store. Processing and cancelled rows are excluded. Set a minimum sample size to avoid a single failed request producing a noisy 100% alert.
+
+Available CEL variables are `provider_error_rate`, `provider_error_count`, `provider_success_count`, `provider_request_count`, `provider`, `model`, and `window_seconds`.
+
+```json
+{
+  "id": "openai-error-rate",
+  "name": "OpenAI error rate above 10%",
+  "enabled": true,
+  "scope_type": "provider",
+  "scope_id": "openai",
+  "target_type": "model",
+  "target_id": "gpt-4o",
+  "window_seconds": 300,
+  "min_requests": 100,
+  "cel_expression": "provider_error_rate >= 10.0",
+  "channel_ids": ["slack-platform"],
+  "cooldown_seconds": 900
+}
+```
+
+Omit `target_type` and `target_id` to aggregate all models for the provider. Provider rules require logging to be enabled.
 
 ---
 

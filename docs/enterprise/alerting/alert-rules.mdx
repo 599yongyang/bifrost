@@ -1,28 +1,30 @@
 ---
 title: "Alert Rules"
-description: "Define CEL-based alert rules in Bifrost Enterprise - scope them to virtual keys, teams, or customers, optionally target a specific budget, and send triggers to channels."
+description: "Define CEL-based rules over governance usage or provider reliability metrics and send matching alerts to configured channels."
 icon: "gavel"
 keywords: ["alert rules", "cel", "conditions", "thresholds", "scope", "cooldown"]
 ---
 
 ## Overview
 
-An **alert rule** defines a CEL expression over governance metrics and the channels to notify when that expression evaluates to `true`. Rules are scoped to a governance entity (virtual key, team, or customer) and can optionally target a specific budget.
+An **alert rule** defines a CEL expression and the channels to notify when it evaluates to `true`. Governance rules are scoped to a virtual key, team, or customer and may target a budget. Provider rules are scoped to a provider and may target a model.
 
 ## Anatomy of a rule
 
 | Field | Type | Description |
 | --- | --- | --- |
 | `name` | string | Human-readable rule name. |
-| `scope_type` | string | One of `virtual_key`, `team`, `customer`. |
+| `scope_type` | string | One of `virtual_key`, `team`, `customer`, or `provider`. |
 | `scope_id` | string | The ID of the scoped entity. Required. |
 | `cel_expression` | string | The CEL expression evaluated against governance metrics. Must evaluate to a boolean. |
 | `channel_ids` | array | One or more [channel](/enterprise/alerting/alert-channels) IDs to notify. |
-| `target_type` | string | Optional. Set to `"budget"` to target a specific budget. |
-| `target_id` | string | The ID of the target budget. Only valid when `target_type` is `"budget"`. |
+| `target_type` | string | Optional. `"budget"` for governance rules or `"model"` for provider rules. |
+| `target_id` | string | The target budget ID or model name. |
 | `description` | string | Optional description of the rule. |
 | `enabled` | boolean | Whether the rule is active. Default `true`. |
 | `cooldown_milliseconds` | integer | Minimum milliseconds between notifications for the same rule, scope, and target. Must be a multiple of 1000 (whole seconds). API only; `config.json` uses `cooldown_seconds`. |
+| `window_seconds` | integer | Provider rules only. Rolling logs window, from 60 seconds to 30 days. |
+| `min_requests` | integer | Provider rules only. Minimum completed request sample before evaluation. |
 
 ---
 
@@ -62,6 +64,15 @@ rate_limit_request_usage_percent >= 80.0
 # Alert when either request or token rate limit usage is above 90%
 rate_limit_request_usage_percent >= 90.0 || rate_limit_token_usage_percent >= 90.0
 ```
+
+### Provider reliability examples
+
+```python
+# Alert after at least 100 completed attempts when the provider error rate reaches 10%
+provider_request_count >= 100 && provider_error_rate >= 10.0
+```
+
+Provider rules can also use `provider_error_count`, `provider_success_count`, and `provider_request_count`. Configure `window_seconds` and `min_requests` to control the rolling sample.
 
 ```python
 # Alert on absolute request count
@@ -117,7 +128,6 @@ The cooldown prevents alert storms by suppressing repeat notifications after a r
 - The API accepts `cooldown_milliseconds`, which must be a whole-second value (multiple of 1000).
 - `config.json` accepts `cooldown_seconds`, which is an integer in seconds.
 
-Channels can add their own [per-channel cooldown](/enterprise/alerting/alert-channels#cooldowns) on top of the rule cooldown.
 
 ---
 

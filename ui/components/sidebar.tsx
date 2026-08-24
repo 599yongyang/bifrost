@@ -614,9 +614,10 @@ export default function AppSidebar() {
 	});
 	const hasLogsAccess = useRbac(RbacResource.Logs, RbacOperation.View);
 	const hasObservabilityAccess = useRbac(RbacResource.Observability, RbacOperation.View);
-	// Alerting is currently surfaced under the existing governance permission
-	// until enterprise alerting gets its own RBAC resource.
-	const hasAlertingAccess = useRbac(RbacResource.Governance, RbacOperation.View);
+	const hasAlertRulesAccess = useRbac(RbacResource.AlertRules, RbacOperation.View);
+	const hasAlertChannelsAccess = useRbac(RbacResource.AlertChannels, RbacOperation.View);
+	const hasAlertHistoryAccess = useRbac(RbacResource.AlertHistory, RbacOperation.View);
+	const hasAlertingAccess = hasAlertRulesAccess || hasAlertChannelsAccess || hasAlertHistoryAccess;
 	const hasDashboardAccess = useRbac(RbacResource.Dashboard, RbacOperation.View);
 	const hasModelProvidersAccess = useRbac(RbacResource.ModelProvider, RbacOperation.View);
 	const hasMCPGatewayAccess = useRbac(RbacResource.MCPGateway, RbacOperation.View);
@@ -862,21 +863,21 @@ export default function AppSidebar() {
 						url: "/workspace/alerting/channels",
 						icon: Megaphone,
 						description: "Configure notification channels",
-						hasAccess: hasAlertingAccess,
+						hasAccess: hasAlertChannelsAccess,
 					},
 					{
 						title: "Rules",
 						url: "/workspace/alerting/rules",
 						icon: Gavel,
 						description: "Define alerting rules",
-						hasAccess: hasAlertingAccess,
+						hasAccess: hasAlertRulesAccess,
 					},
 					{
 						title: "History",
 						url: "/workspace/alerting/history",
 						icon: History,
 						description: "Review alert delivery history",
-						hasAccess: hasAlertingAccess,
+						hasAccess: hasAlertHistoryAccess,
 					},
 				],
 			},

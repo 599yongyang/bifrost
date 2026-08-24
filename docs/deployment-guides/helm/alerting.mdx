@@ -1,19 +1,15 @@
 ---
 title: "Alerting"
-description: "Configure Bifrost Enterprise alert channels, rules, history retention, and webhook network controls in Helm"
+description: "Configure Bifrost alert channels, rules, history retention, and webhook network controls in Helm"
 icon: "bell"
 ---
-
-<Note>
-Alerting is an **enterprise-only** feature and requires the enterprise Bifrost image.
-</Note>
 
 Helm renders `bifrost.alerting` into the generated `config.json` that Bifrost loads at startup. Use this page when you want alert channels and rules managed from values files.
 
 For the runtime behavior and UI workflow, see [Alerting](/enterprise/alerting/overview), [Alert Rules](/enterprise/alerting/alert-rules), [Alert Channels](/enterprise/alerting/alert-channels), and [Alert History](/enterprise/alerting/alert-history).
 
 <Note>
-Alert rules evaluate governance metrics. Define the referenced virtual keys, teams, customers, budgets, and rate limits under [`bifrost.governance`](/deployment-guides/helm/governance), or create them through the Web UI or API before the rule is evaluated.
+Governance rules require the referenced virtual keys, teams, customers, budgets, and rate limits under [`bifrost.governance`](/deployment-guides/helm/governance). Provider reliability rules instead query the configured logs store.
 </Note>
 
 ---
@@ -76,7 +72,6 @@ bifrost:
         enabled: true
         config:
           webhook_url: "env.SLACK_WEBHOOK_URL"
-        cooldown_seconds: 60
 
       - id: "pagerduty-prod"
         name: "Production PagerDuty"
@@ -166,9 +161,8 @@ Each channel needs a stable `id`, a display `name`, a `type`, an `enabled` flag,
 | `id` | Yes | Stable channel ID. Rules reference this ID in `channel_ids`. |
 | `name` | Yes | Operator-facing channel name. |
 | `description` | No | Optional description. |
-| `type` | Yes | `slack`, `microsoft_teams`, `pagerduty`, or `webhook`. |
+| `type` | Yes | `slack`, `microsoft_teams`, `wecom`, `pagerduty`, or `webhook`. |
 | `enabled` | Yes | Whether this channel can receive notifications. |
-| `cooldown_seconds` | No | Minimum seconds between sends for this channel. Set `0` for no channel-level cooldown. |
 | `config` | Conditional | Required for every supported channel type. |
 
 ### Channel config
@@ -179,6 +173,7 @@ Credential and endpoint fields support `env.VAR_NAME` references. Bifrost resolv
 |--------------|-----------------|-------|
 | `slack` | Exactly one of `webhook_url` or `url` | Slack incoming webhook URL. |
 | `microsoft_teams` | Exactly one of `webhook_url` or `url` | Teams incoming webhook or Workflows URL. |
+| `wecom` | Exactly one of `webhook_url` or `url` | WeCom group robot webhook; Bifrost sends dynamic Markdown. |
 | `pagerduty` | Exactly one of `routing_key` or `integration_key` | PagerDuty Events API v2 integration key. |
 | `webhook` | Exactly one of `url` or `webhook_url` | Generic webhook URL. Optional `headers` values also support `env.VAR_NAME`. |
 

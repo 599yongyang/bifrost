@@ -11,5 +11,5 @@ interface QueryBuilderWrapperProps {
 }
 
 export function QueryBuilderWrapper({ children }: QueryBuilderWrapperProps) {
-	return <div className="query-builder-wrapper">{children}</div>;
+	return <div className="query-builder-wrapper w-full max-w-full min-w-0">{children}</div>;
 }

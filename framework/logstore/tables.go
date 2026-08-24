@@ -143,6 +143,55 @@ type SearchStats struct {
 	SemanticCacheHits         *int64  `json:"semantic_cache_hits,omitempty"`           // Number of semantic (fuzzy) cache hits
 }
 
+type AlertHistoryQuery struct {
+	Limit        int
+	Offset       int
+	Statuses     []string
+	ScopeTypes   []string
+	ChannelTypes []string
+}
+
+// AlertHistory is the durable audit row for one alert delivery outcome.
+// It lives in LogsStore so PostgreSQL and ClickHouse deployments retain the
+// same filtering, TTL, and failover-recovery semantics as other history data.
+type AlertHistory struct {
+	ID             string         `gorm:"type:varchar(36);primaryKey" json:"id"`
+	RuleID         string         `gorm:"type:varchar(255);index;not null" json:"rule_id"`
+	RuleName       string         `gorm:"type:varchar(255);not null" json:"rule_name"`
+	ChannelID      string         `gorm:"type:varchar(255);index" json:"channel_id,omitempty"`
+	ChannelName    string         `gorm:"type:varchar(255)" json:"channel_name,omitempty"`
+	ChannelType    string         `gorm:"type:varchar(32);index" json:"channel_type,omitempty"`
+	ScopeType      string         `gorm:"type:varchar(32);index;not null" json:"scope_type"`
+	ScopeID        string         `gorm:"type:varchar(255);index;not null" json:"scope_id"`
+	TargetType     string         `gorm:"type:varchar(32);index" json:"target_type,omitempty"`
+	TargetID       string         `gorm:"type:varchar(255);index" json:"target_id,omitempty"`
+	CELExpression  string         `gorm:"type:text;not null" json:"cel_expression"`
+	EvaluationJSON string         `gorm:"type:text;not null" json:"-"`
+	Evaluation     map[string]any `gorm:"-" json:"input"`
+	Status         string         `gorm:"type:varchar(16);index;not null" json:"status"`
+	StatusDetail   string         `gorm:"type:text" json:"status_detail,omitempty"`
+	CreatedAt      time.Time      `gorm:"index;not null" json:"created_at"`
+}
+
+func (AlertHistory) TableName() string { return "enterprise_alert_history" }
+
+func (h *AlertHistory) BeforeSave(*gorm.DB) error {
+	data, err := sonic.Marshal(h.Evaluation)
+	if err != nil {
+		return err
+	}
+	h.EvaluationJSON = string(data)
+	return nil
+}
+
+func (h *AlertHistory) AfterFind(*gorm.DB) error {
+	if h.EvaluationJSON == "" {
+		h.Evaluation = map[string]any{}
+		return nil
+	}
+	return sonic.Unmarshal([]byte(h.EvaluationJSON), &h.Evaluation)
+}
+
 // Log represents a complete log entry for a request/response cycle
 // This is the GORM model with appropriate tags
 type Log struct {
