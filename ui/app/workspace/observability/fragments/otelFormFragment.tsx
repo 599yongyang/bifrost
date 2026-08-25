@@ -18,9 +18,11 @@ import { useSortable } from "@dnd-kit/react/sortable";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { CheckCircle2, ChevronDown, GripVertical, Info, Plus, Settings2, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useFieldArray, useForm, type Control, type Resolver, type UseFormReturn } from "react-hook-form";
+import { useFieldArray, useForm, type Control, type Resolver, type SubmitErrorHandler, type UseFormReturn } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import i18n from "@/lib/i18n";
+import { normalizeSelectiveExportForForm } from "@/app/workspace/observability/selectiveExport";
+import { toast } from "sonner";
 
 // ProfileForm is a single profile's form shape, derived from the form schema.
 type ProfileForm = OtelFormSchema["profiles"][number];
@@ -47,6 +49,18 @@ interface StoredOtelProfile {
 }
 
 type StoredSelectiveExport = OtelFormSchema["selective_export"];
+
+function firstValidationMessage(value: unknown, seen = new WeakSet<object>()): string | undefined {
+	if (!value || typeof value !== "object") return undefined;
+	if (seen.has(value)) return undefined;
+	seen.add(value);
+	if ("message" in value && typeof value.message === "string") return value.message;
+	for (const child of Object.values(value)) {
+		const message = firstValidationMessage(child, seen);
+		if (message) return message;
+	}
+	return undefined;
+}
 
 // StoredOtelConfig is either the canonical { profiles: [...] } wrapper or a legacy single
 // profile object (no "profiles" key).
@@ -193,8 +207,7 @@ const defaultSelectiveExport = (): StoredSelectiveExport => ({
 });
 
 const orderedSelectiveExport = (selection?: StoredSelectiveExport): StoredSelectiveExport => {
-	if (!selection) return defaultSelectiveExport();
-	return { ...selection, rules: [...(selection.rules ?? [])].sort((left, right) => right.priority - left.priority) };
+	return normalizeSelectiveExportForForm(selection, defaultSelectiveExport());
 };
 
 // toProfileForm normalizes a stored profile into the SecretVar-based form representation.
@@ -274,6 +287,21 @@ export function OtelFormFragment({
 		onSave(normalized).finally(() => setIsSaving(false));
 	};
 
+	const onInvalid: SubmitErrorHandler<OtelFormSchema> = (errors) => {
+		setProfileOpenState((current) => {
+			const next = { ...current };
+			if (Array.isArray(errors.profiles)) {
+				errors.profiles.forEach((error, index) => {
+					if (error) next[index] = true;
+				});
+			}
+			return next;
+		});
+		toast.error(t("workspace.observability.otelForm.pleaseFixErrors"), {
+			description: firstValidationMessage(errors) ?? t("workspace.observability.otelForm.pleaseFixErrors"),
+		});
+	};
+
 	const handleProfileOpenChange = (index: number, open: boolean) => {
 		setProfileOpenState((prev) => ({ ...prev, [index]: open }));
 	};
@@ -300,7 +328,7 @@ export function OtelFormFragment({
 
 	return (
 		<Form {...form}>
-			<form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+			<form onSubmit={form.handleSubmit(onSubmit, onInvalid)} className="space-y-6">
 				<div className="flex flex-col gap-3">
 					{fields.map((field, index) => (
 						<OtelProfileSection
@@ -376,7 +404,12 @@ export function OtelFormFragment({
 						<TooltipProvider>
 							<Tooltip>
 								<TooltipTrigger asChild>
-									<Button type="submit" disabled={!hasOtelAccess || !form.formState.isDirty} isLoading={isSaving}>
+									<Button
+										type="submit"
+										disabled={!hasOtelAccess || !form.formState.isDirty}
+										isLoading={isSaving}
+										data-testid="otel-connector-save-btn"
+									>
 										{t("workspace.observability.otelForm.save")}
 									</Button>
 								</TooltipTrigger>
