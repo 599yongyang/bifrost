@@ -1,5 +1,9 @@
 # Bifrost AI Gateway
 
+> Moon deployment note: this fork contains production-specific image fallback fixes and a dynamic
+> Debian/glibc image required by the sibling Moon Go plugin. See [docs/MAINTENANCE.md](docs/MAINTENANCE.md)
+> before building or releasing this fork.
+
 <a href="https://trendshift.io/repositories/14529?utm_source=repository-badge&amp;utm_medium=badge&amp;utm_campaign=badge-repository-14529" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/repositories/14529" alt="maximhq%2Fbifrost | Trendshift" width="250" height="55"/></a>
 
 [![Discord badge](https://dcbadge.limes.pink/api/server/https://discord.gg/exN5KAydbU?style=flat)](https://discord.gg/exN5KAydbU)
