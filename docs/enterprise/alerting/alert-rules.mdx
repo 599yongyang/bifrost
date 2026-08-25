@@ -172,6 +172,8 @@ All endpoints are under `/api/alerting/`.
 | `POST` | `/rules` | Create a rule. |
 | `PUT` | `/rules/{id}` | Update a rule. |
 | `DELETE` | `/rules/{id}` | Delete a rule. |
+| `POST` | `/rules/{id}/evaluate` | Check one rule, optionally ignoring its cooldown. |
+| `GET` | `/rules/evaluation-status` | List rule IDs with an in-flight manual check. |
 
 Creating a rule validates that the name is set, the scope type is valid, the scope ID is non-empty, the referenced scope entity exists, the CEL expression compiles to a boolean, and at least one channel is attached.
 
@@ -255,6 +257,24 @@ Rules and channels can be declared statically in the `alerting` section of `conf
 
 </Tab>
 </Tabs>
+
+## Check a rule manually
+
+The Rules page provides two row-level actions:
+
+- **Check now** evaluates only that rule and sends real notifications when it matches, while respecting the rule's repeat-notification interval.
+- **Force check** evaluates only that rule and ignores its repeat-notification interval after confirmation. A successful forced send starts a new cooldown. Reset-cycle suppression still applies.
+
+Only one manual evaluation of the same rule can be in flight. Repeated requests return HTTP `409` instead of being queued. The Rules page polls the server for running rule IDs so a long provider metrics query remains visibly in progress.
+
+```bash
+curl -X POST https://your-bifrost-gateway/api/alerting/rules/{rule-id}/evaluate \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"ignore_cooldown": false}'
+```
+
+Set `ignore_cooldown` to `true` for a confirmed force check. The response includes whether the rule matched and counts for sent, skipped, and failed outcomes. Alert History remains read-only and records only the resulting delivery outcomes.
 
 ---
 

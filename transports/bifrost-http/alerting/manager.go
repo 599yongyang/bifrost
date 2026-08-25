@@ -39,6 +39,28 @@ const (
 	alertLeaderLockKey       = "bifrost:alerting:leader"
 )
 
+var (
+	ErrRuleEvaluationInProgress = errors.New("this alert rule is already being evaluated")
+	ErrAlertingNotLeader        = errors.New("manual alert evaluation must run on the active alerting leader")
+	ErrAlertRuleDisabled        = errors.New("disabled alert rules cannot be evaluated manually")
+)
+
+type RuleEvaluationResult struct {
+	RuleID          string `json:"rule_id"`
+	Matched         bool   `json:"matched"`
+	MatchedTargets  int    `json:"matched_targets"`
+	SentCount       int    `json:"sent_count"`
+	SkippedCount    int    `json:"skipped_count"`
+	FailedCount     int    `json:"failed_count"`
+	CooldownIgnored bool   `json:"cooldown_ignored"`
+}
+
+func (r *RuleEvaluationResult) merge(other RuleEvaluationResult) {
+	r.SentCount += other.SentCount
+	r.SkippedCount += other.SkippedCount
+	r.FailedCount += other.FailedCount
+}
+
 type leaderLockStore interface {
 	TryAcquireLock(context.Context, *tables.TableDistributedLock) (bool, error)
 	GetLock(context.Context, string) (*tables.TableDistributedLock, error)
@@ -102,29 +124,31 @@ type HistoryStore interface {
 }
 
 type Manager struct {
-	store          configstore.AlertStore
-	leaderStore    leaderLockStore
-	holderID       string
-	governance     GovernanceSnapshot
-	metrics        MetricsStore
-	history        HistoryStore
-	logger         schemas.Logger
-	network        NetworkConfig
-	env            *cel.Env
-	client         *http.Client
-	privateClient  *http.Client
-	programs       sync.Map // rule ID + expression -> cel.Program
-	evaluationMu   sync.Mutex
-	leaderMu       sync.Mutex
-	isLeader       bool
-	cooldownsMu    sync.Mutex
-	ruleSent       map[string]time.Time
-	cancel         context.CancelFunc
-	done           chan struct{}
-	sweepInterval  time.Duration
-	retentionDays  int
-	lastPrune      time.Time
-	providerExists func(string) bool
+	store           configstore.AlertStore
+	leaderStore     leaderLockStore
+	holderID        string
+	governance      GovernanceSnapshot
+	metrics         MetricsStore
+	history         HistoryStore
+	logger          schemas.Logger
+	network         NetworkConfig
+	env             *cel.Env
+	client          *http.Client
+	privateClient   *http.Client
+	programs        sync.Map // rule ID + expression -> cel.Program
+	ruleEvaluations sync.Map // rule ID -> struct{} while a manual evaluation is in flight
+	evaluationMu    sync.Mutex
+	leaderMu        sync.Mutex
+	isLeader        bool
+	cooldownsMu     sync.Mutex
+	ruleSent        map[string]time.Time
+	suppressionSeen map[string]time.Time
+	cancel          context.CancelFunc
+	done            chan struct{}
+	sweepInterval   time.Duration
+	retentionDays   int
+	lastPrune       time.Time
+	providerExists  func(string) bool
 }
 
 func NewManager(store configstore.AlertStore, snapshot GovernanceSnapshot, metrics MetricsStore, history HistoryStore, logger schemas.Logger, cfg *Config) (*Manager, error) {
@@ -161,17 +185,18 @@ func NewManager(store configstore.AlertStore, snapshot GovernanceSnapshot, metri
 		return nil, err
 	}
 	manager := &Manager{
-		store:         store,
-		holderID:      uuid.NewString(),
-		governance:    snapshot,
-		metrics:       metrics,
-		history:       history,
-		logger:        logger,
-		env:           env,
-		ruleSent:      make(map[string]time.Time),
-		done:          make(chan struct{}),
-		sweepInterval: DefaultSweepInterval,
-		retentionDays: 365,
+		store:           store,
+		holderID:        uuid.NewString(),
+		governance:      snapshot,
+		metrics:         metrics,
+		history:         history,
+		logger:          logger,
+		env:             env,
+		ruleSent:        make(map[string]time.Time),
+		suppressionSeen: make(map[string]time.Time),
+		done:            make(chan struct{}),
+		sweepInterval:   DefaultSweepInterval,
+		retentionDays:   365,
 	}
 	manager.leaderStore, _ = store.(leaderLockStore)
 	if cfg != nil {
@@ -544,87 +569,166 @@ func (m *Manager) EvaluateNow(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	channels, err := m.store.ListAlertChannels(ctx)
+	channelMap, err := m.alertChannelsByID(ctx)
 	if err != nil {
 		return err
-	}
-	channelMap := make(map[string]*tables.TableAlertChannel, len(channels))
-	for i := range channels {
-		channelMap[channels[i].ID] = &channels[i]
 	}
 	var data *governance.GovernanceData
 	if m.governance != nil {
 		data = m.governance(ctx)
 	}
 	for i := range rules {
-		rule := &rules[i]
-		if !rule.Enabled {
-			continue
-		}
-		program, err := m.program(rule)
-		if err != nil {
-			m.logFailure(ctx, rule, nil, nil, "invalid CEL expression: "+err.Error())
-			continue
-		}
-		if rule.ScopeType == "provider" {
-			input, metricsErr := m.providerEvaluationInput(ctx, rule)
-			if metricsErr != nil {
-				m.logFailure(ctx, rule, nil, input, "provider metrics query failed: "+metricsErr.Error())
-				continue
-			}
-			if input["provider_request_count"].(int64) < rule.MinRequests {
-				continue
-			}
-			output, _, evalErr := program.Eval(input)
-			if evalErr != nil {
-				m.logFailure(ctx, rule, nil, input, "CEL evaluation failed: "+evalErr.Error())
-				continue
-			}
-			if matched, ok := output.Value().(bool); ok && matched {
-				m.dispatchMatch(ctx, rule, input, channelMap)
-			}
-			continue
-		}
-		if data == nil {
-			m.logFailure(ctx, rule, nil, nil, "governance snapshot is unavailable")
-			continue
-		}
-		if !scopeExists(data, rule.ScopeType, rule.ScopeID) {
-			m.logFailure(ctx, rule, nil, nil, fmt.Sprintf("referenced %s scope %q no longer exists", rule.ScopeType, rule.ScopeID))
-			continue
-		}
-		budgets, rateLimit := collectScope(data, rule.ScopeType, rule.ScopeID)
-		if rule.TargetID != nil {
-			filtered := budgets[:0]
-			for _, budget := range budgets {
-				if budget.ID == *rule.TargetID {
-					filtered = append(filtered, budget)
-				}
-			}
-			budgets = filtered
-			if len(budgets) == 0 {
-				m.logFailure(ctx, rule, nil, nil, fmt.Sprintf("target budget %q no longer exists in the scope", *rule.TargetID))
-				continue
-			}
-		}
-		if len(budgets) == 0 {
-			budgets = []tables.TableBudget{{}}
-		}
-		for budgetIndex := range budgets {
-			input := evaluationInput(rule, &budgets[budgetIndex], rateLimit)
-			output, _, evalErr := program.Eval(input)
-			if evalErr != nil {
-				m.logFailure(ctx, rule, nil, input, "CEL evaluation failed: "+evalErr.Error())
-				continue
-			}
-			matched, ok := output.Value().(bool)
-			if !ok || !matched {
-				continue
-			}
-			m.dispatchMatch(ctx, rule, input, channelMap)
+		if rules[i].Enabled {
+			m.evaluateRule(ctx, &rules[i], channelMap, data, false, "")
 		}
 	}
 	return nil
+}
+
+func (m *Manager) alertChannelsByID(ctx context.Context) (map[string]*tables.TableAlertChannel, error) {
+	channels, err := m.store.ListAlertChannels(ctx)
+	if err != nil {
+		return nil, err
+	}
+	channelMap := make(map[string]*tables.TableAlertChannel, len(channels))
+	for i := range channels {
+		channelMap[channels[i].ID] = &channels[i]
+	}
+	return channelMap, nil
+}
+
+func (m *Manager) evaluateRule(
+	ctx context.Context,
+	rule *tables.TableAlertRule,
+	channels map[string]*tables.TableAlertChannel,
+	data *governance.GovernanceData,
+	ignoreCooldown bool,
+	sentDetail string,
+) RuleEvaluationResult {
+	result := RuleEvaluationResult{RuleID: rule.ID, CooldownIgnored: ignoreCooldown}
+	program, err := m.program(rule)
+	if err != nil {
+		m.logFailure(ctx, rule, nil, nil, "invalid CEL expression: "+err.Error())
+		result.FailedCount++
+		return result
+	}
+	if rule.ScopeType == "provider" {
+		input, metricsErr := m.providerEvaluationInput(ctx, rule)
+		if metricsErr != nil {
+			m.logFailure(ctx, rule, nil, input, "provider metrics query failed: "+metricsErr.Error())
+			result.FailedCount++
+			return result
+		}
+		if input["provider_request_count"].(int64) < rule.MinRequests {
+			return result
+		}
+		output, _, evalErr := program.Eval(input)
+		if evalErr != nil {
+			m.logFailure(ctx, rule, nil, input, "CEL evaluation failed: "+evalErr.Error())
+			result.FailedCount++
+			return result
+		}
+		if matched, ok := output.Value().(bool); ok && matched {
+			result.Matched = true
+			result.MatchedTargets = 1
+			result.merge(m.dispatchMatch(ctx, rule, input, channels, ignoreCooldown, sentDetail))
+		}
+		return result
+	}
+	if data == nil {
+		m.logFailure(ctx, rule, nil, nil, "governance snapshot is unavailable")
+		result.FailedCount++
+		return result
+	}
+	if !scopeExists(data, rule.ScopeType, rule.ScopeID) {
+		m.logFailure(ctx, rule, nil, nil, fmt.Sprintf("referenced %s scope %q no longer exists", rule.ScopeType, rule.ScopeID))
+		result.FailedCount++
+		return result
+	}
+	budgets, rateLimit := collectScope(data, rule.ScopeType, rule.ScopeID)
+	if rule.TargetID != nil {
+		filtered := budgets[:0]
+		for _, budget := range budgets {
+			if budget.ID == *rule.TargetID {
+				filtered = append(filtered, budget)
+			}
+		}
+		budgets = filtered
+		if len(budgets) == 0 {
+			m.logFailure(ctx, rule, nil, nil, fmt.Sprintf("target budget %q no longer exists in the scope", *rule.TargetID))
+			result.FailedCount++
+			return result
+		}
+	}
+	if len(budgets) == 0 {
+		budgets = []tables.TableBudget{{}}
+	}
+	for budgetIndex := range budgets {
+		input := evaluationInput(rule, &budgets[budgetIndex], rateLimit)
+		output, _, evalErr := program.Eval(input)
+		if evalErr != nil {
+			m.logFailure(ctx, rule, nil, input, "CEL evaluation failed: "+evalErr.Error())
+			result.FailedCount++
+			continue
+		}
+		matched, ok := output.Value().(bool)
+		if !ok || !matched {
+			continue
+		}
+		result.Matched = true
+		result.MatchedTargets++
+		result.merge(m.dispatchMatch(ctx, rule, input, channels, ignoreCooldown, sentDetail))
+	}
+	return result
+}
+
+func (m *Manager) EvaluateRuleNow(ctx context.Context, ruleID string, ignoreCooldown bool) (*RuleEvaluationResult, error) {
+	if _, loaded := m.ruleEvaluations.LoadOrStore(ruleID, struct{}{}); loaded {
+		return nil, ErrRuleEvaluationInProgress
+	}
+	defer m.ruleEvaluations.Delete(ruleID)
+	m.evaluationMu.Lock()
+	defer m.evaluationMu.Unlock()
+	leader, err := m.ensureLeadership(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("alerting leadership check failed: %w", err)
+	}
+	if !leader {
+		return nil, ErrAlertingNotLeader
+	}
+	evaluationCtx, stopHeartbeat := m.withLeadershipHeartbeat(ctx)
+	defer stopHeartbeat()
+	rule, err := m.store.GetAlertRule(evaluationCtx, ruleID)
+	if err != nil {
+		return nil, err
+	}
+	if !rule.Enabled {
+		return nil, ErrAlertRuleDisabled
+	}
+	channels, err := m.alertChannelsByID(evaluationCtx)
+	if err != nil {
+		return nil, err
+	}
+	var data *governance.GovernanceData
+	if m.governance != nil {
+		data = m.governance(evaluationCtx)
+	}
+	detail := "manual evaluation"
+	if ignoreCooldown {
+		detail = "manual override: cooldown ignored"
+	}
+	result := m.evaluateRule(evaluationCtx, rule, channels, data, ignoreCooldown, detail)
+	return &result, nil
+}
+
+func (m *Manager) RunningRuleEvaluations() []string {
+	ruleIDs := make([]string, 0)
+	m.ruleEvaluations.Range(func(key, _ any) bool {
+		ruleIDs = append(ruleIDs, key.(string))
+		return true
+	})
+	sort.Strings(ruleIDs)
+	return ruleIDs
 }
 
 func (m *Manager) providerEvaluationInput(ctx context.Context, rule *tables.TableAlertRule) (map[string]any, error) {
@@ -692,9 +796,20 @@ func (m *Manager) pruneHistory(ctx context.Context) error {
 	if m.retentionDays <= 0 || time.Since(m.lastPrune) < 24*time.Hour {
 		return nil
 	}
-	if _, err := m.history.DeleteAlertHistoryBefore(ctx, time.Now().UTC().AddDate(0, 0, -m.retentionDays)); err != nil {
+	cutoff := time.Now().UTC().AddDate(0, 0, -m.retentionDays)
+	if _, err := m.history.DeleteAlertHistoryBefore(ctx, cutoff); err != nil {
 		return err
 	}
+	if _, err := m.store.DeleteAlertSuppressionsBefore(ctx, cutoff); err != nil {
+		return err
+	}
+	m.cooldownsMu.Lock()
+	for key, lastSentAt := range m.suppressionSeen {
+		if lastSentAt.Before(cutoff) {
+			delete(m.suppressionSeen, key)
+		}
+	}
+	m.cooldownsMu.Unlock()
 	m.lastPrune = time.Now()
 	return nil
 }
@@ -871,44 +986,62 @@ func percent(used, limit float64) float64 {
 	return used / limit * 100
 }
 
-func (m *Manager) dispatchMatch(ctx context.Context, rule *tables.TableAlertRule, input map[string]any, channels map[string]*tables.TableAlertChannel) {
+func (m *Manager) dispatchMatch(
+	ctx context.Context,
+	rule *tables.TableAlertRule,
+	input map[string]any,
+	channels map[string]*tables.TableAlertChannel,
+	ignoreCooldown bool,
+	sentDetail string,
+) RuleEvaluationResult {
+	result := RuleEvaluationResult{RuleID: rule.ID, Matched: true, MatchedTargets: 1, CooldownIgnored: ignoreCooldown}
 	now := time.Now().UTC()
 	targetType, _ := input["target_type"].(string)
 	targetID, _ := input["target_id"].(string)
 	ruleKey := alertCooldownKey("rule", rule.ID, rule.ScopeType, rule.ScopeID, targetType, targetID)
+	suppressionKey := alertCooldownKey("suppression", rule.ID, rule.ScopeType, rule.ScopeID, targetType, targetID)
 	ruleCooldown := time.Duration(rule.CooldownMilliseconds) * time.Millisecond
 	cycleKey := ""
 	if rule.NotifyOncePerResetCycle {
 		cycleID, _ := input["reset_cycle_id"].(string)
 		if cycleID == "" {
 			m.record(ctx, rule, nil, input, "failed", "reset cycle identity is unavailable")
-			return
+			result.FailedCount++
+			return result
 		}
 		cycleKey = alertCooldownKey("cycle", rule.ID, rule.ScopeType, rule.ScopeID, targetType, targetID, cycleID)
+		cycleSuppressionKey := alertCooldownKey("cycle-suppression", rule.ID, rule.ScopeType, rule.ScopeID, targetType, targetID)
 		m.cooldownsMu.Lock()
-		alreadySent := !m.ruleSent[cycleKey].IsZero()
+		cycleSentAt := m.ruleSent[cycleKey]
 		m.cooldownsMu.Unlock()
-		if alreadySent {
-			m.record(ctx, rule, nil, input, "skipped", "skipped because this reset cycle was already notified")
-			return
+		if !cycleSentAt.IsZero() {
+			m.recordSuppressionOnce(ctx, rule, input, cycleSuppressionKey, cycleSentAt, "skipped because this reset cycle was already notified")
+			result.SkippedCount++
+			return result
 		}
+		ruleCooldown = 0
+	}
+	if ignoreCooldown {
 		ruleCooldown = 0
 	}
 	m.cooldownsMu.Lock()
 	lastRule := m.ruleSent[ruleKey]
 	m.cooldownsMu.Unlock()
 	if ruleCooldown > 0 && now.Sub(lastRule) < ruleCooldown {
-		m.record(ctx, rule, nil, input, "skipped", "skipped due to rule cooldown")
-		return
+		m.recordSuppressionOnce(ctx, rule, input, suppressionKey, lastRule, "skipped due to rule cooldown")
+		result.SkippedCount++
+		return result
 	}
 	for _, channelID := range rule.ChannelIDs {
 		channel := channels[channelID]
 		if channel == nil || !channel.Enabled {
 			m.record(ctx, rule, channel, input, "failed", "alert channel is missing or disabled")
+			result.FailedCount++
 			continue
 		}
 		if err := m.deliver(ctx, rule, channel, input, now); err != nil {
 			m.record(ctx, rule, channel, input, "failed", err.Error())
+			result.FailedCount++
 			continue
 		}
 		m.cooldownsMu.Lock()
@@ -925,7 +1058,31 @@ func (m *Manager) dispatchMatch(ctx context.Context, rule *tables.TableAlertRule
 				m.logger.Error("alerting: failed to persist reset-cycle notification state: %v", err)
 			}
 		}
-		m.record(ctx, rule, channel, input, "sent", "")
+		m.record(ctx, rule, channel, input, "sent", sentDetail)
+		result.SentCount++
+	}
+	return result
+}
+
+func (m *Manager) recordSuppressionOnce(
+	ctx context.Context,
+	rule *tables.TableAlertRule,
+	input map[string]any,
+	key string,
+	lastSentAt time.Time,
+	detail string,
+) {
+	m.cooldownsMu.Lock()
+	alreadyRecorded := !m.suppressionSeen[key].Before(lastSentAt)
+	if !alreadyRecorded {
+		m.suppressionSeen[key] = lastSentAt
+	}
+	m.cooldownsMu.Unlock()
+	if !alreadyRecorded {
+		m.record(ctx, rule, nil, input, "skipped", detail)
+		if err := m.store.UpsertAlertCooldown(ctx, key, lastSentAt); err != nil && m.logger != nil {
+			m.logger.Error("alerting: failed to persist suppression state: %v", err)
+		}
 	}
 }
 
@@ -1257,7 +1414,7 @@ func (m *Manager) logFailure(ctx context.Context, rule *tables.TableAlertRule, c
 func (m *Manager) record(ctx context.Context, rule *tables.TableAlertRule, channel *tables.TableAlertChannel, input map[string]any, status, detail string) {
 	history := &logstore.AlertHistory{
 		ID: uuid.NewString(), RuleID: rule.ID, RuleName: rule.Name, ScopeType: rule.ScopeType, ScopeID: rule.ScopeID,
-		CELExpression: rule.CELExpression, Evaluation: input, Status: status, StatusDetail: detail, CreatedAt: time.Now().UTC(),
+		CELExpression: rule.CELExpression, Evaluation: historyEvaluation(rule, input), Status: status, StatusDetail: detail, CreatedAt: time.Now().UTC(),
 	}
 	if input != nil {
 		history.TargetType, _ = input["target_type"].(string)
@@ -1271,6 +1428,27 @@ func (m *Manager) record(ctx context.Context, rule *tables.TableAlertRule, chann
 	}
 }
 
+func historyEvaluation(rule *tables.TableAlertRule, input map[string]any) map[string]any {
+	if input == nil {
+		return nil
+	}
+	keys := []string{
+		"budget_usage_percent", "budget_spent", "budget_limit",
+		"rate_limit_request_usage_percent", "request_usage", "request_limit",
+		"rate_limit_token_usage_percent", "token_usage", "token_limit",
+	}
+	if rule.ScopeType == "provider" {
+		keys = []string{"provider_error_rate", "provider_error_count", "provider_success_count", "provider_request_count", "window_seconds"}
+	}
+	result := make(map[string]any, len(keys))
+	for _, key := range keys {
+		if value, exists := input[key]; exists {
+			result[key] = value
+		}
+	}
+	return result
+}
+
 func (m *Manager) restoreCooldowns(ctx context.Context) error {
 	cooldowns, err := m.store.ListAlertCooldowns(ctx)
 	if err != nil {
@@ -1282,15 +1460,24 @@ func (m *Manager) restoreCooldowns(ctx context.Context) error {
 	}
 	m.cooldownsMu.Lock()
 	defer m.cooldownsMu.Unlock()
+	persistedRuleKeys := make(map[string]struct{})
 	for _, cooldown := range cooldowns {
 		if strings.HasPrefix(cooldown.Key, "rule:") || strings.HasPrefix(cooldown.Key, "cycle:") {
+			persistedRuleKeys[cooldown.Key] = struct{}{}
 			if cooldown.LastSentAt.After(m.ruleSent[cooldown.Key]) {
 				m.ruleSent[cooldown.Key] = cooldown.LastSentAt
+			}
+		} else if strings.HasPrefix(cooldown.Key, "suppression:") || strings.HasPrefix(cooldown.Key, "cycle-suppression:") {
+			if cooldown.LastSentAt.After(m.suppressionSeen[cooldown.Key]) {
+				m.suppressionSeen[cooldown.Key] = cooldown.LastSentAt
 			}
 		}
 	}
 	for _, item := range ruleHistory {
 		key := alertCooldownKey("rule", item.RuleID, item.ScopeType, item.ScopeID, item.TargetType, item.TargetID)
+		if _, restored := persistedRuleKeys[key]; restored {
+			continue
+		}
 		if item.CreatedAt.After(m.ruleSent[key]) {
 			m.ruleSent[key] = item.CreatedAt
 		}

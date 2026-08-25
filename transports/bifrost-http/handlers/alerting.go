@@ -39,8 +39,10 @@ func (h *AlertingHandler) RegisterRoutes(r *router.Router, middlewares ...schema
 	r.DELETE("/api/alerting/channels/{id}", lib.ChainMiddlewares(h.deleteChannel, middlewares...))
 
 	r.GET("/api/alerting/rules", lib.ChainMiddlewares(h.listRules, middlewares...))
+	r.GET("/api/alerting/rules/evaluation-status", lib.ChainMiddlewares(h.getRuleEvaluationStatus, middlewares...))
 	r.GET("/api/alerting/rules/{id}", lib.ChainMiddlewares(h.getRule, middlewares...))
 	r.POST("/api/alerting/rules", lib.ChainMiddlewares(h.createRule, middlewares...))
+	r.POST("/api/alerting/rules/{id}/evaluate", lib.ChainMiddlewares(h.evaluateRuleNow, middlewares...))
 	r.PUT("/api/alerting/rules/{id}", lib.ChainMiddlewares(h.updateRule, middlewares...))
 	r.DELETE("/api/alerting/rules/{id}", lib.ChainMiddlewares(h.deleteRule, middlewares...))
 
@@ -331,6 +333,39 @@ func (h *AlertingHandler) deleteRule(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	SendJSON(ctx, map[string]any{"message": "Alert rule deleted successfully"})
+}
+
+func (h *AlertingHandler) getRuleEvaluationStatus(ctx *fasthttp.RequestCtx) {
+	SendJSON(ctx, map[string]any{"running_rule_ids": h.manager.RunningRuleEvaluations()})
+}
+
+func (h *AlertingHandler) evaluateRuleNow(ctx *fasthttp.RequestCtx) {
+	var req struct {
+		IgnoreCooldown bool `json:"ignore_cooldown"`
+	}
+	if len(ctx.PostBody()) > 0 {
+		if err := sonic.Unmarshal(ctx.PostBody(), &req); err != nil {
+			SendError(ctx, fasthttp.StatusBadRequest, "Invalid JSON")
+			return
+		}
+	}
+	result, err := h.manager.EvaluateRuleNow(ctx, pathID(ctx), req.IgnoreCooldown)
+	if err != nil {
+		switch {
+		case errors.Is(err, configstore.ErrNotFound):
+			SendError(ctx, fasthttp.StatusNotFound, "Alert rule not found")
+		case errors.Is(err, alertengine.ErrRuleEvaluationInProgress):
+			SendError(ctx, fasthttp.StatusConflict, err.Error())
+		case errors.Is(err, alertengine.ErrAlertingNotLeader):
+			SendError(ctx, fasthttp.StatusServiceUnavailable, err.Error())
+		case errors.Is(err, alertengine.ErrAlertRuleDisabled):
+			SendError(ctx, fasthttp.StatusBadRequest, err.Error())
+		default:
+			SendError(ctx, fasthttp.StatusInternalServerError, "Failed to evaluate alert rule: "+err.Error())
+		}
+		return
+	}
+	SendJSON(ctx, map[string]any{"message": "Alert rule evaluation completed", "result": result})
 }
 
 func (h *AlertingHandler) listHistory(ctx *fasthttp.RequestCtx) {

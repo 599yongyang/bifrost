@@ -37,6 +37,16 @@ export interface AlertRule {
 
 export type AlertRuleRequest = Omit<AlertRule, "id" | "created_at" | "updated_at">;
 
+export interface AlertRuleEvaluationResult {
+	rule_id: string;
+	matched: boolean;
+	matched_targets: number;
+	sent_count: number;
+	skipped_count: number;
+	failed_count: number;
+	cooldown_ignored: boolean;
+}
+
 export interface AlertHistoryRecord {
 	id: string;
 	rule_id: string;

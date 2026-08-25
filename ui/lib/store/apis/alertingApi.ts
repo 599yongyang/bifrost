@@ -4,6 +4,7 @@ import {
 	AlertHistoryParams,
 	AlertHistoryRecord,
 	AlertRule,
+	AlertRuleEvaluationResult,
 	AlertRuleRequest,
 } from "@/lib/types/alerting";
 import { baseApi } from "./baseApi";
@@ -50,8 +51,16 @@ export const alertingApi = baseApi.injectEndpoints({
 			query: (id) => ({ url: `/alerting/rules/${id}`, method: "DELETE" }),
 			invalidatesTags: ["AlertRules"],
 		}),
-		evaluateAlerts: builder.mutation<void, void>({
-			query: () => ({ url: "/alerting/evaluate", method: "POST" }),
+		getAlertRuleEvaluationStatus: builder.query<{ running_rule_ids: string[] }, void>({
+			query: () => "/alerting/rules/evaluation-status",
+		}),
+		evaluateAlertRule: builder.mutation<AlertRuleEvaluationResult, { id: string; ignoreCooldown: boolean }>({
+			query: ({ id, ignoreCooldown }) => ({
+				url: `/alerting/rules/${id}/evaluate`,
+				method: "POST",
+				body: { ignore_cooldown: ignoreCooldown },
+			}),
+			transformResponse: (response: { result: AlertRuleEvaluationResult }) => response.result,
 			invalidatesTags: ["AlertHistory"],
 		}),
 
@@ -84,6 +93,7 @@ export const {
 	useCreateAlertRuleMutation,
 	useUpdateAlertRuleMutation,
 	useDeleteAlertRuleMutation,
-	useEvaluateAlertsMutation,
+	useGetAlertRuleEvaluationStatusQuery,
+	useEvaluateAlertRuleMutation,
 	useGetAlertHistoryQuery,
 } = alertingApi;

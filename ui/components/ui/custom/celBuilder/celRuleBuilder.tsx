@@ -43,6 +43,7 @@ export interface CELFieldDefinition {
 	values?: Array<{ name: string; label: string; disabled?: boolean }>;
 	metricOptions?: Array<{ name: string; label: string }>;
 	description?: string;
+	numericKind?: "double" | "int";
 }
 
 export interface CELOperatorDefinition {
@@ -80,7 +81,7 @@ export interface CELRuleBuilderProps {
 	/** Notified when the user switches between Builder and CEL mode. */
 	onModeChange?: (mode: CELBuilderMode) => void;
 	/**
-	 * Validation error to surface inline beneath the editable CEL textarea (CEL mode only),
+	 * Validation error to surface inline beneath the builder or editable CEL textarea,
 	 * e.g. a server-side compile error returned on save. Cleared by the parent on edit.
 	 */
 	celError?: string | null;
@@ -238,36 +239,43 @@ export function CELRuleBuilder({
 			)}
 
 			{mode === "builder" && (
-				<div className="rounded-md border">
-					<div className="custom-scrollbar flex w-full min-w-0 flex-col overflow-x-hidden overflow-y-visible">
-						<QueryBuilderWrapper>
-							<QueryBuilder
-								fields={fields}
-								query={query}
-								onQueryChange={setQuery}
-								context={context}
-								controlClassnames={{ queryBuilder: "queryBuilder-branches" }}
-								operators={operators.map((op) => ({
-									name: op.name,
-									label: op.label,
-								}))}
-								controlElements={{
-									fieldSelector: FieldSelector,
-									operatorSelector: OperatorSelector,
-									valueEditor: ValueEditor,
-									addRuleAction: ActionButton,
-									addGroupAction: ActionButton,
-									removeRuleAction: ActionButton,
-									removeGroupAction: ActionButton,
-									combinatorSelector: CombinatorSelector,
-								}}
-								translations={{
-									addRule: { label: "Add Rule" },
-									addGroup: { label: "Add Rule Group" },
-								}}
-							/>
-						</QueryBuilderWrapper>
+				<div className="space-y-2">
+					<div className="rounded-md border">
+						<div className="custom-scrollbar flex w-full min-w-0 flex-col overflow-x-hidden overflow-y-visible">
+							<QueryBuilderWrapper>
+								<QueryBuilder
+									fields={fields}
+									query={query}
+									onQueryChange={setQuery}
+									context={context}
+									controlClassnames={{ queryBuilder: "queryBuilder-branches" }}
+									operators={operators.map((op) => ({
+										name: op.name,
+										label: op.label,
+									}))}
+									controlElements={{
+										fieldSelector: FieldSelector,
+										operatorSelector: OperatorSelector,
+										valueEditor: ValueEditor,
+										addRuleAction: ActionButton,
+										addGroupAction: ActionButton,
+										removeRuleAction: ActionButton,
+										removeGroupAction: ActionButton,
+										combinatorSelector: CombinatorSelector,
+									}}
+									translations={{
+										addRule: { label: "Add Rule" },
+										addGroup: { label: "Add Rule Group" },
+									}}
+								/>
+							</QueryBuilderWrapper>
+						</div>
 					</div>
+					{celError && (
+						<p className="text-destructive text-xs whitespace-pre-wrap" data-testid="cel-builder-builder-error">
+							{celError}
+						</p>
+					)}
 				</div>
 			)}
 

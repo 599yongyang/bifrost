@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { CELRuleBuilder, type CELFieldDefinition, type CELOperatorDefinition } from "@/components/ui/custom/celBuilder";
 import { VirtualKeySelector } from "@/components/entitySelectors/virtualKeySelector";
 import { TeamSelector } from "@/components/entitySelectors/teamSelector";
@@ -28,9 +29,10 @@ import {
 	useDeleteAlertChannelMutation,
 	useTestAlertChannelMutation,
 	useDeleteAlertRuleMutation,
-	useEvaluateAlertsMutation,
+	useEvaluateAlertRuleMutation,
 	useGetAlertChannelsQuery,
 	useGetAlertHistoryQuery,
+	useGetAlertRuleEvaluationStatusQuery,
 	useGetAlertRulesQuery,
 	useGetProvidersQuery,
 	useGetModelsQuery,
@@ -41,16 +43,17 @@ import {
 	AlertChannel,
 	AlertChannelRequest,
 	AlertChannelType,
+	AlertHistoryRecord,
 	AlertRule,
 	AlertRuleRequest,
 	AlertScopeType,
 	AlertStatus,
 } from "@/lib/types/alerting";
-import { BellRing, Pencil, Plus, RefreshCw, Search, Send, Trash2 } from "lucide-react";
-import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
+import { BellRing, Pencil, Play, Plus, RefreshCw, Search, Send, Trash2, TriangleAlert } from "lucide-react";
+import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
-import type { RuleGroupType, RuleType } from "react-querybuilder";
+import type { RuleGroupType } from "react-querybuilder";
 import FullPageLoader from "@/components/fullPageLoader";
 import i18n from "@/lib/i18n";
 import { alertMetricsForScope } from "./alertingRuleFields";
@@ -62,6 +65,8 @@ import {
 	type AlertWindowUnit,
 } from "./alertingDuration";
 import { AlertingDurationInput } from "./alertingDurationInput";
+import { alertMetricNumericKind, alertQueryToCEL, buildAlertCEL } from "./alertingExpression";
+import { formatAlertCondition } from "./alertingCondition";
 
 const tr = (key: string, options?: Record<string, unknown>) => i18n.t(`workspace.alerting.${key}`, options);
 
@@ -72,12 +77,14 @@ const channelLabels: Record<AlertChannelType, string> = {
 	pagerduty: "PagerDuty",
 	webhook: "Webhook",
 };
-const scopeLabels: Record<AlertScopeType, string> = {
-	virtual_key: "Virtual Key",
-	team: "Team",
-	customer: "Customer",
-	provider: "Provider",
+const scopeLabelKeys: Record<AlertScopeType, string> = {
+	virtual_key: "virtualKey",
+	team: "team",
+	customer: "customer",
+	provider: "provider",
 };
+
+const scopeLabel = (scope: AlertScopeType) => tr(scopeLabelKeys[scope]);
 
 function PageHeader({ title, description, action }: { title: string; description: string; action?: ReactNode }) {
 	return (
@@ -165,6 +172,45 @@ function ConfirmDelete({
 	);
 }
 
+function ConfirmForceEvaluation({
+	rule,
+	open,
+	onOpenChange,
+	onConfirm,
+	isLoading,
+}: {
+	rule: AlertRule | null;
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	onConfirm: () => Promise<void>;
+	isLoading: boolean;
+}) {
+	return (
+		<AlertDialog open={open} onOpenChange={onOpenChange}>
+			<AlertDialogContent>
+				<AlertDialogHeader>
+					<AlertDialogTitle>{tr("forceEvaluationTitle", { name: rule?.name ?? "" })}</AlertDialogTitle>
+					<AlertDialogDescription>{tr("forceEvaluationDescription")}</AlertDialogDescription>
+				</AlertDialogHeader>
+				<AlertDialogFooter>
+					<AlertDialogCancel>{tr("cancel")}</AlertDialogCancel>
+					<AlertDialogAction
+						data-testid="alert-rule-force-confirm"
+						disabled={isLoading}
+						className="bg-amber-600 text-white hover:bg-amber-700"
+						onClick={(event) => {
+							event.preventDefault();
+							void onConfirm();
+						}}
+					>
+						{tr("forceEvaluation")}
+					</AlertDialogAction>
+				</AlertDialogFooter>
+			</AlertDialogContent>
+		</AlertDialog>
+	);
+}
+
 function SearchBox({
 	value,
 	onChange,
@@ -187,6 +233,64 @@ function SearchBox({
 				className="pl-9"
 			/>
 		</div>
+	);
+}
+
+function TruncatedTextTooltip({ text, className = "", monospace = false }: { text: string; className?: string; monospace?: boolean }) {
+	const textRef = useRef<HTMLSpanElement>(null);
+	const [isTruncated, setIsTruncated] = useState(false);
+	const measure = useCallback(() => {
+		const element = textRef.current;
+		setIsTruncated(!!element && (element.scrollWidth > element.clientWidth || element.scrollHeight > element.clientHeight));
+	}, []);
+	useEffect(() => {
+		measure();
+		const element = textRef.current;
+		if (!element || typeof ResizeObserver === "undefined") return;
+		const observer = new ResizeObserver(measure);
+		observer.observe(element);
+		return () => observer.disconnect();
+	}, [measure, text]);
+	return (
+		<Tooltip>
+			<TooltipTrigger asChild>
+				<span
+					ref={textRef}
+					tabIndex={isTruncated ? 0 : undefined}
+					onMouseEnter={measure}
+					onFocus={measure}
+					className={`block truncate outline-none ${isTruncated ? "focus-visible:ring-ring/50 cursor-help focus-visible:ring-2" : ""} ${monospace ? "font-mono" : ""} ${className}`}
+				>
+					{text}
+				</span>
+			</TooltipTrigger>
+			{isTruncated && (
+				<TooltipContent className="max-w-xl break-words whitespace-pre-wrap">
+					{monospace ? <code className="text-xs break-all">{text}</code> : <span className="text-sm">{text}</span>}
+				</TooltipContent>
+			)}
+		</Tooltip>
+	);
+}
+
+function AlertConditionDisplay({ rule }: { rule: AlertRule }) {
+	const semanticCondition = formatAlertCondition(rule.query, (key) => tr(key));
+	if (!semanticCondition) {
+		return <TruncatedTextTooltip text={rule.cel_expression} monospace className="text-muted-foreground max-w-80 text-xs" />;
+	}
+	return (
+		<Tooltip>
+			<TooltipTrigger asChild>
+				<span className="block max-w-80 cursor-help truncate text-sm" tabIndex={0}>
+					{semanticCondition}
+				</span>
+			</TooltipTrigger>
+			<TooltipContent className="max-w-md">
+				<div className="mb-2 text-sm whitespace-pre-wrap">{semanticCondition}</div>
+				<div className="text-muted-foreground mb-1 border-t pt-2 text-xs">{tr("rawCEL")}</div>
+				<code className="text-xs break-all">{rule.cel_expression}</code>
+			</TooltipContent>
+		</Tooltip>
 	);
 }
 
@@ -564,24 +668,9 @@ const alertOperators: CELOperatorDefinition[] = [
 	{ name: "!=", label: "does not equal", celSyntax: "!=" },
 ];
 
-function alertQueryToCEL(group: RuleGroupType | undefined): string {
-	if (!group?.rules?.length) return "";
-	const expressions = group.rules
-		.map((entry) => {
-			if ("rules" in entry) {
-				const nested = alertQueryToCEL(entry as RuleGroupType);
-				return nested ? `(${nested})` : "";
-			}
-			const rule = entry as RuleType;
-			if (!rule.field || !rule.operator || rule.value === "") return "";
-			return `${rule.field} ${rule.operator} ${Number(rule.value) || 0}`;
-		})
-		.filter(Boolean);
-	return expressions.join(String(group.combinator).toLowerCase() === "or" ? " || " : " && ");
-}
-
 function RuleDialog({ open, onOpenChange, rule }: { open: boolean; onOpenChange: (open: boolean) => void; rule: AlertRule | null }) {
 	const [form, setForm] = useState<RuleForm>(emptyRule);
+	const [celError, setCelError] = useState<string | null>(null);
 	const { data: channelsData } = useGetAlertChannelsQuery();
 	const { data: providers = [] } = useGetProvidersQuery();
 	const { data: providerModels } = useGetModelsQuery(
@@ -595,11 +684,13 @@ function RuleDialog({ open, onOpenChange, rule }: { open: boolean; onOpenChange:
 		name,
 		label,
 		inputType: "number",
+		numericKind: alertMetricNumericKind(name),
 		operators: alertOperators.map((operator) => operator.name),
 		defaultOperator: ">=",
 		defaultValue: 0,
 	}));
 	const setRuleKind = (provider: boolean) => {
+		setCelError(null);
 		setForm((current) => ({
 			...current,
 			scopeType: provider ? "provider" : "virtual_key",
@@ -613,7 +704,8 @@ function RuleDialog({ open, onOpenChange, rule }: { open: boolean; onOpenChange:
 		}));
 	};
 	useEffect(() => {
-		if (open)
+		if (open) {
+			setCelError(null);
 			setForm(
 				rule
 					? {
@@ -633,9 +725,14 @@ function RuleDialog({ open, onOpenChange, rule }: { open: boolean; onOpenChange:
 						}
 					: emptyRule,
 			);
+		}
 	}, [open, rule]);
 	const submit = async (event: FormEvent) => {
 		event.preventDefault();
+		if (celError || !form.expression.trim()) {
+			toast.error(celError || "A valid CEL expression is required");
+			return;
+		}
 		try {
 			const request: AlertRuleRequest = {
 				name: form.name.trim(),
@@ -662,7 +759,9 @@ function RuleDialog({ open, onOpenChange, rule }: { open: boolean; onOpenChange:
 			toast.success(rule ? "Alert rule updated" : "Alert rule created");
 			onOpenChange(false);
 		} catch (error) {
-			toast.error(getErrorMessage(error));
+			const message = getErrorMessage(error);
+			if (/\bCEL\b|expression|overload/i.test(message)) setCelError(message);
+			toast.error(message);
 		}
 	};
 	return (
@@ -746,9 +845,9 @@ function RuleDialog({ open, onOpenChange, rule }: { open: boolean; onOpenChange:
 										<SelectValue />
 									</SelectTrigger>
 									<SelectContent>
-										{Object.entries(scopeLabels).map(([value, label]) => (
+										{Object.entries(scopeLabelKeys).map(([value, labelKey]) => (
 											<SelectItem key={value} value={value}>
-												{label}
+												{tr(labelKey)}
 											</SelectItem>
 										))}
 									</SelectContent>
@@ -909,7 +1008,17 @@ function RuleDialog({ open, onOpenChange, rule }: { open: boolean; onOpenChange:
 								initialCel={form.expression}
 								initialMode={rule && !rule.query ? "cel" : "builder"}
 								allowCelMode
-								onChange={(expression, query) => setForm((current) => ({ ...current, expression, query }))}
+								celError={celError}
+								onChange={(expression, query) => {
+									if (expression && query.rules.length === 0) {
+										setCelError(null);
+										setForm((current) => ({ ...current, expression, query }));
+										return;
+									}
+									const result = buildAlertCEL(query);
+									setCelError(result.error);
+									setForm((current) => ({ ...current, expression: result.expression, query }));
+								}}
 							/>
 						</div>
 						<div className="flex items-center justify-between rounded-md border p-3">
@@ -924,7 +1033,12 @@ function RuleDialog({ open, onOpenChange, rule }: { open: boolean; onOpenChange:
 						<Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
 							Cancel
 						</Button>
-						<Button disabled={createState.isLoading || updateState.isLoading || form.channelIDs.length === 0} type="submit">
+						<Button
+							disabled={
+								createState.isLoading || updateState.isLoading || form.channelIDs.length === 0 || !!celError || !form.expression.trim()
+							}
+							type="submit"
+						>
 							{rule ? tr("saveChanges") : tr("createRule")}
 						</Button>
 					</DialogFooter>
@@ -942,12 +1056,18 @@ export function AlertRulesViewImpl() {
 		pollingInterval: 10000,
 	});
 	const { data: channelsData } = useGetAlertChannelsQuery();
+	const { data: evaluationStatus } = useGetAlertRuleEvaluationStatusQuery(undefined, { pollingInterval: 2000 });
 	const [updateRule] = useUpdateAlertRuleMutation();
 	const [deleteRule, deleteState] = useDeleteAlertRuleMutation();
+	const [evaluateRule, evaluationState] = useEvaluateAlertRuleMutation();
 	const [search, setSearch] = useState("");
 	const [dialogOpen, setDialogOpen] = useState(false);
 	const [editing, setEditing] = useState<AlertRule | null>(null);
 	const [deleteTarget, setDeleteTarget] = useState<AlertRule | null>(null);
+	const [forceTarget, setForceTarget] = useState<AlertRule | null>(null);
+	const [localEvaluationRuleID, setLocalEvaluationRuleID] = useState<string | null>(null);
+	const runningRuleIDs = useMemo(() => new Set(evaluationStatus?.running_rule_ids ?? []), [evaluationStatus]);
+	const isRuleRunning = (ruleID: string) => localEvaluationRuleID === ruleID || runningRuleIDs.has(ruleID);
 	const channelNames = useMemo(
 		() => Object.fromEntries((channelsData?.channels ?? []).map((item) => [item.id, item.name])),
 		[channelsData],
@@ -959,6 +1079,25 @@ export function AlertRulesViewImpl() {
 	const openCreate = () => {
 		setEditing(null);
 		setDialogOpen(true);
+	};
+	const runEvaluation = async (item: AlertRule, ignoreCooldown: boolean) => {
+		setLocalEvaluationRuleID(item.id);
+		try {
+			const result = await evaluateRule({ id: item.id, ignoreCooldown }).unwrap();
+			if (result.failed_count > 0) {
+				toast.error(tr("evaluationFailed", { count: result.failed_count }));
+			} else if (!result.matched) {
+				toast.info(tr("evaluationNotMatched"));
+			} else if (result.sent_count > 0) {
+				toast.success(tr("evaluationSent", { count: result.sent_count }));
+			} else {
+				toast.info(tr("evaluationSuppressed"));
+			}
+		} catch (error) {
+			toast.error(getErrorMessage(error));
+		} finally {
+			setLocalEvaluationRuleID(null);
+		}
 	};
 	if (isLoading && !data) return <FullPageLoader />;
 	if (isError) return <LoadError error={error} onRetry={refetch} />;
@@ -991,10 +1130,10 @@ export function AlertRulesViewImpl() {
 								<TableRow>
 									<TableHead>{tr("name")}</TableHead>
 									<TableHead>{tr("scope")}</TableHead>
-									<TableHead>{tr("condition")}</TableHead>
+									<TableHead>{tr("triggerCondition")}</TableHead>
 									<TableHead>{tr("channels")}</TableHead>
 									<TableHead>{tr("status")}</TableHead>
-									<TableHead className="w-28" />
+									<TableHead className="w-[430px]" />
 								</TableRow>
 							</TableHeader>
 							<TableBody>
@@ -1005,17 +1144,17 @@ export function AlertRulesViewImpl() {
 											<div className="text-muted-foreground text-xs">{item.description}</div>
 										</TableCell>
 										<TableCell>
-											{scopeLabels[item.scope_type]}
-											<div className="text-muted-foreground max-w-40 truncate text-xs">{item.scope_id}</div>
+											{scopeLabel(item.scope_type)}
+											<TruncatedTextTooltip text={item.scope_id} className="text-muted-foreground max-w-40 text-xs" />
 										</TableCell>
 										<TableCell>
-											<code className="text-muted-foreground text-xs">{item.cel_expression}</code>
+											<AlertConditionDisplay rule={item} />
 										</TableCell>
 										<TableCell>{item.channel_ids.map((id) => channelNames[id] ?? id).join(", ")}</TableCell>
 										<TableCell>
 											<Switch
 												data-testid={`alert-rule-toggle-${item.id}`}
-												disabled={!canUpdate}
+												disabled={!canUpdate || isRuleRunning(item.id)}
 												checked={item.enabled}
 												onCheckedChange={async (enabled) => {
 													try {
@@ -1027,12 +1166,39 @@ export function AlertRulesViewImpl() {
 											/>
 										</TableCell>
 										<TableCell>
-											<div className="flex">
+											<div className="flex items-center justify-end gap-1 whitespace-nowrap">
+												{canUpdate && (
+													<Button
+														data-testid={`alert-rule-evaluate-${item.id}`}
+														variant="outline"
+														size="sm"
+														className="gap-1.5"
+														disabled={!item.enabled || isRuleRunning(item.id)}
+														onClick={() => void runEvaluation(item, false)}
+													>
+														<Play className="h-3.5 w-3.5" />
+														{isRuleRunning(item.id) ? tr("evaluating") : tr("evaluateRuleNow")}
+													</Button>
+												)}
+												{canUpdate && (
+													<Button
+														data-testid={`alert-rule-force-evaluate-${item.id}`}
+														variant="outline"
+														size="sm"
+														className="border-amber-500/60 text-amber-700 hover:bg-amber-50 hover:text-amber-800 dark:text-amber-400 dark:hover:bg-amber-950/30"
+														disabled={!item.enabled || isRuleRunning(item.id)}
+														onClick={() => setForceTarget(item)}
+													>
+														<TriangleAlert className="h-3.5 w-3.5" />
+														{tr("forceEvaluation")}
+													</Button>
+												)}
 												{canUpdate && (
 													<Button
 														data-testid={`alert-rule-edit-${item.id}`}
 														variant="ghost"
 														size="icon"
+														disabled={isRuleRunning(item.id)}
 														onClick={() => {
 															setEditing(item);
 															setDialogOpen(true);
@@ -1046,6 +1212,7 @@ export function AlertRulesViewImpl() {
 														data-testid={`alert-rule-delete-${item.id}`}
 														variant="ghost"
 														size="icon"
+														disabled={isRuleRunning(item.id)}
 														onClick={() => setDeleteTarget(item)}
 													>
 														<Trash2 className="text-destructive h-4 w-4" />
@@ -1077,6 +1244,17 @@ export function AlertRulesViewImpl() {
 					}
 				}}
 			/>
+			<ConfirmForceEvaluation
+				rule={forceTarget}
+				open={!!forceTarget}
+				onOpenChange={(open) => !open && setForceTarget(null)}
+				isLoading={evaluationState.isLoading}
+				onConfirm={async () => {
+					if (!forceTarget) return;
+					await runEvaluation(forceTarget, true);
+					setForceTarget(null);
+				}}
+			/>
 		</div>
 	);
 }
@@ -1084,8 +1262,57 @@ export function AlertRulesViewImpl() {
 function statusVariant(status: AlertStatus): "outline" | "destructive" | "secondary" {
 	return status === "failed" ? "destructive" : status === "skipped" ? "secondary" : "outline";
 }
+
+function historyStatusDetail(detail?: string): string {
+	if (detail === "skipped due to rule cooldown") return tr("ruleCooldownSkipped");
+	if (detail === "skipped because this reset cycle was already notified") return tr("resetCycleSkipped");
+	if (detail === "manual evaluation") return tr("manualEvaluation");
+	if (detail === "manual override: cooldown ignored") return tr("manualOverride");
+	return detail || "—";
+}
+
+const historyMetricLabelKeys: Record<string, string> = {
+	budget_usage_percent: "budgetUsedPercent",
+	budget_spent: "budgetSpent",
+	budget_limit: "budgetLimit",
+	rate_limit_request_usage_percent: "requestLimitUsedPercent",
+	request_usage: "requestUsage",
+	request_limit: "requestLimit",
+	rate_limit_token_usage_percent: "tokenLimitUsedPercent",
+	token_usage: "tokenUsage",
+	token_limit: "tokenLimit",
+	provider_error_rate: "providerErrorRate",
+	provider_error_count: "providerErrorCount",
+	provider_success_count: "providerSuccessCount",
+	provider_request_count: "providerRequestCount",
+	window_seconds: "rollingWindow",
+};
+
+function historyEvaluationSummary(item: AlertHistoryRecord): string {
+	const entries = Object.entries(item.input ?? {}).filter(([key]) => {
+		if (!historyMetricLabelKeys[key]) return false;
+		return item.scope_type === "provider" ? key.startsWith("provider_") || key === "window_seconds" : !key.startsWith("provider_");
+	});
+	const referenced = entries.filter(([key]) => item.cel_expression.includes(key));
+	const contextual = entries.filter(([key, value]) => key === "window_seconds" || Number(value) !== 0);
+	const selected = [...referenced, ...contextual, ...entries]
+		.filter(([key], index, values) => values.findIndex(([candidate]) => candidate === key) === index)
+		.slice(0, 4);
+	const summary = selected
+		.map(([key, value]) => {
+			let displayValue = String(value);
+			if (key.endsWith("_percent") || key === "provider_error_rate") displayValue = `${Number(value).toFixed(2)}%`;
+			if (key === "window_seconds") {
+				const duration = alertWindowFromSeconds(Number(value));
+				displayValue = `${duration.windowValue} ${tr(duration.windowUnit)}`;
+			}
+			return `${tr(historyMetricLabelKeys[key])}: ${displayValue}`;
+		})
+		.join("，");
+	return summary || "—";
+}
+
 export function AlertHistoryViewImpl() {
-	const canEvaluate = useRbac(RbacResource.AlertRules, RbacOperation.Update);
 	const [status, setStatus] = useState<"all" | AlertStatus>("all");
 	const [scopeType, setScopeType] = useState<"all" | AlertScopeType>("all");
 	const [channelType, setChannelType] = useState<"all" | AlertChannelType>("all");
@@ -1101,7 +1328,6 @@ export function AlertHistoryViewImpl() {
 		},
 		{ pollingInterval: 10000 },
 	);
-	const [evaluate, evaluateState] = useEvaluateAlertsMutation();
 	const rows = data?.history ?? [];
 	const total = data?.total ?? 0;
 	if (isLoading && !data) return <FullPageLoader />;
@@ -1112,29 +1338,9 @@ export function AlertHistoryViewImpl() {
 				title={tr("historyTitle")}
 				description={tr("historyDescription")}
 				action={
-					<div className="flex gap-2">
-						<Button data-testid="alert-history-refresh" variant="outline" onClick={() => refetch()} className="gap-2">
-							<RefreshCw className="h-4 w-4" /> {tr("refresh")}
-						</Button>
-						{canEvaluate && (
-							<Button
-								data-testid="alert-history-evaluate"
-								disabled={evaluateState.isLoading}
-								onClick={async () => {
-									try {
-										await evaluate().unwrap();
-										await refetch();
-										toast.success("Alert evaluation completed");
-									} catch (error) {
-										toast.error(getErrorMessage(error));
-									}
-								}}
-								className="gap-2"
-							>
-								<BellRing className="h-4 w-4" /> {tr("evaluateNow")}
-							</Button>
-						)}
-					</div>
+					<Button data-testid="alert-history-refresh" variant="outline" onClick={() => refetch()} className="gap-2">
+						<RefreshCw className="h-4 w-4" /> {tr("refresh")}
+					</Button>
 				}
 			/>
 			<div className="mb-4 flex flex-wrap gap-2">
@@ -1167,9 +1373,9 @@ export function AlertHistoryViewImpl() {
 					</SelectTrigger>
 					<SelectContent>
 						<SelectItem value="all">{tr("allScopes")}</SelectItem>
-						{Object.entries(scopeLabels).map(([value, label]) => (
+						{Object.entries(scopeLabelKeys).map(([value, labelKey]) => (
 							<SelectItem key={value} value={value}>
-								{label}
+								{tr(labelKey)}
 							</SelectItem>
 						))}
 					</SelectContent>
@@ -1216,27 +1422,23 @@ export function AlertHistoryViewImpl() {
 									<TableCell className="text-xs whitespace-nowrap">{new Date(item.created_at).toLocaleString()}</TableCell>
 									<TableCell>
 										<div className="font-medium">{item.rule_name}</div>
-										<code className="text-muted-foreground block max-w-48 truncate text-xs">{item.cel_expression}</code>
+										<TruncatedTextTooltip text={item.cel_expression} monospace className="text-muted-foreground max-w-48 text-xs" />
 									</TableCell>
 									<TableCell>
-										{item.channel_name || "—"}
+										{item.channel_name || (item.status === "skipped" ? tr("ruleLevelSuppression") : "—")}
 										<div className="text-muted-foreground text-xs">{item.channel_type ? channelLabels[item.channel_type] : ""}</div>
 									</TableCell>
 									<TableCell>
-										{scopeLabels[item.scope_type]}
-										<div className="text-muted-foreground max-w-36 truncate text-xs">{item.scope_id}</div>
+										{scopeLabel(item.scope_type)}
+										<TruncatedTextTooltip text={item.scope_id} className="text-muted-foreground max-w-36 text-xs" />
 									</TableCell>
 									<TableCell>
-										<Badge variant={statusVariant(item.status)}>{item.status}</Badge>
+										<Badge variant={statusVariant(item.status)}>{tr(item.status)}</Badge>
 									</TableCell>
 									<TableCell>
-										<code className="text-muted-foreground block max-w-56 truncate text-xs">
-											{Object.entries(item.input ?? {})
-												.map(([key, value]) => `${key}: ${value}`)
-												.join(", ")}
-										</code>
+										<TruncatedTextTooltip text={historyEvaluationSummary(item)} className="text-muted-foreground max-w-56 text-xs" />
 									</TableCell>
-									<TableCell className="text-muted-foreground max-w-52 text-xs">{item.status_detail || "—"}</TableCell>
+									<TableCell className="text-muted-foreground max-w-52 text-xs">{historyStatusDetail(item.status_detail)}</TableCell>
 								</TableRow>
 							))}
 						</TableBody>

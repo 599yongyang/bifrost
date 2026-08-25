@@ -28,6 +28,7 @@ type AlertStore interface {
 
 	ListAlertCooldowns(context.Context) ([]tables.TableAlertCooldown, error)
 	UpsertAlertCooldown(context.Context, string, time.Time) error
+	DeleteAlertSuppressionsBefore(context.Context, time.Time) (int64, error)
 }
 
 func (s *RDBConfigStore) ListAlertCooldowns(ctx context.Context) ([]tables.TableAlertCooldown, error) {
@@ -42,6 +43,13 @@ func (s *RDBConfigStore) UpsertAlertCooldown(ctx context.Context, key string, la
 		Columns:   []clause.Column{{Name: "key"}},
 		DoUpdates: clause.AssignmentColumns([]string{"last_sent_at", "updated_at"}),
 	}).Create(&row).Error
+}
+
+func (s *RDBConfigStore) DeleteAlertSuppressionsBefore(ctx context.Context, cutoff time.Time) (int64, error) {
+	result := s.DB().WithContext(ctx).
+		Where("updated_at < ? AND (key LIKE ? OR key LIKE ?)", cutoff.UTC(), "suppression:%", "cycle-suppression:%").
+		Delete(&tables.TableAlertCooldown{})
+	return result.RowsAffected, result.Error
 }
 
 func (s *RDBConfigStore) ListAlertChannels(ctx context.Context) ([]tables.TableAlertChannel, error) {

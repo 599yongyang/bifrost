@@ -1,13 +1,13 @@
 ---
 title: "Alert History"
-description: "Review delivered alert notifications, skipped alerts, and failed delivery attempts in Bifrost Enterprise."
+description: "Review delivered alert notifications, coalesced suppressions, and failed delivery attempts in Bifrost."
 icon: "clock-rotate-left"
 keywords: ["alert history", "alert delivery", "notifications", "skipped alerts"]
 ---
 
 ## Overview
 
-Bifrost records every alert evaluation outcome in **alert history**. Each record captures the rule that was evaluated, the scope and target, the metric values at evaluation time, the delivery channel (if applicable), and the outcome status.
+Bifrost records matched delivery outcomes and evaluation failures in **alert history**. Each record captures the rule, scope and target, relevant metric values, delivery channel when applicable, and outcome status. Ordinary non-matches are not stored.
 
 Alert history is stored in the configured logs store. PostgreSQL and ClickHouse logs stores both support history writes, filtering, and recovery of alert state. With ClickHouse, Bifrost creates an `enterprise_alert_history` table with the configured `history_retention_days` TTL.
 
@@ -31,7 +31,7 @@ Each history record contains:
 | --- | --- |
 | **Time** | When the evaluation was recorded. |
 | **Rule** | The rule that was evaluated. |
-| **Channel** | The channel that was notified, or empty for cooldown skips. |
+| **Channel** | The channel that was notified, or a rule-level suppression marker for cooldown skips. |
 | **Scope** | The scope type and ID the rule applied to. |
 | **Target** | The budget target (`target_type` and `target_id`), if the rule targets one. |
 | **Status** | Delivery outcome: `sent`, `failed`, or `skipped`. |
@@ -48,7 +48,7 @@ Each history record has one of three statuses:
 | --- | --- |
 | `sent` | The alert was successfully delivered to the channel. |
 | `failed` | Delivery was attempted but failed (for example, network error or unsupported channel type). |
-| `skipped` | The rule matched but delivery was suppressed by a cooldown. |
+| `skipped` | The rule matched but delivery was suppressed. Consecutive scans in the same cooldown or reset cycle are coalesced into one record. |
 
 For skipped records, the `status_detail` field indicates the reason:
 
@@ -60,7 +60,7 @@ For failed records, the `status_detail` field contains the error (for example, `
 
 ## Evaluation input
 
-Each history record stores the metric values that were evaluated. For a matched rule, this includes the specific values that caused the expression to evaluate to `true`. Example for a budget alert:
+Each history record stores only metrics relevant to its rule type. Internal scope identifiers and zero-filled metrics from the other rule family are omitted. Example for a budget alert:
 
 ```json
 {
@@ -70,11 +70,7 @@ Each history record stores the metric values that were evaluated. For a matched 
   "request_usage": 0,
   "request_limit": 0,
   "token_usage": 0,
-  "token_limit": 0,
-  "scope_type": "virtual_key",
-  "scope_id": "vk-abc",
-  "target_type": "budget",
-  "target_id": "budget-a"
+  "token_limit": 0
 }
 ```
 

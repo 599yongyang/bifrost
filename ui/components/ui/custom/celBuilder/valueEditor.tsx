@@ -35,6 +35,7 @@ export function ValueEditor({
 	const validateRegex = context?.validateRegex;
 	const menuPosition = context?.menuPosition;
 	const menuPortalTarget = context?.menuPortalTarget;
+	const numericKind = (fieldData as { numericKind?: "double" | "int" } | undefined)?.numericKind;
 
 	// Get valueEditorType, handling both string and function types
 	const valueEditorType =
@@ -281,7 +282,8 @@ export function ValueEditor({
 	return (
 		<Input
 			type={type === ("number" as ValueEditorType) ? "number" : "text"}
-			value={value || ""}
+			step={numericKind === "int" ? "1" : numericKind === "double" ? "any" : undefined}
+			value={value ?? ""}
 			onChange={(e) => handleOnChange(e.target.value)}
 			placeholder={placeholder}
 			className="w-[360px]"

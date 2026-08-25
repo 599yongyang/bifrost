@@ -26,6 +26,20 @@ func TestAlertCooldownUpsertAndChannelDetach(t *testing.T) {
 	if err != nil || len(cooldowns) != 1 || !cooldowns[0].LastSentAt.Equal(second) {
 		t.Fatalf("unexpected cooldowns: %#v, %v", cooldowns, err)
 	}
+	if err := store.UpsertAlertCooldown(ctx, "suppression:key", first); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DB().Model(&tables.TableAlertCooldown{}).Where("key = ?", "suppression:key").Update("updated_at", first).Error; err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := store.DeleteAlertSuppressionsBefore(ctx, second)
+	if err != nil || deleted != 1 {
+		t.Fatalf("unexpected suppression cleanup: %d, %v", deleted, err)
+	}
+	cooldowns, err = store.ListAlertCooldowns(ctx)
+	if err != nil || len(cooldowns) != 1 || cooldowns[0].Key != "rule:key" {
+		t.Fatalf("cleanup removed live cooldown state: %#v, %v", cooldowns, err)
+	}
 	channel := &tables.TableAlertChannel{ID: "c1", Name: "Channel", Type: tables.AlertChannelWebhook, Enabled: true, Config: map[string]any{"url": "https://example.com"}}
 	if err := store.CreateAlertChannel(ctx, channel); err != nil {
 		t.Fatal(err)

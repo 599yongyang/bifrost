@@ -3,6 +3,7 @@ package alerting
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -118,6 +119,16 @@ func (s *memoryAlertStore) UpsertAlertCooldown(_ context.Context, key string, la
 	s.cooldowns[key] = lastSentAt
 	return nil
 }
+func (s *memoryAlertStore) DeleteAlertSuppressionsBefore(_ context.Context, cutoff time.Time) (int64, error) {
+	var deleted int64
+	for key, lastSentAt := range s.cooldowns {
+		if (strings.HasPrefix(key, "suppression:") || strings.HasPrefix(key, "cycle-suppression:")) && lastSentAt.Before(cutoff) {
+			delete(s.cooldowns, key)
+			deleted++
+		}
+	}
+	return deleted, nil
+}
 func (s *memoryAlertStore) ListLatestAlertRuleSends(context.Context) ([]logstore.AlertHistory, error) {
 	latest := make(map[string]logstore.AlertHistory)
 	for _, row := range s.history {
@@ -176,14 +187,28 @@ func TestEvaluateNowDispatchesAndAppliesRuleCooldown(t *testing.T) {
 	if err := manager.EvaluateNow(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	if err := manager.EvaluateNow(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	restartedManager, err := NewManager(store, snapshot, nil, store, nil, &Config{WebhookNetwork: NetworkConfig{AllowHTTP: true, AllowPrivateNetwork: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	restartedManager.privateClient = manager.privateClient
+	if err := restartedManager.EvaluateNow(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	if len(store.history) != 2 {
-		t.Fatalf("expected sent and cooldown history records, got %d", len(store.history))
+		t.Fatalf("expected one sent and one durable coalesced cooldown history record, got %d", len(store.history))
 	}
 	if store.history[0].Status != "sent" || store.history[1].Status != "skipped" {
 		t.Fatalf("unexpected statuses: %s (%s), %s (%s)", store.history[0].Status, store.history[0].StatusDetail, store.history[1].Status, store.history[1].StatusDetail)
 	}
 	if got := store.history[0].Evaluation["budget_usage_percent"]; got != 90.0 {
 		t.Fatalf("expected 90%% usage, got %v", got)
+	}
+	if _, exists := store.history[0].Evaluation["provider_error_rate"]; exists {
+		t.Fatalf("governance history must not contain provider metrics: %#v", store.history[0].Evaluation)
 	}
 }
 
@@ -234,6 +259,9 @@ func TestProviderErrorRateRuleUsesRollingLogWindow(t *testing.T) {
 	input := store.history[0].Evaluation
 	if input["provider_error_rate"] != 20.0 || input["provider_request_count"] != int64(100) || input["provider_error_count"] != int64(20) {
 		t.Fatalf("unexpected provider metrics: %#v", input)
+	}
+	if _, exists := input["budget_limit"]; exists {
+		t.Fatalf("provider history must not contain governance metrics: %#v", input)
 	}
 	if len(metrics.calls) != 1 || metrics.calls[0].Providers[0] != "openai" || metrics.calls[0].Models[0] != "gpt-4o" {
 		t.Fatalf("unexpected log filters: %#v", metrics.calls)
@@ -341,6 +369,9 @@ func TestNotifyOncePerResetCycleSendsAgainAfterReset(t *testing.T) {
 		deliveries.Add(1)
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("ok")), Header: make(http.Header)}, nil
 	})}
+	if err := manager.EvaluateNow(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	if err := manager.EvaluateNow(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -529,6 +560,84 @@ func TestWeComMarkdownRespectsByteLimit(t *testing.T) {
 	}
 	if !strings.HasSuffix(content, "…") {
 		t.Fatalf("expected truncated content")
+	}
+}
+
+func TestEvaluateRuleNowRespectsAndCanOverrideCooldown(t *testing.T) {
+	store := &memoryAlertStore{
+		channels: []tables.TableAlertChannel{{ID: "channel-1", Name: "Local", Type: tables.AlertChannelWebhook, Enabled: true, Config: map[string]any{"url": "http://127.0.0.1/alerts"}}},
+		rules:    []tables.TableAlertRule{{ID: "provider-rule", Name: "Provider errors", Enabled: true, ScopeType: "provider", ScopeID: "openai", CELExpression: "provider_error_count >= 3", ChannelIDs: []string{"channel-1"}, CooldownMilliseconds: 60000, WindowSeconds: 300, MinRequests: 1}},
+	}
+	metrics := &fakeMetricsStore{total: 10, errors: 3}
+	manager, err := NewManager(store, nil, metrics, store, nil, &Config{WebhookNetwork: NetworkConfig{AllowHTTP: true, AllowPrivateNetwork: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var deliveries atomic.Int64
+	manager.privateClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		deliveries.Add(1)
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("ok")), Header: make(http.Header)}, nil
+	})}
+
+	first, err := manager.EvaluateRuleNow(context.Background(), "provider-rule", false)
+	if err != nil || first.SentCount != 1 || !first.Matched {
+		t.Fatalf("unexpected first result: %#v, %v", first, err)
+	}
+	second, err := manager.EvaluateRuleNow(context.Background(), "provider-rule", false)
+	if err != nil || second.SkippedCount != 1 || second.SentCount != 0 {
+		t.Fatalf("expected cooldown suppression: %#v, %v", second, err)
+	}
+	forced, err := manager.EvaluateRuleNow(context.Background(), "provider-rule", true)
+	if err != nil || forced.SentCount != 1 || !forced.CooldownIgnored {
+		t.Fatalf("expected forced send: %#v, %v", forced, err)
+	}
+	if deliveries.Load() != 2 {
+		t.Fatalf("expected two deliveries, got %d", deliveries.Load())
+	}
+	if detail := store.history[len(store.history)-1].StatusDetail; detail != "manual override: cooldown ignored" {
+		t.Fatalf("forced send was not audited: %q", detail)
+	}
+}
+
+type blockingMetricsStore struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (s *blockingMetricsStore) GetStats(context.Context, logstore.SearchFilters) (*logstore.SearchStats, error) {
+	close(s.started)
+	<-s.release
+	return &logstore.SearchStats{TotalRequests: 10, SuccessRate: 70}, nil
+}
+
+func TestEvaluateRuleNowRejectsDuplicateInFlightRun(t *testing.T) {
+	store := &memoryAlertStore{
+		channels: []tables.TableAlertChannel{{ID: "channel-1", Name: "Local", Type: tables.AlertChannelWebhook, Enabled: true, Config: map[string]any{"url": "http://127.0.0.1/alerts"}}},
+		rules:    []tables.TableAlertRule{{ID: "provider-rule", Name: "Provider errors", Enabled: true, ScopeType: "provider", ScopeID: "openai", CELExpression: "provider_error_count >= 3", ChannelIDs: []string{"channel-1"}, WindowSeconds: 300, MinRequests: 1}},
+	}
+	metrics := &blockingMetricsStore{started: make(chan struct{}), release: make(chan struct{})}
+	manager, err := NewManager(store, nil, metrics, store, nil, &Config{WebhookNetwork: NetworkConfig{AllowHTTP: true, AllowPrivateNetwork: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.privateClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("ok")), Header: make(http.Header)}, nil
+	})}
+	done := make(chan error, 1)
+	go func() {
+		_, runErr := manager.EvaluateRuleNow(context.Background(), "provider-rule", false)
+		done <- runErr
+	}()
+	<-metrics.started
+	if running := manager.RunningRuleEvaluations(); len(running) != 1 || running[0] != "provider-rule" {
+		t.Fatalf("unexpected running rules: %#v", running)
+	}
+	if _, err := manager.EvaluateRuleNow(context.Background(), "provider-rule", false); !errors.Is(err, ErrRuleEvaluationInProgress) {
+		t.Fatalf("expected in-progress error, got %v", err)
+	}
+	close(metrics.release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }
 
