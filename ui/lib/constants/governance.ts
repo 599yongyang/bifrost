@@ -53,15 +53,18 @@ const MONTH_ABBREVIATIONS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "A
  * Out-of-range or missing months fall back to January, matching
  * BudgetResetConfig.QuarterStart on the Go side.
  */
-export function formatQuarterPreview(startMonth?: number): string {
+export function formatQuarterPreview(startMonth?: number, locale = "en-US"): string {
 	// Number.isInteger rejects a fractional month, which would otherwise pass the
 	// range check and index MONTH_ABBREVIATIONS between slots.
 	const start = startMonth !== undefined && Number.isInteger(startMonth) && startMonth >= 1 && startMonth <= 12 ? startMonth : 1;
+	const monthAbbreviations = Array.from({ length: 12 }, (_, index) =>
+		new Date(Date.UTC(2026, index, 1)).toLocaleString(locale, { month: "short", timeZone: "UTC" }),
+	);
 	return [0, 1, 2, 3]
 		.map((quarter) => {
 			const first = (start - 1 + quarter * 3) % 12;
 			const last = (first + 2) % 12;
-			return `Q${quarter + 1} ${MONTH_ABBREVIATIONS[first]}-${MONTH_ABBREVIATIONS[last]}`;
+			return `Q${quarter + 1} ${monthAbbreviations[first]}-${monthAbbreviations[last]}`;
 		})
 		.join(" · ");
 }

@@ -115,7 +115,11 @@ export function MCPLibraryServerCard({ server, isInstalled, canCreateMCPClient, 
 									{server.category}
 								</Badge>
 							)}
-							{server.publisher && <span className="text-muted-foreground min-w-0 truncate text-xs">by {server.publisher}</span>}
+							{server.publisher && (
+								<span className="text-muted-foreground min-w-0 truncate text-xs">
+									{i18n.t("workspace.mcpLibrary.by")} {server.publisher}
+								</span>
+							)}
 						</div>
 					</div>
 				</div>

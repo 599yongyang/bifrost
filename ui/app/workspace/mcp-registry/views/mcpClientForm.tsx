@@ -214,8 +214,8 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 			}
 			if (resourceText.trim() && !isValidOAuthResourceURI(resourceText.trim())) {
 				toast({
-					title: "Invalid resource URI",
-					description: "OAuth resource must be an absolute URI without a fragment.",
+					title: i18n.t("workspace.mcpForm.invalidResourceUri"),
+					description: i18n.t("workspace.mcpForm.oauthResourceAbsolute"),
 					variant: "destructive",
 				});
 				hasErrors = true;
@@ -225,8 +225,8 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 		if (authType === "per_user_headers") {
 			if (perUserHeaderKeys.length === 0) {
 				toast({
-					title: "Header keys required",
-					description: "Declare at least one header name users must supply.",
+					title: i18n.t("workspace.mcpForm.headerKeysRequired"),
+					description: i18n.t("workspace.mcpForm.headerKeysRequiredDescription"),
 					variant: "destructive",
 				});
 				hasErrors = true;
@@ -308,7 +308,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 				});
 			} else {
 				setIsLoading(false);
-				toast({ title: "Success", description: "Server created" });
+				toast({ title: i18n.t("workspace.mcpForm.successTitle"), description: i18n.t("workspace.mcpForm.serverCreated") });
 				onSaved();
 				onClose();
 			}
@@ -318,7 +318,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 				setError("name", { message: getErrorMessage(error) });
 				return;
 			}
-			toast({ title: "Error", description: getErrorMessage(error), variant: "destructive" });
+			toast({ title: i18n.t("workspace.mcpForm.errorTitle"), description: getErrorMessage(error), variant: "destructive" });
 		}
 	};
 
@@ -327,7 +327,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 			<SheetContent className="flex w-full flex-col overflow-x-hidden px-0">
 				<SheetHeader className="flex flex-col items-start px-7 pt-8">
 					<SheetTitle>{i18n.t("workspace.mcpForm.newServerTitle")}</SheetTitle>
-					<SheetDescription>Configure and connect to a new Model Context Protocol server.</SheetDescription>
+					<SheetDescription>{i18n.t("workspace.mcpForm.configureDescription")}</SheetDescription>
 				</SheetHeader>
 
 				<Form {...methods}>
@@ -350,7 +350,13 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 									<FormItem>
 										<FormLabel>{i18n.t("workspace.mcp.name")}</FormLabel>
 										<FormControl>
-											<Input id="client-name" data-testid="client-name-input" placeholder={i18n.t("supplemental.serverName")} maxLength={50} {...field} />
+											<Input
+												id="client-name"
+												data-testid="client-name-input"
+												placeholder={i18n.t("supplemental.serverName")}
+												maxLength={50}
+												{...field}
+											/>
 										</FormControl>
 										<FormMessage />
 									</FormItem>
@@ -378,7 +384,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 										>
 											<FormControl>
 												<SelectTrigger className="w-full" data-testid="connection-type-select">
-													<SelectValue placeholder="Select connection type" />
+													<SelectValue placeholder={i18n.t("workspace.mcpForm.selectConnectionType")} />
 												</SelectTrigger>
 											</FormControl>
 											<SelectContent>
@@ -386,14 +392,14 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 													{i18n.t("workspace.mcpForm.httpStreamable")}
 												</SelectItem>
 												<SelectItem value="sse" data-testid="connection-type-sse">
-													Server-Sent Events (SSE)
+													{i18n.t("workspace.mcpForm.sseLong")}
 												</SelectItem>
 												<SelectItem value="stdio" data-testid="connection-type-stdio">
 													{i18n.t("workspace.mcpForm.stdio")}
 												</SelectItem>
 											</SelectContent>
 										</Select>
-										<p className="text-muted-foreground text-xs">Connection type and authentication settings cannot be changed later.</p>
+										<p className="text-muted-foreground text-xs">{i18n.t("workspace.mcpForm.connectionSettingsImmutable")}</p>
 										<FormMessage />
 									</FormItem>
 								)}
@@ -422,7 +428,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 														</a>
 													</TooltipTrigger>
 													<TooltipContent>
-														<p>Click to learn more about Code Mode</p>
+														<p>{i18n.t("workspace.mcpForm.learnMoreCodeMode")}</p>
 													</TooltipContent>
 												</Tooltip>
 											</TooltipProvider>
@@ -446,10 +452,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 														<Info className="text-muted-foreground h-4 w-4 cursor-help" />
 													</TooltipTrigger>
 													<TooltipContent className="max-w-xs">
-														<p>
-															Enable to use lightweight ping method for health checks. Disable if your MCP server doesn't support ping -
-															will use listTools instead.
-														</p>
+														<p>{i18n.t("workspace.mcpClientSheet.pingMethodHelp")}</p>
 													</TooltipContent>
 												</Tooltip>
 											</TooltipProvider>
@@ -543,7 +546,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 														onChange={field.onChange}
 														keyPlaceholder="Header name"
 														valuePlaceholder="Header value"
-														label="Headers"
+														label={i18n.t("workspace.mcpForm.headers")}
 														useSecretVarInput
 													/>
 													{headersValidationError && <p className="text-destructive text-xs">{headersValidationError}</p>}
@@ -564,15 +567,15 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 												<div className="space-y-0.5">
 													<div className="text-sm font-medium">{i18n.t("workspace.config.security.requiredHeaders")}</div>
 													<p className="text-muted-foreground text-sm">
-														Comma-separated list of header names each caller must supply when they first use this server (e.g.{" "}
-														<code>X-API-Key, X-Tenant-ID</code>). Values are submitted per user - never stored on this server config.
+														{i18n.t("workspace.mcpClientSheet.perUserHeadersHelp")} ( <code>{"X-API-Key, X-Tenant-ID"}</code>).{" "}
+														{i18n.t("workspace.mcpForm.perUserHeadersDescription")}
 													</p>
 												</div>
 												<Textarea
 													id="per-user-header-keys"
 													data-testid="per-user-header-keys-textarea"
 													className="h-24"
-													placeholder="X-API-Key, X-Tenant-ID"
+													placeholder={i18n.t("workspace.mcpClientSheet.perUserHeadersPlaceholder")}
 													value={newHeaderKeyInput}
 													onChange={(e) => {
 														setNewHeaderKeyInput(e.target.value);
@@ -592,7 +595,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 															onChange={field.onChange}
 															keyPlaceholder="Header name"
 															valuePlaceholder="Header value"
-															label="Static Headers (optional, applied alongside user values)"
+															label={i18n.t("workspace.mcpForm.staticHeadersOptional")}
 															useSecretVarInput
 														/>
 														{headersValidationError && <p className="text-destructive text-xs">{headersValidationError}</p>}
@@ -622,17 +625,14 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 														render={({ field }) => (
 															<FormItem>
 																<div className="flex items-center gap-2">
-																	<FormLabel>OAuth Client ID (optional)</FormLabel>
+																	<FormLabel>{i18n.t("workspace.mcpForm.oauthClientIdOptional")}</FormLabel>
 																	<TooltipProvider>
 																		<Tooltip>
 																			<TooltipTrigger asChild>
 																				<Info className="text-muted-foreground h-4 w-4 cursor-help" />
 																			</TooltipTrigger>
 																			<TooltipContent className="max-w-xs">
-																				<p>
-																					Leave empty to use Dynamic Client Registration (RFC 7591). Bifrost will automatically register
-																					with the OAuth provider if supported.
-																				</p>
+																				<p>{i18n.t("workspace.mcpForm.dynamicRegistrationHelp")}</p>
 																			</TooltipContent>
 																		</Tooltip>
 																	</TooltipProvider>
@@ -645,9 +645,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 																		data-testid="mcp-oauth-client-id"
 																	/>
 																</FormControl>
-																<p className="text-muted-foreground text-xs">
-																	{i18n.t("workspace.mcpForm.oauthClientIdAutoGenerated")}
-																</p>
+																<p className="text-muted-foreground text-xs">{i18n.t("workspace.mcpForm.oauthClientIdAutoGenerated")}</p>
 																<FormMessage />
 															</FormItem>
 														)}
@@ -788,10 +786,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 														<FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
 															<div className="space-y-0.5">
 																<FormLabel>{i18n.t("workspace.providers.skipTlsVerification")}</FormLabel>
-																<p className="text-muted-foreground text-sm">
-																	Disable TLS certificate verification. Use only in trusted isolated environments. Takes priority over CA
-																	certificate.
-																</p>
+																<p className="text-muted-foreground text-sm">{i18n.t("workspace.mcpClientSheet.skipTlsHelp")}</p>
 															</div>
 															<FormControl>
 																<Switch
@@ -822,9 +817,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 																	data-testid="mcp-tls-ca-cert-pem"
 																/>
 															</FormControl>
-															<p className="text-muted-foreground text-sm">
-																PEM-encoded CA certificate to trust for MCP server connections (e.g. self-signed or private CA).
-															</p>
+															<p className="text-muted-foreground text-sm">{i18n.t("workspace.mcpClientSheet.caCertificateHelp")}</p>
 															<FormMessage />
 														</FormItem>
 													)}
@@ -842,11 +835,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 											<Info className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-700" />
 											<div className="flex-1">
 												<p className="text-xs font-medium text-amber-900">{i18n.t("workspace.mcpForm.dockerNoticeTitle")}</p>
-												<p className="mt-0.5 text-xs text-amber-800">
-													If not using the official Bifrost Docker image, STDIO connections may not work if required commands (npx, python,
-													etc.) aren't installed. You can safely ignore this if running locally or using a custom image with the necessary
-													dependencies.
-												</p>
+												<p className="mt-0.5 text-xs text-amber-800">{i18n.t("workspace.mcpForm.dockerNoticeDescription")}</p>
 											</div>
 										</div>
 									</div>
@@ -889,16 +878,14 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 									{/* Envs (local state) */}
 									<div className="space-y-2">
 										<div className="flex items-center gap-2">
-											<Label>Environment Variables</Label>
+											<Label>{i18n.t("workspace.mcpClientSheet.environmentVariables")}</Label>
 											<TooltipProvider>
 												<Tooltip>
 													<TooltipTrigger asChild>
 														<Info className="text-muted-foreground h-4 w-4 cursor-help" />
 													</TooltipTrigger>
 													<TooltipContent className="max-w-xs">
-														<p>
-															Add a value for each variable, or leave it blank to read the value from the environment where Bifrost runs.
-														</p>
+														<p>{i18n.t("workspace.mcpForm.environmentValuesHelp")}</p>
 													</TooltipContent>
 												</Tooltip>
 											</TooltipProvider>
@@ -937,7 +924,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 										</TooltipTrigger>
 										{!hasCreateMCPClientAccess && (
 											<TooltipContent>
-												<p>You don't have permission to perform this action</p>
+												<p>{i18n.t("workspace.mcpForm.permissionDenied")}</p>
 											</TooltipContent>
 										)}
 									</Tooltip>
@@ -956,13 +943,13 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 						setOauthFlow(null);
 					}}
 					onSuccess={() => {
-						toast({ title: "Success", description: "MCP server connected with OAuth" });
+						toast({ title: i18n.t("workspace.mcpForm.successTitle"), description: i18n.t("workspace.mcpForm.oauthConnected") });
 						setOauthFlow(null);
 						onClose();
 						onSaved();
 					}}
 					onError={(error) => {
-						toast({ title: "OAuth Error", description: error, variant: "destructive" });
+						toast({ title: i18n.t("workspace.mcpForm.oauthErrorTitle"), description: error, variant: "destructive" });
 					}}
 					onConflict={(error) => {
 						setOauthFlow(null);
@@ -988,7 +975,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ open, onClose, onSaved }) => {
 					}}
 					onSuccess={() => {
 						setHeadersFlow(null);
-						toast({ title: "Success", description: "MCP server connected with per-user headers" });
+						toast({ title: i18n.t("workspace.mcpForm.successTitle"), description: i18n.t("workspace.mcpForm.perUserHeadersConnected") });
 						onSaved();
 						onClose();
 					}}

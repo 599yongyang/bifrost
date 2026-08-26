@@ -94,7 +94,7 @@ export default function SessionsTable({
 			window.location.href = res.authorize_url;
 		} catch (err) {
 			setPendingActionRowId(null);
-			toast({ title: "Re-authentication failed", description: getErrorMessage(err), variant: "destructive" });
+			toast({ title: i18n.t("supplemental.reauthenticationFailed"), description: getErrorMessage(err), variant: "destructive" });
 		}
 	};
 
@@ -124,19 +124,13 @@ export default function SessionsTable({
 					<AlertDialogHeader>
 						{pendingDelete?.kind === "header" ? (
 							<>
-								<AlertDialogTitle>Revoke these stored header values?</AlertDialogTitle>
-								<AlertDialogDescription>
-									Bifrost will remove the stored credential values for this binding. There is no upstream token to revoke; the user will
-									need to resubmit their header values to use this MCP again.
-								</AlertDialogDescription>
+								<AlertDialogTitle>{i18n.t("supplemental.revokeStoredHeaders")}</AlertDialogTitle>
+								<AlertDialogDescription>{i18n.t("supplemental.revokeStoredHeadersDescription")}</AlertDialogDescription>
 							</>
 						) : (
 							<>
-								<AlertDialogTitle>Revoke this MCP session?</AlertDialogTitle>
-								<AlertDialogDescription>
-									Bifrost will remove the stored credential for this binding. The upstream OAuth token is not revoked at the provider; it
-									stays detached and expires naturally. Anyone using this binding will need to re-authenticate to obtain a fresh token.
-								</AlertDialogDescription>
+								<AlertDialogTitle>{i18n.t("supplemental.revokeMcpSession")}</AlertDialogTitle>
+								<AlertDialogDescription>{i18n.t("supplemental.revokeSessionDescription")}</AlertDialogDescription>
 							</>
 						)}
 					</AlertDialogHeader>
@@ -152,9 +146,7 @@ export default function SessionsTable({
 			<div className="mb-4 flex items-center justify-between gap-4">
 				<div>
 					<h2 className="text-lg font-semibold tracking-tight">{i18n.t("supplemental.mcpAuthSessions")}</h2>
-					<p className="text-muted-foreground text-sm">
-						{i18n.t("supplemental.mcpAuthSessionsDescription")}
-					</p>
+					<p className="text-muted-foreground text-sm">{i18n.t("supplemental.mcpAuthSessionsDescription")}</p>
 				</div>
 			</div>
 
@@ -181,25 +173,25 @@ export default function SessionsTable({
 								<TableHead>{i18n.t("supplemental.mcpServer")}</TableHead>
 								<TableHead>
 									<HeaderWithTooltip
-										label="Type"
+										label={i18n.t("supplemental.type")}
 										tooltip="OAuth: per-user OAuth credential, either a stored token from a completed sign-in, or a pending sign-in flow. Headers: per-user header values (API keys / signed tokens), either stored or pending submission."
 									/>
 								</TableHead>
 								<TableHead>
 									<HeaderWithTooltip
-										label="Bound to"
+										label={i18n.t("supplemental.boundTo")}
 										tooltip="The identity this credential is keyed to: an end user (via SSO), a virtual key (shared by anyone using that VK), or a client-issued session ID (asserted via the x-bf-mcp-session-id header)."
 									/>
 								</TableHead>
 								<TableHead>
 									<HeaderWithTooltip
-										label="Status"
+										label={i18n.t("supplemental.status")}
 										tooltip="Active: credential valid and usable. Pending: OAuth flow in progress, user must complete sign-in. Needs re-auth: upstream credential expired or revoked at the provider; user must reconnect. Needs update: the admin changed the required header keys; user must resubmit. Orphaned: the user lost access to this MCP (e.g. an access profile change); credential is preserved and will become Active automatically if access is restored."
 									/>
 								</TableHead>
 								<TableHead>
 									<HeaderWithTooltip
-										label="Access token expiry"
+										label={i18n.t("supplemental.accessTokenExpiry")}
 										tooltip="When the current access token expires. Bifrost auto-refreshes using the refresh token on the next request, so an active row past its expiry will silently mint a new token at use time. Header rows do not have an upstream expiry; their values stay valid until revoked or the schema changes."
 									/>
 								</TableHead>
@@ -214,9 +206,7 @@ export default function SessionsTable({
 										{hasActiveFilters ? (
 											<div className="text-muted-foreground text-sm">{i18n.t("supplemental.noMatchingSessions")}</div>
 										) : (
-											<span className="text-muted-foreground text-sm">
-												{i18n.t("supplemental.noSessionsYet")}
-											</span>
+											<span className="text-muted-foreground text-sm">{i18n.t("supplemental.noSessionsYet")}</span>
 										)}
 									</TableCell>
 								</TableRow>
@@ -236,7 +226,11 @@ export default function SessionsTable({
 										<TableCell className="text-muted-foreground text-sm">
 											<div className="flex flex-col">
 												<span>{formatAccessExpiry(row)}</span>
-												{row.last_refreshed_at && <span className="text-xs">refreshed {formatRelativePast(row.last_refreshed_at)}</span>}
+												{row.last_refreshed_at && (
+													<span className="text-xs">
+														{i18n.t("supplemental.refreshed", { time: formatRelativePast(row.last_refreshed_at) })}
+													</span>
+												)}
 											</div>
 										</TableCell>
 										<TableCell className="text-muted-foreground text-sm">{formatRelativePast(row.created_at)}</TableCell>
@@ -279,7 +273,7 @@ export default function SessionsTable({
 							</Button>
 
 							<div className="flex items-center gap-1">
-								<span>Page</span>
+								<span>{i18n.t("supplemental.page")}</span>
 								<span>{Math.floor(offset / limit) + 1}</span>
 								<span>of {Math.ceil(totalCount / limit)}</span>
 							</div>
@@ -457,7 +451,7 @@ function RowActions({ row, reauthing, revoking, isPendingRow, onReauth, onRevoke
 								}}
 							>
 								<Pencil className="h-4 w-4" />
-								{row.status === "needs_update" ? "Update values" : "Edit values"}
+								{row.status === "needs_update" ? i18n.t("supplemental.updateValues") : i18n.t("supplemental.editValues")}
 							</DropdownMenuItem>
 						)}
 						<DropdownMenuItem

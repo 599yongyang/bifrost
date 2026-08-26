@@ -5,7 +5,7 @@ import QuarterStartSelect from "@/components/ui/quarterStartSelect";
 import { budgetResetDurationOptions } from "@/lib/constants/governance";
 import { Plus, RotateCcw, Trash2 } from "lucide-react";
 import { useMemo } from "react";
-import i18n from "@/lib/i18n";
+import { useTranslation } from "react-i18next";
 
 export interface BudgetLineEntry {
 	id?: string;
@@ -16,6 +16,19 @@ export interface BudgetLineEntry {
 
 // Quarterly is the only period with settings beyond the duration itself.
 const isQuarterly = (duration: string) => duration.endsWith("Q");
+
+const resetDurationTranslationKeys: Record<string, string> = {
+	"1m": "supplemental.resetDurations.everyMinute",
+	"5m": "supplemental.resetDurations.everyFiveMinutes",
+	"15m": "supplemental.resetDurations.everyFifteenMinutes",
+	"30m": "supplemental.resetDurations.everyThirtyMinutes",
+	"1h": "supplemental.resetDurations.hourly",
+	"6h": "supplemental.resetDurations.everySixHours",
+	"1d": "supplemental.resetDurations.daily",
+	"1w": "supplemental.resetDurations.weekly",
+	"1M": "supplemental.resetDurations.monthly",
+	"1Q": "supplemental.resetDurations.quarterly",
+};
 
 interface MultiBudgetLinesProps {
 	"data-testid"?: string;
@@ -29,13 +42,24 @@ interface MultiBudgetLinesProps {
 
 export default function MultiBudgetLines({
 	"data-testid": testId,
-	label = "Budget Configuration",
+	label,
 	lines,
 	onChange,
-	options = budgetResetDurationOptions,
+	options,
 	onReset,
 	showReset,
 }: MultiBudgetLinesProps) {
+	const { t } = useTranslation();
+	const resolvedLabel = label ?? t("workspace.providers.budgetConfiguration");
+	const resolvedOptions = useMemo(
+		() =>
+			options ??
+			budgetResetDurationOptions.map((option) => ({
+				...option,
+				label: t(resetDurationTranslationKeys[option.value] ?? option.label),
+			})),
+		[options, t],
+	);
 	// Track which reset durations are already used (for duplicate detection)
 	const usedDurations = useMemo(() => {
 		const counts = new Map<string, number>();
@@ -48,12 +72,12 @@ export default function MultiBudgetLines({
 	function addLine() {
 		// Pick the first unused duration, falling back to the first option value
 		const usedSet = new Set(lines.map((l) => l.reset_duration));
-		const available = options.find((o) => !usedSet.has(o.value));
+		const available = resolvedOptions.find((o) => !usedSet.has(o.value));
 		onChange([
 			...lines,
 			{
 				max_limit: undefined,
-				reset_duration: available?.value ?? options[0]?.value ?? "",
+				reset_duration: available?.value ?? resolvedOptions[0]?.value ?? "",
 			},
 		]);
 	}
@@ -87,23 +111,25 @@ export default function MultiBudgetLines({
 	return (
 		<div className="space-y-3" data-testid={testId}>
 			<div className="flex items-center justify-between">
-				<Label className="text-sm font-medium">{label}</Label>
+				<Label className="text-sm font-medium">{resolvedLabel}</Label>
 				<div className="flex items-center gap-2">
 					{onReset && (showReset ?? true) && (
 						<Button data-testid={`${testId}-reset-btn`} type="button" variant="ghost" size="sm" onClick={onReset}>
 							<RotateCcw className="mr-1 h-3 w-3" />
-							{i18n.t("workspace.plugins.reset")}
+							{t("workspace.plugins.reset")}
 						</Button>
 					)}
 					<Button data-testid={`${testId}-add-btn`} variant="outline" size="sm" type="button" onClick={addLine}>
 						<Plus className="mr-1 h-3 w-3" />
-						{i18n.t("workspace.governance.teams.dialog.addBudget")}
+						{t("workspace.governance.teams.dialog.addBudget")}
 					</Button>
 				</div>
 			</div>
 
 			{lines.length === 0 && (
-				<div className="text-muted-foreground rounded-md border border-dashed p-3 text-center text-sm">{i18n.t("supplemental.noBudgetLimits")}</div>
+				<div className="text-muted-foreground rounded-md border border-dashed p-3 text-center text-sm">
+					{t("supplemental.noBudgetLimits")}
+				</div>
 			)}
 
 			{lines.map((line, index) => {
@@ -116,17 +142,17 @@ export default function MultiBudgetLines({
 									id={`${testId}-${index}`}
 									dataTestId={`${testId}-amount-${index}`}
 									labelClassName="font-normal"
-									label="Maximum Spend (USD)"
+									label={t("workspace.providers.maximumSpendUsd")}
 									value={line.max_limit}
 									selectValue={line.reset_duration}
 									onChangeNumber={(value) => updateMaxLimit(index, value)}
 									onChangeSelect={(value) => updateResetDuration(index, value)}
-									options={options}
+									options={resolvedOptions}
 								/>
 							</div>
 							<Button
 								data-testid={`${testId}-remove-${index}`}
-								aria-label={`Remove budget ${index + 1}`}
+								aria-label={t("supplemental.removeBudget", { index: index + 1 })}
 								variant="ghost"
 								size="icon"
 								type="button"
@@ -143,9 +169,7 @@ export default function MultiBudgetLines({
 								onChange={(month) => updateQuarterStartMonth(index, month)}
 							/>
 						)}
-						{isDuplicate && (
-							<p className="text-destructive pl-0.5 text-xs">{i18n.t("supplemental.duplicateResetPeriod")}</p>
-						)}
+						{isDuplicate && <p className="text-destructive pl-0.5 text-xs">{t("supplemental.duplicateResetPeriod")}</p>}
 					</div>
 				);
 			})}

@@ -72,7 +72,7 @@ export function MCPLibrarySettingsSheet({ open, onClose }: MCPLibrarySettingsShe
 
 	const onSubmit = async (data: MCPLibrarySettingsFormData) => {
 		if (!bifrostConfig) {
-			toast.error("Unable to load current settings. Please retry.");
+			toast.error(i18n.t("workspace.mcpLibrary.settingsLoadFailed"));
 			return;
 		}
 		try {
@@ -84,7 +84,7 @@ export function MCPLibrarySettingsSheet({ open, onClose }: MCPLibrarySettingsShe
 					mcp_library_sync_interval: data.mcp_library_sync_interval_hours * 3600,
 				},
 			}).unwrap();
-			toast.success("MCP Library settings updated successfully.");
+			toast.success(i18n.t("workspace.mcpLibrary.settingsUpdated"));
 			reset(data);
 		} catch (error) {
 			toast.error(getErrorMessage(error));
@@ -94,7 +94,7 @@ export function MCPLibrarySettingsSheet({ open, onClose }: MCPLibrarySettingsShe
 	const handleForceSync = async () => {
 		try {
 			await forceSyncMCPLibrary().unwrap();
-			toast.success("MCP Library sync triggered successfully.");
+			toast.success(i18n.t("workspace.mcpLibrary.syncTriggered"));
 		} catch (error) {
 			toast.error(getErrorMessage(error));
 		}
@@ -104,18 +104,16 @@ export function MCPLibrarySettingsSheet({ open, onClose }: MCPLibrarySettingsShe
 		<Sheet open={open} onOpenChange={(sheetOpen) => !sheetOpen && onClose()}>
 			<SheetContent className="flex w-full flex-col overflow-x-hidden px-0">
 				<SheetHeader className="flex flex-col items-start px-7 pt-8">
-					<SheetTitle>MCP Library Settings</SheetTitle>
-					<SheetDescription>Configure the sync source and interval for the MCP server catalog.</SheetDescription>
+					<SheetTitle>{i18n.t("workspace.mcpLibrary.settingsTitle")}</SheetTitle>
+					<SheetDescription>{i18n.t("workspace.mcpLibrary.settingsDescription")}</SheetDescription>
 				</SheetHeader>
 
 				<form onSubmit={handleSubmit(onSubmit)} className="flex min-h-0 flex-1 flex-col">
 					<div className="flex-1 space-y-4 overflow-y-auto px-8">
 						<div className="space-y-2 rounded-sm border p-4">
 							<div className="space-y-0.5">
-								<Label htmlFor="mcp-library-url">Library Sync URL</Label>
-								<p className="text-muted-foreground text-sm">
-									URL to a custom MCP server catalog. Leave empty to use the default Bifrost catalog.
-								</p>
+								<Label htmlFor="mcp-library-url">{i18n.t("workspace.mcpLibrary.librarySyncUrl")}</Label>
+								<p className="text-muted-foreground text-sm">{i18n.t("workspace.mcpLibrary.customCatalogHelp")}</p>
 							</div>
 							<Input
 								id="mcp-library-url"
@@ -130,8 +128,8 @@ export function MCPLibrarySettingsSheet({ open, onClose }: MCPLibrarySettingsShe
 
 						<div className="space-y-2 rounded-sm border p-4">
 							<div className="space-y-0.5">
-								<Label htmlFor="mcp-library-sync-interval">Sync Interval (hours)</Label>
-								<p className="text-muted-foreground text-sm">How often to sync the MCP server catalog from the source URL.</p>
+								<Label htmlFor="mcp-library-sync-interval">{i18n.t("workspace.mcpLibrary.syncIntervalHours")}</Label>
+								<p className="text-muted-foreground text-sm">{i18n.t("workspace.mcpLibrary.syncIntervalHelp")}</p>
 							</div>
 							<Input
 								id="mcp-library-sync-interval"
@@ -155,7 +153,7 @@ export function MCPLibrarySettingsSheet({ open, onClose }: MCPLibrarySettingsShe
 								disabled={isForceSyncing || !hasSettingsUpdateAccess}
 								data-testid="mcp-library-force-sync-btn"
 							>
-								{isForceSyncing ? "Syncing..." : "Force Sync Now"}
+								{isForceSyncing ? i18n.t("workspace.mcpLibrary.syncing") : i18n.t("workspace.mcpLibrary.forceSync")}
 							</Button>
 							<Button type="button" variant="outline" onClick={onClose} disabled={isLoading} data-testid="mcp-library-settings-cancel-btn">
 								{i18n.t("common.cancel")}
@@ -165,7 +163,7 @@ export function MCPLibrarySettingsSheet({ open, onClose }: MCPLibrarySettingsShe
 								disabled={!hasChanges || isLoading || isConfigLoading || isConfigError || !hasSettingsUpdateAccess}
 								data-testid="mcp-library-settings-save-btn"
 							>
-								{isLoading ? "Saving..." : "Save Changes"}
+								{isLoading ? i18n.t("common.saving") : i18n.t("workspace.mcpClientSheet.saveChanges")}
 							</Button>
 						</div>
 					</div>

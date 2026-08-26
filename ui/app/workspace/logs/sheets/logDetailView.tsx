@@ -37,6 +37,7 @@ import { Link } from "@tanstack/react-router";
 import { addMilliseconds, format } from "date-fns";
 import { AlertCircle, ChevronDown, Clipboard, Copy, Download, Loader2, MoreVertical, Trash2, Wrench } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import BlockHeader from "../views/blockHeader";
 import CollapsibleBox from "../views/collapsibleBox";
@@ -59,7 +60,7 @@ const formatRealtimeTransport = (value: unknown): string => {
 		case "webrtc":
 			return "WebRTC";
 		default:
-			return transport || "Unknown";
+			return transport || i18n.t("workspace.logs.detail.unknown");
 	}
 };
 
@@ -90,11 +91,11 @@ const formatRealtimeSource = (value: unknown): string => {
 	const source = String(value ?? "").trim();
 	switch (source.toLowerCase()) {
 		case "ei":
-			return "Event Initiated";
+			return i18n.t("workspace.logs.detail.eventInitiated");
 		case "lm":
-			return "Language Model";
+			return i18n.t("workspace.logs.detail.languageModel");
 		default:
-			return source || "Unknown";
+			return source || i18n.t("workspace.logs.detail.unknown");
 	}
 };
 
@@ -440,7 +441,7 @@ function HeroStat({
 }
 
 function CopyInlineButton({ text, testId }: { text: string; testId?: string }) {
-	const { copy } = useCopyToClipboard({ successMessage: "Copied" });
+	const { copy } = useCopyToClipboard({ successMessage: i18n.t("common.copied") });
 	return (
 		<button
 			type="button"
@@ -473,15 +474,15 @@ const messageDotClass: Record<MessageRole, string> = {
 	tool: "bg-amber-500",
 };
 const messageRoleLabel: Record<MessageRole, string> = {
-	system: "System",
-	user: "User",
-	assistant: "Assistant",
-	reasoning: "Reasoning",
-	tool: "Tool Result",
+	system: i18n.t("common.system"),
+	user: i18n.t("common.user"),
+	assistant: i18n.t("common.assistant"),
+	reasoning: i18n.t("workspace.logs.detail.reasoning"),
+	tool: i18n.t("workspace.logs.detail.toolResult"),
 };
 
 function RoutingDecisionLogs({ logs }: { logs: string }) {
-	const { copy } = useCopyToClipboard({ successMessage: "Copied" });
+	const { copy } = useCopyToClipboard({ successMessage: i18n.t("common.copied") });
 	return (
 		<div className="w-full rounded-sm border">
 			<div className="flex items-center justify-between border-b py-2 pl-6">
@@ -538,7 +539,9 @@ function EncryptedReveal({ text, label }: { text: string; label: string }) {
 				<ChevronDown className={cn("h-3 w-3 transition-transform", open ? "rotate-180" : "-rotate-90")} />
 				{label}
 				{!open ? (
-					<span className="text-muted-foreground/70 ml-1 font-mono text-[10px] tracking-normal normal-case">{text.length} chars</span>
+					<span className="text-muted-foreground/70 ml-1 font-mono text-[10px] tracking-normal normal-case">
+						{i18n.t("workspace.logs.detail.characters", { count: text.length })}
+					</span>
 				) : null}
 			</button>
 			{open ? <pre className="font-mono text-[12.5px] leading-[1.6] break-all whitespace-pre-wrap">{text}</pre> : null}
@@ -566,11 +569,12 @@ function CollapsibleCode({ text, preview = 3, lang, mono = true }: { text: strin
 						onClick={() => setOpen((o) => !o)}
 						className="text-primary inline-flex items-center gap-1 text-[11.5px] font-medium hover:underline"
 					>
-						{open ? "Show less" : `Show ${moreCount} more lines`}
+						{open ? i18n.t("workspace.logs.detail.showLess") : i18n.t("workspace.logs.detail.showMoreLines", { count: moreCount })}
 						<ChevronDown className={cn("h-3 w-3 transition-transform", open && "rotate-180")} />
 					</button>
 					<span className="text-muted-foreground font-mono text-[10.5px]">
-						{lines.length} lines{lang ? ` · ${lang}` : ""}
+						{i18n.t("workspace.logs.detail.lineCount_other", { count: lines.length })}
+						{lang ? ` · ${lang}` : ""}
 					</span>
 				</div>
 			)}
@@ -617,9 +621,10 @@ export function LogDetailView({
 	headerAction,
 	onFilterByParentRequestId,
 }: LogDetailViewProps) {
+	const { t } = useTranslation();
 	const { copy: copyBody } = useCopyToClipboard({
-		successMessage: "Request body copied to clipboard",
-		errorMessage: "Failed to copy request body",
+		successMessage: t("workspace.logs.detail.requestBodyCopied"),
+		errorMessage: t("workspace.logs.detail.requestBodyCopyFailed"),
 	});
 	const [showRevealedValues, setShowRevealedValues] = useState(false);
 	const revealMapping = log?.redaction_mapping;
@@ -706,11 +711,7 @@ export function LogDetailView({
 					{revealAvailable && (
 						<div className="flex items-center gap-2">
 							<span className="text-muted-foreground text-[11px] font-medium">{i18n.t("supplemental.showOriginalValues")}</span>
-							<Switch
-								checked={revealEnabled}
-								onCheckedChange={handleToggleReveal}
-								data-testid="logdetails-reveal-toggle"
-							/>
+							<Switch checked={revealEnabled} onCheckedChange={handleToggleReveal} data-testid="logdetails-reveal-toggle" />
 						</div>
 					)}
 					{onClose ? (
@@ -797,7 +798,7 @@ export function LogDetailView({
 							)}
 							{log.metadata?.isAsyncRequest ? (
 								<Badge variant="outline" className="rounded-sm bg-teal-100 px-2 py-0.5 text-teal-800 dark:bg-teal-900 dark:text-teal-200">
-									Async
+									{t("common.async", { defaultValue: "Async" })}
 								</Badge>
 							) : null}
 							{log.cache_debug?.hit_type === "direct" ? (
@@ -839,14 +840,17 @@ export function LogDetailView({
 							)}
 						</div>
 						<div className="mt-3 flex items-center gap-2">
-							<div className="text-muted-foreground w-24 shrink-0 text-[10.5px] font-semibold tracking-wider uppercase">Request</div>
+							<div className="text-muted-foreground w-24 shrink-0 text-[10.5px] font-semibold tracking-wider uppercase">
+								{t("workspace.logs.detail.request")}
+							</div>
 							<code className="text-foreground truncate font-mono text-[13px]">{log.id || "—"}</code>
 							{log.id ? <CopyInlineButton text={log.id} testId="logdetails-copy-request-id-button" /> : null}
 						</div>
 						{log.cache_debug?.cache_id && (
 							<div className="mt-1 flex items-center gap-2">
 								<div className="text-muted-foreground w-24 shrink-0 text-[10.5px] font-semibold tracking-wider uppercase">
-									Cache {log.cache_debug.cache_hit ? "(hit)" : "(miss)"}
+									{t("workspace.logs.detail.cache")} (
+									{t(log.cache_debug.cache_hit ? "workspace.logs.detail.cacheHit" : "workspace.logs.detail.cacheMiss")})
 								</div>
 								<code className="text-foreground truncate font-mono text-[13px]">{log.cache_debug.cache_id}</code>
 								<CopyInlineButton text={log.cache_debug.cache_id} testId="logdetails-copy-cache-id-button" />
@@ -854,7 +858,9 @@ export function LogDetailView({
 						)}
 						{log.routing_rule && (
 							<div className="mt-1 flex items-center gap-2">
-								<div className="text-muted-foreground w-24 shrink-0 text-[10.5px] font-semibold tracking-wider uppercase">Rule</div>
+								<div className="text-muted-foreground w-24 shrink-0 text-[10.5px] font-semibold tracking-wider uppercase">
+									{t("workspace.logs.detail.rule")}
+								</div>
 								<Link
 									to="/workspace/logs"
 									search={(prev) => ({ ...prev, offset: 0, selected_log: "", routing_rule_ids: [log.routing_rule!.id] })}
@@ -867,7 +873,9 @@ export function LogDetailView({
 						)}
 						{log.selected_key && (
 							<div className="mt-1 flex items-center gap-2">
-								<div className="text-muted-foreground w-24 shrink-0 text-[10.5px] font-semibold tracking-wider uppercase">Key</div>
+								<div className="text-muted-foreground w-24 shrink-0 text-[10.5px] font-semibold tracking-wider uppercase">
+									{t("workspace.logs.detail.key")}
+								</div>
 								<Link
 									to="/workspace/logs"
 									search={(prev) => ({ ...prev, offset: 0, selected_log: "", selected_key_ids: [log.selected_key_id] })}
@@ -886,7 +894,7 @@ export function LogDetailView({
 				</div>
 				<div className="border-border grid grid-cols-2 border-t md:grid-cols-5">
 					<HeroStat
-						label="Latency"
+						label={t("workspace.logs.detail.latency")}
 						valueClass="text-primary"
 						value={log.latency == null || isNaN(log.latency) ? "—" : formatLatency(log.latency)}
 						sub={(() => {
@@ -900,7 +908,7 @@ export function LogDetailView({
 						hasRightBorder
 					/>
 					<HeroStat
-						label="Model"
+						label={t("workspace.logs.detail.model")}
 						mono
 						value={log.model || "—"}
 						sub={log.provider?.toLowerCase() || ""}
@@ -908,7 +916,7 @@ export function LogDetailView({
 						hasRightBorder
 					/>
 					<HeroStat
-						label="Tokens in / out"
+						label={t("workspace.logs.detail.tokensInOut")}
 						mono
 						value={
 							log.token_usage
@@ -917,9 +925,9 @@ export function LogDetailView({
 						}
 						sub={
 							log.token_usage
-								? `total ${formatCompactNumber(log.token_usage.total_tokens ?? 0)}${
+								? `${t("workspace.logs.detail.totalTokens", { count: formatCompactNumber(log.token_usage.total_tokens ?? 0) })}${
 										log.token_usage.completion_tokens_details?.reasoning_tokens
-											? ` · reasoning ${formatCompactNumber(log.token_usage.completion_tokens_details.reasoning_tokens)}`
+											? ` · ${t("workspace.logs.detail.reasoningTokens", { count: formatCompactNumber(log.token_usage.completion_tokens_details.reasoning_tokens) })}`
 											: ""
 									}`
 								: "—"
@@ -927,26 +935,30 @@ export function LogDetailView({
 						hasRightBorder
 					/>
 					<HeroStat
-						label="Cost"
+						label={t("workspace.logs.detail.cost")}
 						value={log.cost != null ? formatCost(log.cost) : "—"}
 						sub={
 							log.cost != null && log.token_usage?.total_tokens
-								? `≈ ${((log.cost / log.token_usage.total_tokens) * 1000).toFixed(6)}＄ per 1k`
+								? t("workspace.logs.detail.costPerThousand", { cost: ((log.cost / log.token_usage.total_tokens) * 1000).toFixed(6) })
 								: ""
 						}
 						hasRightBorder
 					/>
 					{isRealtimeTurn ? (
 						<HeroStat
-							label="Voice"
+							label={t("workspace.logs.detail.voice")}
 							value={log.metadata?.realtime_voice ? String(log.metadata.realtime_voice) : "\u2014"}
 							sub={log.metadata?.realtime_transport ? formatRealtimeTransport(log.metadata.realtime_transport) : ""}
 						/>
 					) : (
 						<HeroStat
-							label="Tools available"
+							label={t("workspace.logs.detail.toolsAvailable")}
 							value={declaredTools.length.toString()}
-							sub={(log.params as any)?.tool_choice != null ? `choice: ${formatToolChoice((log.params as any).tool_choice)}` : ""}
+							sub={
+								(log.params as any)?.tool_choice != null
+									? t("workspace.logs.detail.toolChoice", { choice: formatToolChoice((log.params as any).tool_choice) })
+									: ""
+							}
 						/>
 					)}
 				</div>
@@ -955,7 +967,7 @@ export function LogDetailView({
 				<summary className="hover:bg-muted/30 flex cursor-pointer items-center justify-between px-4 py-2.5 text-sm transition">
 					<span className="text-foreground font-medium">{i18n.t("supplemental.moreDetails")}</span>
 					<span className="text-muted-foreground flex items-center gap-2 text-xs">
-						<span className="hidden md:inline">timings, request meta, tokens, caching, metadata</span>
+						<span className="hidden md:inline">{t("workspace.logs.detail.moreDetailsSummary")}</span>
 						<ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
 					</span>
 				</summary>
@@ -965,7 +977,7 @@ export function LogDetailView({
 						<div className="grid w-full grid-cols-3 items-center justify-between gap-4">
 							<LogEntryDetailsView
 								className="w-full"
-								label="Start Timestamp"
+								label={t("workspace.logs.detail.startTimestamp")}
 								value={(() => {
 									const d = log.timestamp ? new Date(log.timestamp) : null;
 									return d && !isNaN(d.getTime()) ? format(d, "yyyy-MM-dd hh:mm:ss aa") : "N/A";
@@ -973,7 +985,7 @@ export function LogDetailView({
 							/>
 							<LogEntryDetailsView
 								className="w-full"
-								label="End Timestamp"
+								label={t("workspace.logs.detail.endTimestamp")}
 								value={(() => {
 									const d = log.timestamp ? new Date(log.timestamp) : null;
 									return d && !isNaN(d.getTime()) ? format(addMilliseconds(d, log.latency || 0), "yyyy-MM-dd hh:mm:ss aa") : "N/A";
@@ -981,7 +993,7 @@ export function LogDetailView({
 							/>
 							<LogEntryDetailsView
 								className="w-full"
-								label="Latency"
+								label={t("workspace.logs.detail.latency")}
 								value={log.latency == null || isNaN(log.latency) ? "N/A" : <div>{log.latency.toFixed(2)}ms</div>}
 							/>
 						</div>
@@ -992,7 +1004,7 @@ export function LogDetailView({
 						<div className="grid w-full grid-cols-3 items-start justify-between gap-4">
 							<LogEntryDetailsView
 								className="w-full"
-								label="Provider"
+								label={t("workspace.logs.detail.provider")}
 								value={
 									<Badge variant="secondary" className="uppercase">
 										<RenderProviderIcon provider={log.provider as ProviderIconType} size="sm" />
@@ -1000,20 +1012,30 @@ export function LogDetailView({
 									</Badge>
 								}
 							/>
-							{!isContainer && <LogEntryDetailsView className="w-full" label="Model" value={log.model} />}
-							{!isContainer && log.alias && <LogEntryDetailsView className="w-full" label="Alias" value={log.alias} />}
+							{!isContainer && <LogEntryDetailsView className="w-full" label={t("workspace.logs.detail.model")} value={log.model} />}
+							{!isContainer && log.alias && (
+								<LogEntryDetailsView className="w-full" label={t("workspace.logs.detail.alias")} value={log.alias} />
+							)}
 							{!isContainer && log.canonical_model_name && (
-								<LogEntryDetailsView className="w-full" label="Canonical Model" value={log.canonical_model_name} />
+								<LogEntryDetailsView
+									className="w-full"
+									label={t("workspace.logs.detail.canonicalModel")}
+									value={log.canonical_model_name}
+								/>
 							)}
 							{!isContainer && log.alias_model_family && (
-								<LogEntryDetailsView className="w-full" label="Model Family" value={log.alias_model_family} />
+								<LogEntryDetailsView className="w-full" label={t("workspace.logs.detail.modelFamily")} value={log.alias_model_family} />
 							)}
 							{!isContainer && log.server_side_fallback_model && (
-								<LogEntryDetailsView className="w-full" label="Served By (fallback)" value={log.server_side_fallback_model} />
+								<LogEntryDetailsView
+									className="w-full"
+									label={t("workspace.logs.detail.servedByFallback")}
+									value={log.server_side_fallback_model}
+								/>
 							)}
 							<LogEntryDetailsView
 								className="w-full"
-								label="Type"
+								label={t("workspace.logs.detail.type")}
 								value={
 									<div
 										className={`${RequestTypeColors[log.object as keyof typeof RequestTypeColors] ?? "bg-gray-100 text-gray-800"} rounded-sm px-3 py-1`}
@@ -1025,7 +1047,7 @@ export function LogDetailView({
 							{log.stop_reason && (
 								<LogEntryDetailsView
 									className="w-full"
-									label="Stop Reason"
+									label={t("workspace.logs.detail.stopReason")}
 									value={
 										<Badge
 											variant="secondary"
@@ -1946,7 +1968,14 @@ export function LogDetailView({
 														.map((b, i) => {
 															const src = b.image_url?.url;
 															if (!src) return null;
-															return <img key={`${i}-${src}`} src={src} alt={i18n.t("workspace.logs.detail.attachedImageAlt")} className="mt-2 max-w-full rounded border" />;
+															return (
+																<img
+																	key={`${i}-${src}`}
+																	src={src}
+																	alt={i18n.t("workspace.logs.detail.attachedImageAlt")}
+																	className="mt-2 max-w-full rounded border"
+																/>
+															);
 														})}
 												{text &&
 													Array.isArray(message.content) &&
@@ -2147,7 +2176,9 @@ export function LogDetailView({
 														))}
 														{reasoningParts.encrypted ? (
 															<div className="space-y-1">
-																<div className="text-muted-foreground text-[10.5px] font-semibold tracking-wider uppercase">{i18n.t("supplemental.encrypted")}</div>
+																<div className="text-muted-foreground text-[10.5px] font-semibold tracking-wider uppercase">
+																	{i18n.t("supplemental.encrypted")}
+																</div>
 																<CollapsibleCode text={reasoningParts.encrypted} preview={2} />
 															</div>
 														) : null}
@@ -2159,7 +2190,9 @@ export function LogDetailView({
 														) : null}
 													</div>
 												) : (
-													<div className="text-muted-foreground text-[12px] italic">{i18n.t("workspace.logs.detail.noReasoningContent")}</div>
+													<div className="text-muted-foreground text-[12px] italic">
+														{i18n.t("workspace.logs.detail.noReasoningContent")}
+													</div>
 												)
 											) : text ? (
 												usePlainText ? (
@@ -2295,7 +2328,7 @@ export function LogDetailView({
 							{log.error_details?.extra_fields?.upstream_request_id ? (
 								<div className="mt-3 grid grid-cols-[minmax(120px,auto)_1fr] gap-3 rounded-sm border border-red-200/70 bg-white/40 px-3 py-2 text-[12px] dark:border-red-900/70 dark:bg-red-950/40">
 									<span className="font-medium text-red-700 dark:text-red-400">{i18n.t("workspace.logs.upstreamRequestId")}</span>
-									<span className="flex min-w-0 items-center gap-2 break-all font-mono text-red-900 dark:text-red-300">
+									<span className="flex min-w-0 items-center gap-2 font-mono break-all text-red-900 dark:text-red-300">
 										{log.error_details.extra_fields.upstream_request_id}
 										<CopyInlineButton text={log.error_details.extra_fields.upstream_request_id} />
 									</span>
@@ -2312,7 +2345,7 @@ export function LogDetailView({
 										{Object.entries(log.error_details.extra_fields.upstream_response_headers).map(([name, value]) => (
 											<div key={name} className="grid grid-cols-[minmax(120px,auto)_1fr] gap-3">
 												<span className="font-medium text-red-700 dark:text-red-400">{name}</span>
-												<span className="flex min-w-0 items-center gap-2 break-all font-mono text-red-900 dark:text-red-300">
+												<span className="flex min-w-0 items-center gap-2 font-mono break-all text-red-900 dark:text-red-300">
 													{value}
 													<CopyInlineButton text={value} />
 												</span>
@@ -2393,7 +2426,9 @@ export function LogDetailView({
 													</pre>
 												</div>
 											) : (
-												<div className="text-muted-foreground border-t px-3 py-2 text-[11.5px]">{i18n.t("workspace.logs.detail.noParameterSchema")}</div>
+												<div className="text-muted-foreground border-t px-3 py-2 text-[11.5px]">
+													{i18n.t("workspace.logs.detail.noParameterSchema")}
+												</div>
 											)}
 										</details>
 									);
@@ -2472,9 +2507,12 @@ export function LogDetailView({
 					{rawRequest && (
 						<>
 							<div className="text-muted-foreground text-[12px]">
-								{i18n.t("workspace.logs.detail.rawRequestSentTo")} <span className="text-foreground font-medium capitalize">{log.provider}</span>
+								{i18n.t("workspace.logs.detail.rawRequestSentTo")}{" "}
+								<span className="text-foreground font-medium capitalize">{log.provider}</span>
 								{log.is_large_payload_request && (
-									<span className="ml-2 text-xs font-normal text-amber-600 dark:text-amber-400">{i18n.t("workspace.logs.detail.truncatedPreview")}</span>
+									<span className="ml-2 text-xs font-normal text-amber-600 dark:text-amber-400">
+										{i18n.t("workspace.logs.detail.truncatedPreview")}
+									</span>
 								)}
 							</div>
 							<CollapsibleBox
@@ -2503,9 +2541,12 @@ export function LogDetailView({
 					{rawResponse && log.status !== "processing" && (
 						<>
 							<div className="text-muted-foreground pt-4 text-[12px]">
-								{i18n.t("workspace.logs.detail.rawResponseFrom")} <span className="text-foreground font-medium capitalize">{log.provider}</span>
+								{i18n.t("workspace.logs.detail.rawResponseFrom")}{" "}
+								<span className="text-foreground font-medium capitalize">{log.provider}</span>
 								{log.is_large_payload_response && (
-									<span className="ml-2 text-xs font-normal text-amber-600 dark:text-amber-400">{i18n.t("workspace.logs.detail.truncatedPreview")}</span>
+									<span className="ml-2 text-xs font-normal text-amber-600 dark:text-amber-400">
+										{i18n.t("workspace.logs.detail.truncatedPreview")}
+									</span>
 								)}
 							</div>
 							<CollapsibleBox
@@ -2532,7 +2573,9 @@ export function LogDetailView({
 						</>
 					)}
 					{!rawRequest && !rawResponse && !passthroughRequestBody && !passthroughResponseBody && (
-						<div className="text-muted-foreground rounded-sm border border-dashed p-5 text-center text-sm">{i18n.t("workspace.logs.detail.noRawJson")}</div>
+						<div className="text-muted-foreground rounded-sm border border-dashed p-5 text-center text-sm">
+							{i18n.t("workspace.logs.detail.noRawJson")}
+						</div>
 					)}
 				</TabsContent>
 			</Tabs>

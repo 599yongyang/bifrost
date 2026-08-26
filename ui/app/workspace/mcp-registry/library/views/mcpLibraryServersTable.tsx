@@ -47,7 +47,7 @@ export function MCPLibraryServersTable({
 			<Table containerClassName="overflow-x-clip">
 				<TableHeader className="bg-muted sticky top-0 z-10">
 					<TableRow>
-						<TableHead className="w-16">Icon</TableHead>
+						<TableHead className="w-16">{i18n.t("workspace.mcpLibrary.icon")}</TableHead>
 						<TableHead>{i18n.t("workspace.mcpLogs.server")}</TableHead>
 						<TableHead className="hidden w-10 lg:table-cell">{i18n.t("workspace.logs.detail.details")}</TableHead>
 						<TableHead className="w-32 text-right">{i18n.t("workspace.routingRules.actions")}</TableHead>
@@ -149,7 +149,7 @@ export function MCPLibraryServersTable({
 														</Link>
 													</Button>
 												</TooltipTrigger>
-												<TooltipContent>Open installed server</TooltipContent>
+												<TooltipContent>{i18n.t("workspace.mcpLibrary.openInstalledServer")}</TooltipContent>
 											</Tooltip>
 										) : (
 											<Tooltip>
@@ -194,7 +194,7 @@ export function MCPLibraryServersTableSkeleton({ rows = 8 }: { rows?: number }) 
 			<Table containerClassName="overflow-x-clip">
 				<TableHeader className="bg-muted sticky top-0 z-10">
 					<TableRow>
-						<TableHead className="w-16">Icon</TableHead>
+						<TableHead className="w-16">{i18n.t("workspace.mcpLibrary.icon")}</TableHead>
 						<TableHead>{i18n.t("workspace.mcpLogs.server")}</TableHead>
 						<TableHead className="hidden w-10 lg:table-cell">{i18n.t("workspace.logs.detail.details")}</TableHead>
 						<TableHead className="w-32 text-right">{i18n.t("workspace.routingRules.actions")}</TableHead>

@@ -1,7 +1,7 @@
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatQuarterPreview, quarterStartMonthOptions } from "@/lib/constants/governance";
-import i18n from "@/lib/i18n";
+import { useTranslation } from "react-i18next";
 
 interface QuarterStartSelectProps {
 	"data-testid"?: string;
@@ -23,10 +23,12 @@ interface QuarterStartSelectProps {
  * took effect - what differs is which quarter is labelled Q1.
  */
 export default function QuarterStartSelect({ "data-testid": testId, value, onChange }: QuarterStartSelectProps) {
+	const { i18n, t } = useTranslation();
+	const locale = i18n.resolvedLanguage ?? i18n.language;
 	return (
 		<div className="bg-muted/20 mt-1 space-y-1.5 rounded-sm border p-2.5" data-testid={testId}>
 			<div className="flex w-full flex-row items-center gap-2">
-				<Label className="text-muted-foreground font-medium">{i18n.t("supplemental.fiscalYearStarts")}</Label>
+				<Label className="text-muted-foreground font-medium">{t("supplemental.fiscalYearStarts")}</Label>
 				<div className="ml-auto flex flex-col items-end">
 					<Select value={String(value ?? 1)} onValueChange={(month) => onChange(Number(month))}>
 						<SelectTrigger className="h-8 w-44" data-testid={testId ? `${testId}-trigger` : undefined}>
@@ -35,12 +37,12 @@ export default function QuarterStartSelect({ "data-testid": testId, value, onCha
 						<SelectContent>
 							{quarterStartMonthOptions.map((month) => (
 								<SelectItem key={month.value} value={month.value} data-testid={testId ? `${testId}-option-${month.value}` : undefined}>
-									{month.label}
+									{new Date(Date.UTC(2026, Number(month.value) - 1, 1)).toLocaleString(locale, { month: "long", timeZone: "UTC" })}
 								</SelectItem>
 							))}
 						</SelectContent>
 					</Select>
-					<p className="text-muted-foreground text-[11px] italic">{formatQuarterPreview(value)}</p>
+					<p className="text-muted-foreground text-[11px] italic">{formatQuarterPreview(value, locale)}</p>
 				</div>
 			</div>
 		</div>

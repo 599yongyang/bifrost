@@ -116,13 +116,15 @@ export const MCPHeadersAuthorizer: React.FC<MCPHeadersAuthorizerProps> = ({
 				}}
 			>
 				<DialogHeader>
-					<DialogTitle>{status === "confirm" ? "Test Header Configuration" : "Header Authorization"}</DialogTitle>
+					<DialogTitle>
+						{status === "confirm" ? i18n.t("workspace.mcpForm.testHeaderConfiguration") : i18n.t("workspace.mcpForm.headerAuthorization")}
+					</DialogTitle>
 					<DialogDescription>
-						{status === "confirm" && "A one-time test is needed to verify your header setup."}
-						{status === "input" && "Enter sample values to verify the connection."}
-						{status === "testing" && "Verifying connection..."}
-						{status === "success" && "Verification successful!"}
-						{status === "failed" && "Verification failed"}
+						{status === "confirm" && i18n.t("workspace.mcpForm.headerTestNeeded")}
+						{status === "input" && i18n.t("workspace.mcpForm.enterSampleValues")}
+						{status === "testing" && i18n.t("workspace.mcpForm.verifyingConnection")}
+						{status === "success" && i18n.t("workspace.mcpForm.verificationSuccessful")}
+						{status === "failed" && i18n.t("workspace.mcpForm.verificationFailed")}
 					</DialogDescription>
 				</DialogHeader>
 
@@ -130,21 +132,16 @@ export const MCPHeadersAuthorizer: React.FC<MCPHeadersAuthorizerProps> = ({
 					{status === "confirm" && (
 						<>
 							<div className="text-muted-foreground space-y-3 text-sm">
-								<p>
-									To set up this MCP server, we need to verify that your header configuration is correct and discover the available tools.
-								</p>
-								<p>
-									You will be asked to provide sample values for the required headers. This is a <strong>one-time test</strong> to confirm
-									the setup works. Your sample values will <strong>not</strong> be stored or used for any other purpose.
-								</p>
-								<p>Once verified, each user will submit their own header values when they use this MCP server.</p>
+								<p>{i18n.t("workspace.mcpForm.headerSetupDescription")}</p>
+								<p>{i18n.t("workspace.mcpForm.headerOneTimeTest")}</p>
+								<p>{i18n.t("workspace.mcpForm.eachUserSubmitsHeaders")}</p>
 							</div>
 							<div className="flex w-full justify-end space-x-2">
 								<Button onClick={handleCancel} variant="outline" data-testid="per-user-headers-cancel">
 									{i18n.t("common.cancel")}
 								</Button>
 								<Button onClick={handleConfirm} data-testid="per-user-headers-confirm">
-									Continue with Test
+									{i18n.t("workspace.mcpForm.continueWithTest")}
 								</Button>
 							</div>
 						</>
@@ -152,13 +149,11 @@ export const MCPHeadersAuthorizer: React.FC<MCPHeadersAuthorizerProps> = ({
 
 					{status === "input" && (
 						<>
-							<p className="text-muted-foreground text-sm">
-								These values are used only for this verification. They are <strong>not</strong> persisted.
-							</p>
+							<p className="text-muted-foreground text-sm">{i18n.t("workspace.mcpForm.verificationValuesNotPersisted")}</p>
 							<HeadersForm
 								requiredKeys={perUserHeaderKeys}
 								onSubmit={handleRunTest}
-								submitLabel="Run Test"
+								submitLabel={i18n.t("workspace.mcpForm.runTest")}
 								onCancel={handleCancel}
 								testIdPrefix="per-user-headers-admin-test"
 							/>
@@ -169,7 +164,7 @@ export const MCPHeadersAuthorizer: React.FC<MCPHeadersAuthorizerProps> = ({
 						<>
 							<div className="flex flex-col items-center space-y-2">
 								<Loader2 className="text-secondary-foreground h-4 w-4 animate-spin" />
-								<p className="text-muted-foreground text-sm">Verifying connection and discovering tools...</p>
+								<p className="text-muted-foreground text-sm">{i18n.t("workspace.mcpForm.verifyingAndDiscovering")}</p>
 							</div>
 						</>
 					)}
@@ -181,7 +176,7 @@ export const MCPHeadersAuthorizer: React.FC<MCPHeadersAuthorizerProps> = ({
 									<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
 								</svg>
 							</div>
-							<p className="text-sm text-green-600">MCP server connected successfully!</p>
+							<p className="text-sm text-green-600">{i18n.t("workspace.mcpForm.serverConnectedSuccessfully")}</p>
 						</div>
 					)}
 

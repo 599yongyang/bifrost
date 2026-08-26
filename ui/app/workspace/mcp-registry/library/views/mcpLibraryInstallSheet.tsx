@@ -271,8 +271,8 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 			}
 			if (resourceText.trim() && !isValidOAuthResourceURI(resourceText.trim())) {
 				toast({
-					title: "Invalid resource URI",
-					description: "OAuth resource must be an absolute URI without a fragment.",
+					title: i18n.t("workspace.mcpForm.invalidResourceUri"),
+					description: i18n.t("workspace.mcpForm.oauthResourceAbsolute"),
 					variant: "destructive",
 				});
 				hasErrors = true;
@@ -282,8 +282,8 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 		if (authType === "per_user_headers") {
 			if (perUserHeaderKeys.length === 0) {
 				toast({
-					title: "Header keys required",
-					description: "Declare at least one header name users must supply.",
+					title: i18n.t("workspace.mcpForm.headerKeysRequired"),
+					description: i18n.t("workspace.mcpForm.headerKeysRequiredDescription"),
 					variant: "destructive",
 				});
 				hasErrors = true;
@@ -359,7 +359,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 			}
 
 			toast({
-				title: "Installed",
+				title: i18n.t("supplemental.installed"),
 				description: `${server.name} MCP server installed.`,
 			});
 			onInstalled();
@@ -371,7 +371,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 				return;
 			}
 			toast({
-				title: "Error",
+				title: i18n.t("workspace.mcpForm.errorTitle"),
 				description: getErrorMessage(error),
 				variant: "destructive",
 			});
@@ -437,7 +437,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 							<section className="space-y-4">
 								<div className="space-y-1">
 									<h3 className="text-sm font-medium">{i18n.t("supplemental.clientDetails")}</h3>
-									<p className="text-muted-foreground text-sm">Bifrost uses this name internally when routing MCP tool calls.</p>
+									<p className="text-muted-foreground text-sm">{i18n.t("workspace.mcpLibrary.internalNameHelp")}</p>
 								</div>
 
 								<FormField
@@ -481,12 +481,12 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 														<Info className="text-muted-foreground h-4 w-4 cursor-help" />
 													</TooltipTrigger>
 													<TooltipContent className="max-w-xs">
-														<p>Leave a value blank to read it from the environment where Bifrost runs.</p>
+														<p>{i18n.t("workspace.mcpLibrary.blankReadsEnvironment")}</p>
 													</TooltipContent>
 												</Tooltip>
 											</TooltipProvider>
 										</div>
-										<p className="text-muted-foreground text-sm">Values used when Bifrost starts this stdio MCP server.</p>
+										<p className="text-muted-foreground text-sm">{i18n.t("workspace.mcpLibrary.launchValuesHelp")}</p>
 									</div>
 									<HeadersTable
 										value={envVars}
@@ -564,7 +564,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 													onChange={field.onChange}
 													keyPlaceholder="Header name"
 													valuePlaceholder="Header value"
-													label="Headers"
+													label={i18n.t("workspace.mcpForm.headers")}
 													useSecretVarInput
 												/>
 												{headersValidationError && <p className="text-destructive text-xs">{headersValidationError}</p>}
@@ -582,15 +582,15 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 											<div className="space-y-0.5">
 												<div className="text-sm font-medium">{i18n.t("workspace.config.security.requiredHeaders")}</div>
 												<p className="text-muted-foreground text-sm">
-													Comma-separated list of header names each caller must supply when they first use this server (e.g.{" "}
-													<code>X-API-Key, X-Tenant-ID</code>). Values are submitted per user - never stored on this server config.
+													{i18n.t("workspace.mcpClientSheet.perUserHeadersHelp")} ( <code>{"X-API-Key, X-Tenant-ID"}</code>).{" "}
+													{i18n.t("workspace.mcpForm.perUserHeadersDescription")}
 												</p>
 											</div>
 											<Textarea
 												id="library-per-user-header-keys"
 												data-testid="library-per-user-header-keys-textarea"
 												className="h-24"
-												placeholder="X-API-Key, X-Tenant-ID"
+												placeholder={i18n.t("workspace.mcpClientSheet.perUserHeadersPlaceholder")}
 												value={newHeaderKeyInput}
 												onChange={(e) => {
 													setNewHeaderKeyInput(e.target.value);
@@ -610,7 +610,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 														onChange={field.onChange}
 														keyPlaceholder="Header name"
 														valuePlaceholder="Header value"
-														label="Static Headers (optional, applied alongside user values)"
+														label={i18n.t("workspace.mcpForm.staticHeadersOptional")}
 														useSecretVarInput
 													/>
 													{headersValidationError && <p className="text-destructive text-xs">{headersValidationError}</p>}
@@ -641,7 +641,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 																			<Info className="text-muted-foreground h-4 w-4 cursor-help" />
 																		</TooltipTrigger>
 																		<TooltipContent className="max-w-xs">
-																			<p>Leave empty to use Dynamic Client Registration when the provider supports it.</p>
+																			<p>{i18n.t("workspace.mcpForm.dynamicRegistrationHelp")}</p>
 																		</TooltipContent>
 																	</Tooltip>
 																</TooltipProvider>
@@ -650,7 +650,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 																<SecretVarInput
 																	value={field.value}
 																	onChange={field.onChange}
-																	placeholder="your-client-id"
+																	placeholder={i18n.t("workspace.mcpForm.oauthClientIdPlaceholder")}
 																	data-testid="library-oauth-client-id"
 																/>
 															</FormControl>
@@ -669,7 +669,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 																<SecretVarInput
 																	value={field.value}
 																	onChange={field.onChange}
-																	placeholder="optional for PKCE"
+																	placeholder={i18n.t("workspace.mcpForm.oauthClientSecretOptional")}
 																	hideValueWhenEnv
 																	maskNonEnvValue
 																	data-testid="library-oauth-client-secret"
@@ -789,10 +789,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 														<FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
 															<div className="space-y-0.5">
 																<FormLabel>{i18n.t("workspace.providers.skipTlsVerification")}</FormLabel>
-																<p className="text-muted-foreground text-sm">
-																	Disable TLS certificate verification. Use only in trusted isolated environments. Takes priority over CA
-																	certificate.
-																</p>
+																<p className="text-muted-foreground text-sm">{i18n.t("workspace.mcpClientSheet.skipTlsHelp")}</p>
 															</div>
 															<FormControl>
 																<Switch
@@ -823,9 +820,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 																	data-testid="library-mcp-tls-ca-cert-pem"
 																/>
 															</FormControl>
-															<p className="text-muted-foreground text-sm">
-																PEM-encoded CA certificate to trust for MCP server connections (e.g. self-signed or private CA).
-															</p>
+															<p className="text-muted-foreground text-sm">{i18n.t("workspace.mcpClientSheet.caCertificateHelp")}</p>
 															<FormMessage />
 														</FormItem>
 													)}
@@ -841,10 +836,10 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 							<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 								<p className="text-muted-foreground text-sm">
 									{isOauth
-										? "OAuth authorization starts after this step."
+										? i18n.t("workspace.mcpLibrary.oauthStartsNext")
 										: isPerUserHeaders
-											? "Header verification starts after this step."
-											: "All discovered tools will be enabled after install."}
+											? i18n.t("workspace.mcpLibrary.headerVerificationStartsNext")
+											: i18n.t("workspace.mcpLibrary.toolsEnabledAfterInstall")}
 								</p>
 								<div className="flex justify-end gap-2">
 									<Button type="button" variant="outline" onClick={onClose} disabled={isLoading} data-testid="library-install-cancel-btn">
@@ -866,7 +861,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 											</TooltipTrigger>
 											{!hasCreateMCPClientAccess && (
 												<TooltipContent>
-													<p>You don't have permission to perform this action</p>
+													<p>{i18n.t("workspace.mcpForm.permissionDenied")}</p>
 												</TooltipContent>
 											)}
 										</Tooltip>
@@ -884,7 +879,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 					onClose={() => setOauthFlow(null)}
 					onSuccess={() => {
 						toast({
-							title: "Installed",
+							title: i18n.t("supplemental.installed"),
 							description: `${server.name} MCP server connected with OAuth.`,
 						});
 						setOauthFlow(null);
@@ -893,7 +888,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 					}}
 					onError={(error) => {
 						toast({
-							title: "OAuth Error",
+							title: i18n.t("workspace.mcpForm.oauthErrorTitle"),
 							description: error,
 							variant: "destructive",
 						});
@@ -919,7 +914,7 @@ export function MCPLibraryInstallSheet({ server, open, onClose, onInstalled }: M
 					onSuccess={() => {
 						setHeadersFlow(null);
 						toast({
-							title: "Installed",
+							title: i18n.t("supplemental.installed"),
 							description: `${server.name} MCP server connected with per-user headers.`,
 						});
 						onInstalled();

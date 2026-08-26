@@ -120,7 +120,11 @@ export function MCPLogDetailSheet({
 				<SheetHeader className="flex flex-row items-center px-0">
 					<div className="flex w-full items-center justify-between">
 						<SheetTitle className="flex w-fit items-center gap-2 font-medium">
-							{displayLog.id && <p className="text-md max-w-full truncate">{i18n.t("supplemental.requestId")} {displayLog.id}</p>}
+							{displayLog.id && (
+								<p className="text-md max-w-full truncate">
+									{i18n.t("supplemental.requestId")} {displayLog.id}
+								</p>
+							)}
 							<Badge variant="outline" className={`${StatusColors[getValidatedStatus(displayLog.status)]} uppercase`}>
 								{displayLog.status}
 							</Badge>
@@ -205,7 +209,7 @@ export function MCPLogDetailSheet({
 						<div className="grid w-full grid-cols-3 items-center justify-between gap-4">
 							<LogEntryDetailsView
 								className="w-full"
-								label="Start Timestamp"
+								label={i18n.t("workspace.mcpLogs.details.startTimestamp")}
 								value={
 									isValid(new Date(displayLog.timestamp))
 										? format(new Date(displayLog.timestamp), "yyyy-MM-dd hh:mm:ss aa")
@@ -214,7 +218,7 @@ export function MCPLogDetailSheet({
 							/>
 							<LogEntryDetailsView
 								className="w-full"
-								label="End Timestamp"
+								label={i18n.t("workspace.mcpLogs.details.endTimestamp")}
 								value={
 									isValid(new Date(displayLog.timestamp))
 										? format(addMilliseconds(new Date(displayLog.timestamp), displayLog.latency || 0), "yyyy-MM-dd hh:mm:ss aa")
@@ -223,7 +227,7 @@ export function MCPLogDetailSheet({
 							/>
 							<LogEntryDetailsView
 								className="w-full"
-								label="Latency"
+								label={i18n.t("workspace.mcpLogs.latency")}
 								value={displayLog.latency ? `${displayLog.latency.toFixed(2)}ms` : "NA"}
 							/>
 						</div>
@@ -234,7 +238,7 @@ export function MCPLogDetailSheet({
 						<div className="grid w-full grid-cols-3 items-start justify-between gap-4">
 							<LogEntryDetailsView
 								className="col-span-2 w-full"
-								label="Tool Name"
+								label={i18n.t("workspace.mcpLogs.toolNameColumn")}
 								value={
 									<Link
 										to="/workspace/mcp-logs"
@@ -248,7 +252,7 @@ export function MCPLogDetailSheet({
 							/>
 							<LogEntryDetailsView
 								className="w-full"
-								label="Server"
+								label={i18n.t("workspace.mcpLogs.server")}
 								value={
 									displayLog.server_label ? (
 										<Link
@@ -268,7 +272,7 @@ export function MCPLogDetailSheet({
 							{displayLog.virtual_key && (
 								<LogEntryDetailsView
 									className="w-full"
-									label="Virtual Key"
+									label={i18n.t("workspace.mcpLogs.details.virtualKey")}
 									value={
 										<Link
 											to="/workspace/governance/virtual-keys"
@@ -284,7 +288,7 @@ export function MCPLogDetailSheet({
 							{displayLog.llm_request_id && (
 								<LogEntryDetailsView
 									className="col-span-3 w-full"
-									label="LLM Request ID"
+									label={i18n.t("workspace.mcpLogs.details.llmRequestId")}
 									value={
 										<Link
 											to="/workspace/logs"
@@ -354,7 +358,9 @@ export function MCPLogDetailSheet({
 				{/* Error Details */}
 				{displayLog.error_details && (
 					<div className="border-destructive/50 w-full rounded-sm border">
-						<div className="border-destructive/50 text-destructive border-b px-6 py-2 text-sm font-medium">{i18n.t("supplemental.errorDetails")}</div>
+						<div className="border-destructive/50 text-destructive border-b px-6 py-2 text-sm font-medium">
+							{i18n.t("supplemental.errorDetails")}
+						</div>
 						<CodeEditor
 							className="z-0 w-full"
 							shouldAdjustInitialHeight={true}

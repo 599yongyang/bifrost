@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
+import ts from "typescript";
 import en from "./locales/en";
 import zh from "./locales/zh";
 
@@ -23,6 +24,7 @@ function placeholders(value: string): string[] {
 
 function sourceFiles(directory: string): string[] {
 	return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+		if (entry.isDirectory() && ["node_modules", "out", ".git"].includes(entry.name)) return [];
 		const fullPath = path.join(directory, entry.name);
 		if (entry.isDirectory()) return sourceFiles(fullPath);
 		return entry.isFile() && /\.tsx?$/.test(entry.name) ? [fullPath] : [];
@@ -36,6 +38,35 @@ function hasKey(resource: unknown, key: string): boolean {
 		current = (current as Record<string, unknown>)[segment];
 	}
 	return typeof current === "string";
+}
+
+function literalTranslationKeys(file: string): string[] {
+	const sourceText = fs.readFileSync(file, "utf8");
+	const source = ts.createSourceFile(
+		file,
+		sourceText,
+		ts.ScriptTarget.Latest,
+		true,
+		file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+	);
+	const keys: string[] = [];
+
+	const visit = (node: ts.Node) => {
+		if (ts.isCallExpression(node) && node.arguments.length > 0 && ts.isStringLiteral(node.arguments[0])) {
+			const expression = node.expression;
+			const isHookTranslation = ts.isIdentifier(expression) && expression.text === "t";
+			const isDirectTranslation =
+				ts.isPropertyAccessExpression(expression) &&
+				ts.isIdentifier(expression.expression) &&
+				expression.expression.text === "i18n" &&
+				expression.name.text === "t";
+			if (isHookTranslation || isDirectTranslation) keys.push(node.arguments[0].text);
+		}
+		ts.forEachChild(node, visit);
+	};
+
+	visit(source);
+	return keys;
 }
 
 describe("i18n locale resources", () => {
@@ -54,12 +85,10 @@ describe("i18n locale resources", () => {
 		for (const [key, enValue] of enValues) expect(placeholders(zhValues.get(key) ?? ""), key).toEqual(placeholders(enValue));
 	});
 
-	it("defines every literal i18n key referenced by the UI", () => {
+	it("defines every literal translation key referenced by the UI", () => {
 		const root = process.cwd();
 		const missing = sourceFiles(root).flatMap((file) => {
-			const source = fs.readFileSync(file, "utf8");
-			return [...source.matchAll(/i18n\.t\(\s*["']([^"']+)["']/g)]
-				.map((match) => match[1])
+			return literalTranslationKeys(file)
 				.filter((key) => !hasKey(en, key) || !hasKey(zh, key))
 				.map((key) => `${path.relative(root, file)}: ${key}`);
 		});

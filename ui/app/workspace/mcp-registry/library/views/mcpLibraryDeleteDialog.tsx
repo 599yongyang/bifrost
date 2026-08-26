@@ -31,12 +31,10 @@ export function MCPLibraryDeleteDialog({ server, open, isDeleting, onOpenChange,
 		<AlertDialog open={open} onOpenChange={onOpenChange}>
 			<AlertDialogContent>
 				<AlertDialogHeader>
-					<AlertDialogTitle>Remove "{server?.name}" from library?</AlertDialogTitle>
+					<AlertDialogTitle>{i18n.t("workspace.mcpLibrary.removeTitle", { name: server?.name })}</AlertDialogTitle>
 					<AlertDialogDescription>
-						{isCustom
-							? "This custom server will no longer be available for members to install."
-							: "This server will be hidden from the library and will not reappear on the next catalog sync."}{" "}
-						Existing installations are not affected.
+						{isCustom ? i18n.t("workspace.mcpLibrary.removeCustomDescription") : i18n.t("workspace.mcpLibrary.hideSyncedDescription")}{" "}
+						{i18n.t("workspace.mcpLibrary.installationsUnaffected")}
 					</AlertDialogDescription>
 				</AlertDialogHeader>
 				<AlertDialogFooter>
@@ -49,7 +47,7 @@ export function MCPLibraryDeleteDialog({ server, open, isDeleting, onOpenChange,
 						disabled={isDeleting}
 						data-testid={confirmTestId}
 					>
-						{isDeleting ? "Removing..." : "Remove"}
+						{isDeleting ? i18n.t("workspace.mcpLibrary.removing") : i18n.t("workspace.mcpLibrary.remove")}
 					</AlertDialogAction>
 				</AlertDialogFooter>
 			</AlertDialogContent>

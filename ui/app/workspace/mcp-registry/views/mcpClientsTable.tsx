@@ -176,25 +176,31 @@ export default function MCPClientsTable({
 			setReconnectingClients((prev) => [...prev, client.config.client_id]);
 			await reconnectMCPClient(client.config.client_id).unwrap();
 			setReconnectingClients((prev) => prev.filter((id) => id !== client.config.client_id));
-			toast({ title: "Reconnected", description: `Client ${client.config.name} reconnected successfully.` });
+			toast({
+				title: i18n.t("workspace.mcp.reconnectedTitle"),
+				description: i18n.t("workspace.mcp.clientReconnected", { name: client.config.name }),
+			});
 			if (refetch) {
 				await refetch();
 			}
 		} catch (error) {
 			setReconnectingClients((prev) => prev.filter((id) => id !== client.config.client_id));
-			toast({ title: "Error", description: getErrorMessage(error), variant: "destructive" });
+			toast({ title: i18n.t("workspace.mcp.errorTitle"), description: getErrorMessage(error), variant: "destructive" });
 		}
 	};
 
 	const handleDelete = async (client: MCPClient) => {
 		try {
 			await deleteMCPClient(client.config.client_id).unwrap();
-			toast({ title: "Deleted", description: `Client ${client.config.name} removed successfully.` });
+			toast({
+				title: i18n.t("workspace.mcp.deletedTitle"),
+				description: i18n.t("workspace.mcp.clientRemoved", { name: client.config.name }),
+			});
 			if (refetch) {
 				await refetch();
 			}
 		} catch (error) {
-			toast({ title: "Error", description: getErrorMessage(error), variant: "destructive" });
+			toast({ title: i18n.t("workspace.mcp.errorTitle"), description: getErrorMessage(error), variant: "destructive" });
 		}
 	};
 
@@ -323,8 +329,7 @@ export default function MCPClientsTable({
 					<AlertDialogHeader>
 						<AlertDialogTitle>{i18n.t("workspace.mcp.removeServerTitle")}</AlertDialogTitle>
 						<AlertDialogDescription>
-							Are you sure you want to remove MCP server {clientToDelete?.config.name}? You will need to reconnect the server to continue
-							using it.
+							{i18n.t("workspace.mcp.removeServerDescription", { name: clientToDelete?.config.name })}
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>
@@ -457,15 +462,19 @@ export default function MCPClientsTable({
 														c.state == "connected" ? MCP_STATUS_COLORS[c.config.is_code_mode_client ? "connected" : "disconnected"] : ""
 													}
 												>
-													{c.state == "connected" ? <>{c.config.is_code_mode_client ? "Enabled" : "Disabled"}</> : "-"}
+													{c.state == "connected"
+														? c.config.is_code_mode_client
+															? i18n.t("workspace.mcp.enabled")
+															: i18n.t("workspace.mcp.disabled")
+														: "-"}
 												</Badge>
 											</TableCell>
 											<TableCell data-testid="mcp-client-vk-access">
 												{c.config.allow_on_all_virtual_keys
-													? "All"
+													? i18n.t("common.all")
 													: c.vk_configs?.length
-														? `${c.vk_configs.length} ${c.vk_configs.length === 1 ? "VK" : "VKs"}`
-														: "None"}
+														? `${c.vk_configs.length} VK`
+														: i18n.t("workspace.mcpForm.none")}
 											</TableCell>
 											<TableCell>
 												{c.state == "connected" ? (
@@ -512,7 +521,11 @@ export default function MCPClientsTable({
 																if (refetch) refetch();
 															})
 															.catch((err) => {
-																toast({ title: "Error", description: getErrorMessage(err), variant: "destructive" });
+																toast({
+																	title: i18n.t("workspace.mcp.errorTitle"),
+																	description: getErrorMessage(err),
+																	variant: "destructive",
+																});
 															})
 															.finally(() => {
 																setTogglingClientIds((prev) => {
@@ -551,8 +564,11 @@ export default function MCPClientsTable({
 				{totalCount > 0 && (
 					<div className="flex shrink-0 items-center justify-between text-xs" data-testid="pagination">
 						<div className="text-muted-foreground flex items-center gap-2">
-							{(offset + 1).toLocaleString()}-{Math.min(offset + limit, totalCount).toLocaleString()} of {totalCount.toLocaleString()}{" "}
-							{i18n.t("workspace.virtualKeys.entries")}
+							{i18n.t("workspace.mcp.showing", {
+								from: (offset + 1).toLocaleString(),
+								to: Math.min(offset + limit, totalCount).toLocaleString(),
+								total: totalCount.toLocaleString(),
+							})}
 						</div>
 
 						<div className="flex items-center gap-2">
@@ -568,9 +584,11 @@ export default function MCPClientsTable({
 							</Button>
 
 							<div className="flex items-center gap-1">
-								<span>Page</span>
+								<span>{i18n.t("supplemental.page")}</span>
 								<span>{Math.floor(offset / limit) + 1}</span>
-								<span>of {Math.ceil(totalCount / limit)}</span>
+								<span>
+									{i18n.t("supplemental.of")} {Math.ceil(totalCount / limit)}
+								</span>
 							</div>
 
 							<Button

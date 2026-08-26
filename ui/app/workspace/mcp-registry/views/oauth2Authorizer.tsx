@@ -337,12 +337,8 @@ export const OAuth2Authorizer: React.FC<OAuth2AuthorizerProps> = ({
 					{status === "confirm" && (
 						<>
 							<InfoBox icon={<KeyRound className="size-4" />}>
-								<p>
-									We'll open <strong>{authorizationHost}</strong> to verify the OAuth setup and discover available tools.
-								</p>
-								<p className="text-muted-foreground/80 text-xs">
-									This login is for setup only. Each user authenticates individually when they connect.
-								</p>
+								<p>{i18n.t("workspace.oauth.confirmOpenHost", { host: authorizationHost })}</p>
+								<p className="text-muted-foreground/80 text-xs">{i18n.t("workspace.oauth.setupLoginOnly")}</p>
 							</InfoBox>
 							<div className="flex justify-end gap-2">
 								<Button size="sm" variant="outline" onClick={handleCancel} data-testid="per-user-oauth-cancel">
@@ -360,8 +356,8 @@ export const OAuth2Authorizer: React.FC<OAuth2AuthorizerProps> = ({
 					{status === "polling" && (
 						<>
 							<InfoBox icon={<Loader2 className="size-4 animate-spin" />}>
-								<p>This dialog will update automatically once the provider redirects back.</p>
-								<p className="text-muted-foreground/80 text-xs">Keep the popup open until authorization is complete.</p>
+								<p>{i18n.t("workspace.oauth.redirectAutoUpdate")}</p>
+								<p className="text-muted-foreground/80 text-xs">{i18n.t("workspace.oauth.popupKeepOpen")}</p>
 							</InfoBox>
 							<div className="flex items-center justify-between">
 								<StepDots active={2} total={3} />
@@ -376,8 +372,8 @@ export const OAuth2Authorizer: React.FC<OAuth2AuthorizerProps> = ({
 					{status === "blocked" && (
 						<>
 							<InfoBox variant="warning" icon={<AlertTriangle className="size-4" />}>
-								<p>Your browser prevented the authorization window from opening.</p>
-								<p className="text-xs opacity-80">Enable popups for this site in your browser settings, then try again.</p>
+								<p>{i18n.t("workspace.oauth.popupPrevented")}</p>
+								<p className="text-xs opacity-80">{i18n.t("workspace.oauth.popupEnableHelp")}</p>
 							</InfoBox>
 							<div className="flex justify-end gap-2">
 								<Button size="sm" variant="outline" onClick={handleCancel} data-testid="oauth-pending-cancel-btn">
@@ -385,7 +381,7 @@ export const OAuth2Authorizer: React.FC<OAuth2AuthorizerProps> = ({
 								</Button>
 								<Button size="sm" onClick={openPopup} data-testid="oauth-open-window-btn">
 									<ExternalLink className="size-3.5" />
-									Open authorization
+									{i18n.t("workspace.oauth.openAuthorizationWindow")}
 								</Button>
 							</div>
 						</>
@@ -394,8 +390,8 @@ export const OAuth2Authorizer: React.FC<OAuth2AuthorizerProps> = ({
 					{/* Success */}
 					{status === "success" && (
 						<InfoBox variant="success" icon={<CheckCircle2 className="size-4" />}>
-							<p className="font-medium">Finishing setup and syncing available tools.</p>
-							<p className="text-xs opacity-80">You can close this dialog; setup will complete in the background.</p>
+							<p className="font-medium">{i18n.t("workspace.oauth.finishingSetup")}</p>
+							<p className="text-xs opacity-80">{i18n.t("workspace.oauth.backgroundCompletion")}</p>
 						</InfoBox>
 					)}
 
@@ -403,7 +399,7 @@ export const OAuth2Authorizer: React.FC<OAuth2AuthorizerProps> = ({
 					{status === "failed" && (
 						<>
 							<InfoBox variant="danger" icon={<XCircle className="size-4" />}>
-								<p className="font-medium">Authorization did not complete.</p>
+								<p className="font-medium">{i18n.t("workspace.oauth.authorizationIncomplete")}</p>
 								<p className="text-xs opacity-80">{errorMessage ?? "Check your OAuth provider configuration or try again."}</p>
 							</InfoBox>
 							<div className="flex justify-end gap-2">

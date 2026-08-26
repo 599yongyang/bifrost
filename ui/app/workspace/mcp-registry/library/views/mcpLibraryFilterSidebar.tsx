@@ -74,12 +74,12 @@ export function MCPLibraryFilterSidebar({ filters, onFiltersChange }: SidebarPro
 				type="button"
 				onClick={toggleCollapsed}
 				className="bg-card group flex h-full w-10 shrink-0 cursor-pointer flex-col items-center gap-3 rounded-r-md py-4 text-sm font-medium"
-				title="Show filters"
-				aria-label="Show filters"
+				title={i18n.t("workspace.mcpLibrary.showFilters")}
+				aria-label={i18n.t("workspace.mcpLibrary.showFilters")}
 				data-testid="mcpLibraryFilterSidebar-toggle-show"
 			>
 				<PanelLeftOpen className="text-muted-foreground group-hover:text-foreground size-4 transition-colors" />
-				<span className="rotate-180 select-none [writing-mode:vertical-rl]">Filters</span>
+				<span className="rotate-180 select-none [writing-mode:vertical-rl]">{i18n.t("workspace.mcpLibrary.filters")}</span>
 				{activeFilterCount > 0 && (
 					<span className="bg-primary/10 text-primary flex size-6 items-center justify-center rounded-full text-xs font-medium">
 						{activeFilterCount}
@@ -92,7 +92,7 @@ export function MCPLibraryFilterSidebar({ filters, onFiltersChange }: SidebarPro
 	return (
 		<div className="bg-card flex h-full w-64 shrink-0 flex-col rounded-r-md">
 			<div className="flex h-11 items-center justify-between border-b pr-2 pl-5">
-				<span className="text-sm font-semibold">Filters</span>
+				<span className="text-sm font-semibold">{i18n.t("workspace.mcpLibrary.filters")}</span>
 				<div className="flex items-center gap-1">
 					{activeFilterCount > 0 && (
 						<Button
@@ -111,8 +111,8 @@ export function MCPLibraryFilterSidebar({ filters, onFiltersChange }: SidebarPro
 						size="icon"
 						className="size-7"
 						onClick={toggleCollapsed}
-						title="Hide filters"
-						aria-label="Hide filters"
+						title={i18n.t("workspace.mcpLibrary.hideFilters")}
+						aria-label={i18n.t("workspace.mcpLibrary.hideFilters")}
 						data-testid="mcpLibraryFilterSidebar-toggle-hide"
 					>
 						<PanelLeftClose className="size-4" />
@@ -123,7 +123,7 @@ export function MCPLibraryFilterSidebar({ filters, onFiltersChange }: SidebarPro
 			<ScrollArea className="flex flex-1 overflow-y-auto p-2 pb-0" viewportClassName="no-table">
 				{isError ? (
 					<div className="flex flex-col items-center gap-3 px-3 py-8 text-center" data-testid="mcpLibraryFilterSidebar-error">
-						<p className="text-muted-foreground text-sm">Failed to load filters.</p>
+						<p className="text-muted-foreground text-sm">{i18n.t("workspace.mcpLibrary.failedFilters")}</p>
 						<Button variant="outline" size="sm" onClick={() => refetch()} data-testid="mcpLibraryFilterSidebar-retry-button">
 							<RotateCcw className="size-3" />
 							{i18n.t("workspace.oauth.retry")}
@@ -132,7 +132,7 @@ export function MCPLibraryFilterSidebar({ filters, onFiltersChange }: SidebarPro
 				) : (
 					<div className="flex grow flex-col gap-1">
 						<CheckboxFilterSection
-							title="Category"
+							title={i18n.t("workspace.mcpLibrary.category")}
 							items={filterData?.categories || []}
 							selected={filters.categories}
 							loading={isLoading}
@@ -157,7 +157,7 @@ export function MCPLibraryFilterSidebar({ filters, onFiltersChange }: SidebarPro
 							testIdPrefix="mcp-library-filter-auth-type"
 						/>
 						<CheckboxFilterSection
-							title="Tags"
+							title={i18n.t("workspace.mcpLibrary.tags")}
 							items={filterData?.tags || []}
 							selected={filters.tags}
 							loading={isLoading}
@@ -306,7 +306,9 @@ function CheckboxFilterSection({
 					testId={testIdPrefix ? `${testIdPrefix}-checkbox-${item}` : undefined}
 				/>
 			))}
-			{filtered.length === 0 && <div className="text-muted-foreground flex h-9 items-center px-3 text-xs">No results</div>}
+			{filtered.length === 0 && (
+				<div className="text-muted-foreground flex h-9 items-center px-3 text-xs">{i18n.t("workspace.mcpLibrary.noResults")}</div>
+			)}
 		</FilterSection>
 	);
 }

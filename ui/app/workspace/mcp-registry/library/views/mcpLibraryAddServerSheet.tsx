@@ -106,7 +106,7 @@ export function MCPLibraryAddServerSheet({ open, onClose }: MCPLibraryAddServerS
 
 		try {
 			await createEntry(payload).unwrap();
-			toast.success("MCP server published to the library.");
+			toast.success(i18n.t("workspace.mcpLibrary.published"));
 			onClose();
 		} catch (error) {
 			toast.error(getErrorMessage(error));
@@ -117,8 +117,8 @@ export function MCPLibraryAddServerSheet({ open, onClose }: MCPLibraryAddServerS
 		<Sheet open={open} onOpenChange={(sheetOpen) => !sheetOpen && onClose()}>
 			<SheetContent className="flex w-full flex-col overflow-x-hidden p-0 pt-4">
 				<SheetHeader className="flex flex-col items-start px-0 py-4" headerClassName="mb-0 sticky px-8 -top-4 bg-card z-10">
-					<SheetTitle>Add MCP Server</SheetTitle>
-					<SheetDescription>This MCP server will be available org-wide for members to discover, install, and use.</SheetDescription>
+					<SheetTitle>{i18n.t("workspace.mcpLibrary.addServer")}</SheetTitle>
+					<SheetDescription>{i18n.t("workspace.mcpLibrary.orgWideDescription")}</SheetDescription>
 				</SheetHeader>
 
 				<form onSubmit={handleSubmit(onSubmit)} className="flex min-h-0 flex-1 flex-col">
@@ -128,7 +128,7 @@ export function MCPLibraryAddServerSheet({ open, onClose }: MCPLibraryAddServerS
 							<Label htmlFor="mcp-add-name">{i18n.t("workspace.mcp.name")}</Label>
 							<Input
 								id="mcp-add-name"
-								placeholder="My Internal Server"
+								placeholder={i18n.t("workspace.mcpLibrary.namePlaceholder")}
 								data-testid="mcp-add-name-input"
 								className={errors.name ? "border-destructive" : ""}
 								{...register("name", {
@@ -144,7 +144,7 @@ export function MCPLibraryAddServerSheet({ open, onClose }: MCPLibraryAddServerS
 							<Label htmlFor="mcp-add-description">{i18n.t("workspace.virtualKeys.description")}</Label>
 							<Textarea
 								id="mcp-add-description"
-								placeholder="What this server does..."
+								placeholder={i18n.t("workspace.mcpLibrary.descriptionPlaceholder")}
 								data-testid="mcp-add-description-input"
 								{...register("description")}
 							/>
@@ -188,7 +188,7 @@ export function MCPLibraryAddServerSheet({ open, onClose }: MCPLibraryAddServerS
 									<Label htmlFor="mcp-add-command">{i18n.t("workspace.mcpForm.command")}</Label>
 									<Input
 										id="mcp-add-command"
-										placeholder="npx"
+										placeholder={i18n.t("workspace.mcpLibrary.commandPlaceholder")}
 										data-testid="mcp-add-command-input"
 										className={errors.command ? "border-destructive" : ""}
 										{...register("command", {
@@ -201,20 +201,20 @@ export function MCPLibraryAddServerSheet({ open, onClose }: MCPLibraryAddServerS
 									<Label htmlFor="mcp-add-args">{i18n.t("workspace.mcpLogs.details.arguments")}</Label>
 									<Input
 										id="mcp-add-args"
-										placeholder="comma separated, e.g. -y, my-package"
+										placeholder={i18n.t("workspace.mcpLibrary.argsPlaceholder")}
 										data-testid="mcp-add-args-input"
 										{...register("args")}
 									/>
 								</div>
 								<div className="space-y-2">
-									<Label htmlFor="mcp-add-envs">Environment Variable Names</Label>
+									<Label htmlFor="mcp-add-envs">{i18n.t("workspace.mcpLibrary.environmentVariableNames")}</Label>
 									<Input
 										id="mcp-add-envs"
-										placeholder="comma separated, e.g. API_KEY, DB_URL"
+										placeholder={i18n.t("workspace.mcpLibrary.envsPlaceholder")}
 										data-testid="mcp-add-envs-input"
 										{...register("envs")}
 									/>
-									<p className="text-muted-foreground text-xs">Only names; users supply values at install time.</p>
+									<p className="text-muted-foreground text-xs">{i18n.t("workspace.mcpLibrary.namesOnly")}</p>
 								</div>
 							</div>
 						)}
@@ -231,46 +231,51 @@ export function MCPLibraryAddServerSheet({ open, onClose }: MCPLibraryAddServerS
 										<SelectItem value="none">{i18n.t("workspace.mcpForm.none")}</SelectItem>
 										<SelectItem value="headers">{i18n.t("workspace.mcpForm.headers")}</SelectItem>
 										<SelectItem value="oauth">{i18n.t("workspace.mcp.authTypeLabels.oauth")}</SelectItem>
-										<SelectItem value="per_user_headers">Per-user Headers</SelectItem>
+										<SelectItem value="per_user_headers">{i18n.t("workspace.mcpLibrary.perUserHeaders")}</SelectItem>
 										<SelectItem value="per_user_oauth">{i18n.t("workspace.mcp.authTypeLabels.perUserOauth")}</SelectItem>
 									</SelectContent>
 								</Select>
 							</div>
 							<div className="space-y-2">
-								<Label htmlFor="mcp-add-category">Category</Label>
-								<Input id="mcp-add-category" placeholder="e.g. Database" data-testid="mcp-add-category-input" {...register("category")} />
+								<Label htmlFor="mcp-add-category">{i18n.t("workspace.mcpLibrary.category")}</Label>
+								<Input
+									id="mcp-add-category"
+									placeholder={i18n.t("workspace.mcpLibrary.categoryPlaceholder")}
+									data-testid="mcp-add-category-input"
+									{...register("category")}
+								/>
 							</div>
 						</div>
 
 						{needsHeaderKeys && (
 							<div className="space-y-2">
-								<Label htmlFor="mcp-add-header-keys">Required Header Names</Label>
+								<Label htmlFor="mcp-add-header-keys">{i18n.t("workspace.mcpLibrary.requiredHeaderNames")}</Label>
 								<Input
 									id="mcp-add-header-keys"
-									placeholder="comma separated, e.g. X-Api-Key"
+									placeholder={i18n.t("workspace.mcpLibrary.headersPlaceholder")}
 									data-testid="mcp-add-header-keys-input"
 									{...register("required_header_keys")}
 								/>
-								<p className="text-muted-foreground text-xs">Only names; users supply values at install time.</p>
+								<p className="text-muted-foreground text-xs">{i18n.t("workspace.mcpLibrary.namesOnly")}</p>
 							</div>
 						)}
 
 						{/* Optional metadata */}
 						<div className="grid grid-cols-2 gap-3">
 							<div className="space-y-2">
-								<Label htmlFor="mcp-add-icon">Icon URL</Label>
+								<Label htmlFor="mcp-add-icon">{i18n.t("workspace.mcpLibrary.iconUrl")}</Label>
 								<Input id="mcp-add-icon" placeholder="https://..." data-testid="mcp-add-icon-input" {...register("icon_url")} />
 							</div>
 							<div className="space-y-2">
-								<Label htmlFor="mcp-add-docs">Docs URL</Label>
+								<Label htmlFor="mcp-add-docs">{i18n.t("workspace.mcpLibrary.docsUrl")}</Label>
 								<Input id="mcp-add-docs" placeholder="https://..." data-testid="mcp-add-docs-input" {...register("docs_url")} />
 							</div>
 						</div>
 						<div className="space-y-2">
-							<Label htmlFor="mcp-add-tags">Tags</Label>
+							<Label htmlFor="mcp-add-tags">{i18n.t("workspace.mcpLibrary.tags")}</Label>
 							<Input
 								id="mcp-add-tags"
-								placeholder="comma separated, e.g. internal, database"
+								placeholder={i18n.t("workspace.mcpLibrary.tagsPlaceholder")}
 								data-testid="mcp-add-tags-input"
 								{...register("tags")}
 							/>
@@ -283,7 +288,7 @@ export function MCPLibraryAddServerSheet({ open, onClose }: MCPLibraryAddServerS
 								{i18n.t("common.cancel")}
 							</Button>
 							<Button type="submit" disabled={isLoading} data-testid="mcp-add-submit-btn">
-								{isLoading ? "Publishing..." : "Publish to Library"}
+								{isLoading ? i18n.t("workspace.mcpLibrary.publishing") : i18n.t("workspace.mcpLibrary.publish")}
 							</Button>
 						</div>
 					</div>
