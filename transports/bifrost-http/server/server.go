@@ -6,6 +6,7 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"math"
 	"math/rand"
 	"net"
 	"os"
@@ -38,6 +39,7 @@ import (
 	"github.com/maximhq/bifrost/plugins/semanticcache"
 	"github.com/maximhq/bifrost/plugins/telemetry"
 	alertengine "github.com/maximhq/bifrost/transports/bifrost-http/alerting"
+	"github.com/maximhq/bifrost/transports/bifrost-http/circuitbreaker"
 	"github.com/maximhq/bifrost/transports/bifrost-http/handlers"
 	"github.com/maximhq/bifrost/transports/bifrost-http/integrations"
 	"github.com/maximhq/bifrost/transports/bifrost-http/lib"
@@ -1713,6 +1715,13 @@ func (s *BifrostHTTPServer) updatePluginErrorStatus(name, step string, originalE
 
 // SyncLoadedPlugin syncs a loaded plugin to the Bifrost client and updates the plugin status
 func (s *BifrostHTTPServer) SyncLoadedPlugin(ctx context.Context, name string, plugin schemas.BasePlugin, placement *schemas.PluginPlacement, order *int) error {
+	if plugin.GetName() == circuitbreaker.PluginName {
+		placement = schemas.Ptr(schemas.PluginPlacementPostBuiltin)
+		order = schemas.Ptr(math.MaxInt)
+		if s.Client != nil {
+			s.Client.SetKeyPoolFilter(s.circuitBreakerKeyPoolFilter())
+		}
+	}
 	// 2. Register (replaces old version atomically)
 	if err := s.Config.ReloadPlugin(plugin); err != nil {
 		return s.updatePluginErrorStatus(plugin.GetName(), "registering", err)
@@ -1735,6 +1744,18 @@ func (s *BifrostHTTPServer) SyncLoadedPlugin(ctx context.Context, name string, p
 	s.Config.UpdatePluginOverallStatus(plugin.GetName(), name, schemas.PluginStatusActive,
 		[]string{fmt.Sprintf("plugin %s reloaded successfully", name)}, InferPluginTypes(plugin))
 	return nil
+}
+
+func (s *BifrostHTTPServer) circuitBreakerKeyPoolFilter() schemas.KeyPoolFilter {
+	return func(ctx *schemas.BifrostContext, provider schemas.ModelProvider, model string, keys []schemas.Key) ([]schemas.Key, error) {
+		current, err := lib.FindPluginAs[interface {
+			FilterKeys(*schemas.BifrostContext, schemas.ModelProvider, string, []schemas.Key) ([]schemas.Key, error)
+		}](s.Config, circuitbreaker.PluginName)
+		if err != nil {
+			return keys, nil
+		}
+		return current.FilterKeys(ctx, provider, model, keys)
+	}
 }
 
 func (s *BifrostHTTPServer) wireObservationExportStore() {
@@ -2284,6 +2305,14 @@ func (s *BifrostHTTPServer) Bootstrap(ctx context.Context) error {
 	// Create account backed by the high-performance store (all processing is done in LoadFromDatabase)
 	// The account interface now benefits from ultra-fast config access times via in-memory storage
 	account := lib.NewBaseAccount(s.Config)
+	var keyPoolFilter schemas.KeyPoolFilter
+	if _, findErr := lib.FindPluginAs[interface {
+		FilterKeys(*schemas.BifrostContext, schemas.ModelProvider, string, []schemas.Key) ([]schemas.Key, error)
+	}](s.Config, circuitbreaker.PluginName); findErr == nil {
+		// Resolve the current instance on every selection so plugin/API reloads do
+		// not leave core bound to the retired plugin's circuit state.
+		keyPoolFilter = s.circuitBreakerKeyPoolFilter()
+	}
 	s.Client, err = bifrost.Init(ctx, schemas.BifrostConfig{
 		Account:            account,
 		InitialPoolSize:    s.Config.ClientConfig.InitialPoolSize,
@@ -2296,6 +2325,7 @@ func (s *BifrostHTTPServer) Bootstrap(ctx context.Context) error {
 		Logger:             logger,
 		KVStore:            s.Config.KVStore,
 		ModelCatalog:       s.Config.ModelCatalog,
+		KeyPoolFilter:      keyPoolFilter,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to initialize bifrost: %v", err)

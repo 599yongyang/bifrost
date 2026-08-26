@@ -2318,7 +2318,7 @@
           },
           "name": {
             "type": "string",
-            "description": "Name of the plugin (built-in: telemetry, prompts, logging, governance, maxim, semantic_cache, otel, or custom plugin name)"
+            "description": "Name of the plugin (built-in: telemetry, circuit-breaker, prompts, logging, governance, maxim, semantic_cache, otel, or custom plugin name)"
           },
           "config": {
             "type": "object",
@@ -7495,7 +7495,8 @@
               },
               "enabled": {
                 "type": "boolean",
-                "description": "Whether this policy is active. Disabled policies are ignored by all hooks."
+                "default": true,
+                "description": "Whether this policy is active. Defaults to true. Disabled policies are ignored by all hooks."
               },
               "primary_provider": {
                 "type": "string",
@@ -7568,7 +7569,7 @@
               },
               "default_cooldown": {
                 "type": "string",
-                "pattern": "^[0-9]+(ns|us|µs|ms|s|m|h)$",
+                "pattern": "^(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|ms|s|m|h))+$",
                 "description": "How long to keep the circuit open when no header-based cooldown is available. Accepts a Go duration string (e.g. '30s', '5m'). Defaults to 30s."
               },
               "cooldown_header": {

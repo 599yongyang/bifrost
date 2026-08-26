@@ -50,6 +50,7 @@ import (
 	"github.com/maximhq/bifrost/plugins/semanticcache"
 	"github.com/maximhq/bifrost/plugins/telemetry"
 	alertengine "github.com/maximhq/bifrost/transports/bifrost-http/alerting"
+	"github.com/maximhq/bifrost/transports/bifrost-http/circuitbreaker"
 	"gorm.io/gorm"
 )
 
@@ -124,6 +125,7 @@ func getWeight(w *float64) float64 {
 // It is the single source of truth — update here when adding or removing a built-in plugin.
 var builtinPluginNames = []string{
 	telemetry.PluginName,
+	circuitbreaker.PluginName,
 	prompts.PluginName,
 	logging.PluginName,
 	governance.PluginName,
@@ -180,6 +182,7 @@ type ConfigData struct {
 	WebSocket         *schemas.WebSocketConfig              `json:"websocket,omitempty"`
 	FeatureFlags      *FeatureFlagsFileConfig               `json:"feature_flags,omitempty"`
 	Alerting          *alertengine.Config                   `json:"alerting,omitempty"`
+	CircuitBreaker    *circuitbreaker.Config                `json:"circuit_breaker_config,omitempty"`
 
 	presentSections           map[string]bool
 	presentGovernanceSections map[string]bool
@@ -438,6 +441,7 @@ func (cd *ConfigData) UnmarshalJSON(data []byte) error {
 		WebSocket         *schemas.WebSocketConfig              `json:"websocket,omitempty"`
 		FeatureFlags      *FeatureFlagsFileConfig               `json:"feature_flags,omitempty"`
 		Alerting          *alertengine.Config                   `json:"alerting,omitempty"`
+		CircuitBreaker    *circuitbreaker.Config                `json:"circuit_breaker_config,omitempty"`
 		SkillsRegistry    *SkillsRegistryConfig                 `json:"skills_registry,omitempty"`
 	}
 
@@ -462,6 +466,7 @@ func (cd *ConfigData) UnmarshalJSON(data []byte) error {
 	cd.WebSocket = temp.WebSocket
 	cd.FeatureFlags = temp.FeatureFlags
 	cd.Alerting = temp.Alerting
+	cd.CircuitBreaker = temp.CircuitBreaker
 	cd.presentGovernanceSections = nil
 	if rawGovernance, ok := raw["governance"]; ok && len(rawGovernance) > 0 {
 		var rawGovernanceFields map[string]json.RawMessage
@@ -611,6 +616,9 @@ type Config struct {
 	// by enterprise for cluster-wide gossip.
 	FeatureFlags   *featureflags.Store
 	AlertingConfig *alertengine.Config
+	// CircuitBreakerConfig is loaded directly from the root-level config.json block.
+	// Runtime state lives in the circuit-breaker plugin, not in Config.
+	CircuitBreakerConfig *circuitbreaker.Config
 
 	// Catalog managers
 	ModelCatalog *modelcatalog.ModelCatalog
@@ -919,6 +927,8 @@ func LoadConfig(ctx context.Context, configDirPath string) (*Config, error) {
 		}
 	}
 	config.AlertingConfig = configData.Alerting
+	config.CircuitBreakerConfig = configData.CircuitBreaker
+	promoteCircuitBreakerConfigToPlugin(&configData)
 
 	// 1. Encryption (before stores so BeforeSave hooks work correctly)
 	if err := initEncryption(&configData); err != nil {
@@ -998,6 +1008,32 @@ func LoadConfig(ctx context.Context, configDirPath string) (*Config, error) {
 		}
 	}
 	return config, nil
+}
+
+// promoteCircuitBreakerConfigToPlugin exposes the documented root-level
+// circuit_breaker_config through the same durable plugin row used by the dashboard.
+// An explicit plugins[] entry wins; otherwise the root config seeds the row once and
+// normal plugin merge/version semantics let later dashboard edits remain authoritative.
+func promoteCircuitBreakerConfigToPlugin(configData *ConfigData) {
+	if configData == nil || !configData.sectionPresent("circuit_breaker_config") || configData.CircuitBreaker == nil {
+		return
+	}
+	for _, plugin := range configData.Plugins {
+		if plugin != nil && plugin.Name == circuitbreaker.PluginName {
+			return
+		}
+	}
+	placement := schemas.PluginPlacementPostBuiltin
+	order := math.MaxInt
+	version := int16(1)
+	configData.Plugins = append(configData.Plugins, &schemas.PluginConfig{
+		Name:      circuitbreaker.PluginName,
+		Enabled:   len(configData.CircuitBreaker.Policies) > 0,
+		Config:    configData.CircuitBreaker,
+		Placement: &placement,
+		Order:     &order,
+		Version:   &version,
+	})
 }
 
 // initStores initializes config, logs, and vector stores.
@@ -3892,6 +3928,7 @@ func loadPlugins(ctx context.Context, config *Config, configData *ConfigData) {
 			}
 		}
 	}
+	applyCircuitBreakerFileConfig(ctx, config, configData)
 
 	// Merge with config file plugins
 	if len(configData.Plugins) > 0 {
@@ -3902,6 +3939,56 @@ func loadPlugins(ctx context.Context, config *Config, configData *ConfigData) {
 		}
 	} else if configData.isConfigJSONSourceOfTruth() && configData.sectionPresent("plugins") {
 		syncPluginsFromFile(ctx, config, configData)
+	}
+}
+
+// applyCircuitBreakerFileConfig keeps an explicitly declared root-level
+// circuit_breaker_config authoritative on every startup. When the section is
+// absent, the durable plugin row remains UI-managed; when it is present (even
+// with an empty policies list), the file snapshot replaces and persists over
+// any older dashboard value.
+func applyCircuitBreakerFileConfig(ctx context.Context, config *Config, configData *ConfigData) {
+	if configData == nil || !configData.sectionPresent("circuit_breaker_config") {
+		return
+	}
+	idx := slices.IndexFunc(configData.Plugins, func(plugin *schemas.PluginConfig) bool {
+		return plugin != nil && plugin.Name == circuitbreaker.PluginName
+	})
+	if idx < 0 {
+		return
+	}
+	filePlugin := configData.Plugins[idx]
+	existingIdx := slices.IndexFunc(config.PluginConfigs, func(plugin *schemas.PluginConfig) bool {
+		return plugin != nil && plugin.Name == circuitbreaker.PluginName
+	})
+	if existingIdx < 0 {
+		config.PluginConfigs = append(config.PluginConfigs, filePlugin)
+	} else {
+		config.PluginConfigs[existingIdx] = filePlugin
+	}
+	if config.ConfigStore == nil {
+		return
+	}
+	configCopy, err := DeepCopy(filePlugin.Config)
+	if err != nil {
+		logger.Warn("failed to copy circuit breaker file config: %v", err)
+		return
+	}
+	version := int16(1)
+	if filePlugin.Version != nil {
+		version = *filePlugin.Version
+	}
+	if err := config.ConfigStore.UpsertPlugin(ctx, &configstoreTables.TablePlugin{
+		Name:      filePlugin.Name,
+		Enabled:   filePlugin.Enabled,
+		Config:    configCopy,
+		Path:      filePlugin.Path,
+		Version:   version,
+		IsCustom:  false,
+		Placement: filePlugin.Placement,
+		Order:     filePlugin.Order,
+	}); err != nil {
+		logger.Warn("failed to persist authoritative circuit breaker file config: %v", err)
 	}
 }
 
