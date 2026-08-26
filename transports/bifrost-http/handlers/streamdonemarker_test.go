@@ -136,6 +136,9 @@ func TestStreamingResponseSkipsDoneAfterErrorChunk(t *testing.T) {
 	if !strings.Contains(body, schemas.ErrProviderStreamTruncated) {
 		t.Errorf("expected the error frame to reach the client, got:\n%s", body)
 	}
+	if strings.Contains(strings.ToLower(body), "bifrost") {
+		t.Errorf("streaming error exposed gateway identity:\n%s", body)
+	}
 	if strings.Contains(body, "data: [DONE]") {
 		t.Errorf("[DONE] must not follow an error frame, got:\n%s", body)
 	}

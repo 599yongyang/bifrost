@@ -2792,6 +2792,7 @@ func (g *GenericRouter) handleStreaming(ctx *fasthttp.RequestCtx, bifrostCtx *sc
 					},
 				}
 			}
+			errorResponse = lib.ClientErrorPayload(errorResponse)
 
 			// Check if the error converter returned a raw SSE string or JSON object
 			if sseErrorString, ok := errorResponse.(string); ok {

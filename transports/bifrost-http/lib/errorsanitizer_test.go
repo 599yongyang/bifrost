@@ -1,7 +1,9 @@
 package lib
 
 import (
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/maximhq/bifrost/core/schemas"
@@ -149,5 +151,97 @@ func TestSanitizeBifrostTimeoutErrorReplacesUpstreamMessage(t *testing.T) {
 	}
 	if err.Error.Message == sanitized.Error.Message {
 		t.Fatal("sanitizer must not mutate the original error")
+	}
+}
+
+func TestSanitizeBifrostHTTPClientTimeoutHidesGatewayIdentity(t *testing.T) {
+	err := &schemas.BifrostError{
+		IsBifrostError: true,
+		StatusCode:     schemas.Ptr(504),
+		Error: &schemas.ErrorField{
+			Message: schemas.TimeoutSourceBifrostHTTPClient.SafeMessage(),
+		},
+		ExtraFields: schemas.BifrostErrorExtraFields{
+			TimeoutSource: schemas.TimeoutSourceBifrostHTTPClient,
+		},
+	}
+
+	sanitized := SanitizeBifrostErrorForClient(err)
+	if strings.Contains(strings.ToLower(sanitized.Error.Message), "bifrost") {
+		t.Fatalf("client timeout message exposed gateway identity: %q", sanitized.Error.Message)
+	}
+	if strings.Contains(strings.ToLower(string(sanitized.ExtraFields.TimeoutSource)), "bifrost") {
+		t.Fatalf("client timeout source exposed gateway identity: %q", sanitized.ExtraFields.TimeoutSource)
+	}
+
+	payload, marshalErr := json.Marshal(ClientErrorResponse(sanitized))
+	if marshalErr != nil {
+		t.Fatalf("marshal client error response: %v", marshalErr)
+	}
+	if strings.Contains(strings.ToLower(string(payload)), "bifrost") {
+		t.Fatalf("client error payload exposed gateway identity: %s", payload)
+	}
+	if !strings.Contains(string(payload), `"message":"provider request reached the configured timeout"`) {
+		t.Fatalf("client error payload has unexpected timeout message: %s", payload)
+	}
+	if !strings.Contains(string(payload), `"timeout_source":"configured_provider_timeout"`) {
+		t.Fatalf("client error payload has unexpected timeout source: %s", payload)
+	}
+	if !strings.Contains(string(payload), `"status_code":504`) {
+		t.Fatalf("client error payload lost status code: %s", payload)
+	}
+	if !err.IsBifrostError || err.ExtraFields.TimeoutSource != schemas.TimeoutSourceBifrostHTTPClient {
+		t.Fatal("client sanitization mutated the internal error")
+	}
+}
+
+func TestSanitizeBifrostErrorForClientRedactsGatewayIdentityFromGenericErrors(t *testing.T) {
+	err := &schemas.BifrostError{
+		StatusCode: schemas.Ptr(500),
+		Error: &schemas.ErrorField{
+			Message: "Bifrost response is nil after post-request callback",
+			Error:   errors.New("failed to convert request to Bifrost format"),
+		},
+	}
+
+	sanitized := SanitizeBifrostErrorForClient(err)
+	if strings.Contains(strings.ToLower(sanitized.Error.Message), "bifrost") {
+		t.Fatalf("client message exposed gateway identity: %q", sanitized.Error.Message)
+	}
+	if sanitized.Error.Error != nil {
+		t.Fatalf("client nested error exposed gateway identity: %v", sanitized.Error.Error)
+	}
+	if err.Error.Error == nil || !strings.Contains(err.Error.Message, "Bifrost") {
+		t.Fatal("client sanitization mutated the internal error")
+	}
+}
+
+func TestClientAsyncJobResponseHidesGatewayIdentity(t *testing.T) {
+	resp := &schemas.AsyncJobResponse{
+		ID:         "job-1",
+		Status:     schemas.AsyncJobStatusFailed,
+		StatusCode: 504,
+		Error: &schemas.BifrostError{
+			IsBifrostError: true,
+			StatusCode:     schemas.Ptr(504),
+			Error: &schemas.ErrorField{
+				Message: schemas.TimeoutSourceBifrostHTTPClient.SafeMessage(),
+			},
+			ExtraFields: schemas.BifrostErrorExtraFields{
+				TimeoutSource: schemas.TimeoutSourceBifrostHTTPClient,
+			},
+		},
+	}
+
+	payload, err := json.Marshal(ClientAsyncJobResponse(resp))
+	if err != nil {
+		t.Fatalf("marshal async job response: %v", err)
+	}
+	lower := strings.ToLower(string(payload))
+	if strings.Contains(lower, "bifrost") || strings.Contains(lower, "is_bifrost_error") {
+		t.Fatalf("async job response exposed gateway identity: %s", payload)
+	}
+	if !strings.Contains(lower, `"status_code":504`) || !strings.Contains(lower, "configured_provider_timeout") {
+		t.Fatalf("async job response lost timeout details: %s", payload)
 	}
 }

@@ -2063,7 +2063,7 @@ func (h *CompletionHandler) handleStreamingResponse(ctx *fasthttp.RequestCtx, bi
 						var structuredErr *schemas.StreamInterceptionError
 						if errors.As(err, &structuredErr) && structuredErr != nil {
 							if sanitized := lib.SanitizeBifrostErrorForClient(structuredErr.BifrostError); sanitized != nil {
-								errorPayload = sanitized
+								errorPayload = lib.ClientErrorResponse(sanitized)
 							}
 						}
 						errorJSON, marshalErr := sonic.Marshal(errorPayload)
@@ -2089,8 +2089,13 @@ func (h *CompletionHandler) handleStreamingResponse(ctx *fasthttp.RequestCtx, bi
 				}
 			}
 
-			// Convert response to JSON
-			chunkJSON, err := sonic.Marshal(chunk)
+			// Convert response to JSON. Error chunks use the public error shape so
+			// internal gateway identity never reaches streaming callers.
+			var chunkPayload interface{} = chunk
+			if chunk.BifrostError != nil {
+				chunkPayload = lib.ClientErrorResponse(chunk.BifrostError)
+			}
+			chunkJSON, err := sonic.Marshal(chunkPayload)
 			if err != nil {
 				logger.Warn("Failed to marshal streaming response: %v", err)
 				continue

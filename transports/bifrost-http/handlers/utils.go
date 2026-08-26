@@ -143,7 +143,7 @@ func SendBifrostError(ctx *fasthttp.RequestCtx, bifrostErr *schemas.BifrostError
 	lib.ApplyBifrostErrorResponseHeaders(ctx, nil, bifrostErr.ExtraFields)
 
 	ctx.SetContentType("application/json")
-	if encodeErr := json.NewEncoder(ctx).Encode(bifrostErr); encodeErr != nil {
+	if encodeErr := json.NewEncoder(ctx).Encode(lib.ClientErrorResponse(bifrostErr)); encodeErr != nil {
 		logger.Warn(fmt.Sprintf("Failed to encode error response: %v", encodeErr))
 		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
 		ctx.SetBodyString(fmt.Sprintf("Failed to encode error response: %v", encodeErr))
@@ -168,7 +168,7 @@ func streamLargeResponseIfActive(ctx *fasthttp.RequestCtx, bifrostCtx *schemas.B
 func SendSSEError(ctx *fasthttp.RequestCtx, bifrostErr *schemas.BifrostError) {
 	bifrostErr = lib.SanitizeBifrostErrorForClient(bifrostErr)
 	errorJSON, err := json.Marshal(map[string]interface{}{
-		"error": bifrostErr,
+		"error": lib.ClientErrorResponse(bifrostErr),
 	})
 	if err != nil {
 		logger.Error("failed to marshal error for SSE: %v", err)

@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -97,6 +98,33 @@ func TestNewBifrostError(t *testing.T) {
 	}
 	if bifrostErr.Error.Message != "upstream websocket stream timed out" {
 		t.Fatalf("error message = %q, want upstream websocket stream timed out", bifrostErr.Error.Message)
+	}
+}
+
+func TestMarshalWSResponseErrorChunkHidesGatewayIdentity(t *testing.T) {
+	chunk := &schemas.BifrostStreamChunk{
+		BifrostError: &schemas.BifrostError{
+			IsBifrostError: true,
+			StatusCode:     schemas.Ptr(504),
+			Error: &schemas.ErrorField{
+				Message: schemas.TimeoutSourceBifrostHTTPClient.SafeMessage(),
+			},
+			ExtraFields: schemas.BifrostErrorExtraFields{
+				TimeoutSource: schemas.TimeoutSourceBifrostHTTPClient,
+			},
+		},
+	}
+
+	payload, err := marshalWSResponseChunk(chunk)
+	if err != nil {
+		t.Fatalf("marshal WS response error chunk: %v", err)
+	}
+	lower := strings.ToLower(string(payload))
+	if strings.Contains(lower, "bifrost") || strings.Contains(lower, "is_bifrost_error") {
+		t.Fatalf("WS response error exposed gateway identity: %s", payload)
+	}
+	if !strings.Contains(lower, `"status_code":504`) || !strings.Contains(lower, "configured_provider_timeout") {
+		t.Fatalf("WS response error lost timeout details: %s", payload)
 	}
 }
 

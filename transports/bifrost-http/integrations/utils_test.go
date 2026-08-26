@@ -139,8 +139,7 @@ func TestSendStreamError_PropagatesProviderStatusCode(t *testing.T) {
 }
 
 // TestSendStreamError_OpenAIErrorFormat verifies the response body matches the
-// OpenAI error format. OpenAI's ErrorConverter returns *schemas.BifrostError directly,
-// which serializes to {"is_bifrost_error":false,"status_code":400,"error":{...}}.
+// public OpenAI error format without exposing internal gateway identity.
 func TestSendStreamError_OpenAIErrorFormat(t *testing.T) {
 	router := newTestGenericRouter()
 	ctx := &fasthttp.RequestCtx{}
@@ -170,15 +169,43 @@ func TestSendStreamError_OpenAIErrorFormat(t *testing.T) {
 	err := sonic.Unmarshal(ctx.Response.Body(), &result)
 	require.NoError(t, err)
 
-	assert.Contains(t, result, "is_bifrost_error")
+	assert.NotContains(t, result, "is_bifrost_error")
 	assert.Contains(t, result, "status_code")
 	assert.Contains(t, result, "error")
-	assert.Equal(t, false, result["is_bifrost_error"])
 
 	errorObj, ok := result["error"].(map[string]interface{})
 	require.True(t, ok)
 	assert.Equal(t, "invalid_request_error", errorObj["type"])
 	assert.Equal(t, "content is empty", errorObj["message"])
+}
+
+func TestSendError_ConfiguredTimeoutHidesGatewayIdentity(t *testing.T) {
+	router := newTestGenericRouter()
+	ctx := &fasthttp.RequestCtx{}
+	bifrostCtx := newTestBifrostContext()
+
+	bifrostErr := &schemas.BifrostError{
+		IsBifrostError: true,
+		StatusCode:     ptr(504),
+		Error: &schemas.ErrorField{
+			Message: schemas.TimeoutSourceBifrostHTTPClient.SafeMessage(),
+		},
+		ExtraFields: schemas.BifrostErrorExtraFields{
+			TimeoutSource: schemas.TimeoutSourceBifrostHTTPClient,
+		},
+	}
+
+	router.sendError(ctx, bifrostCtx, func(_ *schemas.BifrostContext, err *schemas.BifrostError) interface{} {
+		return err
+	}, bifrostErr)
+
+	assert.Equal(t, 504, ctx.Response.StatusCode())
+	body := strings.ToLower(string(ctx.Response.Body()))
+	assert.NotContains(t, body, "bifrost")
+	assert.NotContains(t, body, "is_bifrost_error")
+	assert.Contains(t, body, `"status_code":504`)
+	assert.Contains(t, body, `"message":"provider request reached the configured timeout"`)
+	assert.Contains(t, body, `"timeout_source":"configured_provider_timeout"`)
 }
 
 // TestSendStreamError_AnthropicErrorFormat verifies the response body matches the

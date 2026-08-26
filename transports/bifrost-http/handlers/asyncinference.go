@@ -133,7 +133,7 @@ func (h *AsyncHandler) asyncTextCompletion(ctx *fasthttp.RequestCtx) {
 		sendSubmitJobError(ctx, err)
 		return
 	}
-	SendJSONWithStatus(ctx, job.ToResponse(), fasthttp.StatusAccepted)
+	SendJSONWithStatus(ctx, lib.ClientAsyncJobResponse(job.ToResponse()), fasthttp.StatusAccepted)
 }
 
 // asyncChatCompletion handles POST /v1/async/chat/completions
@@ -170,7 +170,7 @@ func (h *AsyncHandler) asyncChatCompletion(ctx *fasthttp.RequestCtx) {
 		sendSubmitJobError(ctx, err)
 		return
 	}
-	SendJSONWithStatus(ctx, job.ToResponse(), fasthttp.StatusAccepted)
+	SendJSONWithStatus(ctx, lib.ClientAsyncJobResponse(job.ToResponse()), fasthttp.StatusAccepted)
 }
 
 // asyncResponses handles POST /v1/async/responses
@@ -208,7 +208,7 @@ func (h *AsyncHandler) asyncResponses(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	SendJSONWithStatus(ctx, job.ToResponse(), fasthttp.StatusAccepted)
+	SendJSONWithStatus(ctx, lib.ClientAsyncJobResponse(job.ToResponse()), fasthttp.StatusAccepted)
 }
 
 // asyncEmbeddings handles POST /v1/async/embeddings
@@ -240,7 +240,7 @@ func (h *AsyncHandler) asyncEmbeddings(ctx *fasthttp.RequestCtx) {
 		sendSubmitJobError(ctx, err)
 		return
 	}
-	SendJSONWithStatus(ctx, job.ToResponse(), fasthttp.StatusAccepted)
+	SendJSONWithStatus(ctx, lib.ClientAsyncJobResponse(job.ToResponse()), fasthttp.StatusAccepted)
 }
 
 // asyncSpeech handles POST /v1/async/audio/speech
@@ -277,7 +277,7 @@ func (h *AsyncHandler) asyncSpeech(ctx *fasthttp.RequestCtx) {
 		sendSubmitJobError(ctx, err)
 		return
 	}
-	SendJSONWithStatus(ctx, job.ToResponse(), fasthttp.StatusAccepted)
+	SendJSONWithStatus(ctx, lib.ClientAsyncJobResponse(job.ToResponse()), fasthttp.StatusAccepted)
 }
 
 // asyncTranscription handles POST /v1/async/audio/transcriptions
@@ -314,7 +314,7 @@ func (h *AsyncHandler) asyncTranscription(ctx *fasthttp.RequestCtx) {
 		sendSubmitJobError(ctx, err)
 		return
 	}
-	SendJSONWithStatus(ctx, job.ToResponse(), fasthttp.StatusAccepted)
+	SendJSONWithStatus(ctx, lib.ClientAsyncJobResponse(job.ToResponse()), fasthttp.StatusAccepted)
 }
 
 // asyncImageGeneration handles POST /v1/async/images/generations
@@ -351,7 +351,7 @@ func (h *AsyncHandler) asyncImageGeneration(ctx *fasthttp.RequestCtx) {
 		sendSubmitJobError(ctx, err)
 		return
 	}
-	SendJSONWithStatus(ctx, job.ToResponse(), fasthttp.StatusAccepted)
+	SendJSONWithStatus(ctx, lib.ClientAsyncJobResponse(job.ToResponse()), fasthttp.StatusAccepted)
 }
 
 // asyncImageEdit handles POST /v1/async/images/edits
@@ -388,7 +388,7 @@ func (h *AsyncHandler) asyncImageEdit(ctx *fasthttp.RequestCtx) {
 		sendSubmitJobError(ctx, err)
 		return
 	}
-	SendJSONWithStatus(ctx, job.ToResponse(), fasthttp.StatusAccepted)
+	SendJSONWithStatus(ctx, lib.ClientAsyncJobResponse(job.ToResponse()), fasthttp.StatusAccepted)
 }
 
 // asyncImageVariation handles POST /v1/async/images/variations
@@ -420,7 +420,7 @@ func (h *AsyncHandler) asyncImageVariation(ctx *fasthttp.RequestCtx) {
 		sendSubmitJobError(ctx, err)
 		return
 	}
-	SendJSONWithStatus(ctx, job.ToResponse(), fasthttp.StatusAccepted)
+	SendJSONWithStatus(ctx, lib.ClientAsyncJobResponse(job.ToResponse()), fasthttp.StatusAccepted)
 }
 
 // asyncRerank handles POST /v1/async/rerank
@@ -452,7 +452,7 @@ func (h *AsyncHandler) asyncRerank(ctx *fasthttp.RequestCtx) {
 		sendSubmitJobError(ctx, err)
 		return
 	}
-	SendJSONWithStatus(ctx, job.ToResponse(), fasthttp.StatusAccepted)
+	SendJSONWithStatus(ctx, lib.ClientAsyncJobResponse(job.ToResponse()), fasthttp.StatusAccepted)
 }
 
 // asyncOCR handles POST /v1/async/ocr
@@ -484,7 +484,7 @@ func (h *AsyncHandler) asyncOCR(ctx *fasthttp.RequestCtx) {
 		sendSubmitJobError(ctx, err)
 		return
 	}
-	SendJSONWithStatus(ctx, job.ToResponse(), fasthttp.StatusAccepted)
+	SendJSONWithStatus(ctx, lib.ClientAsyncJobResponse(job.ToResponse()), fasthttp.StatusAccepted)
 }
 
 // --- Job retrieval handler ---
@@ -512,7 +512,7 @@ func (h *AsyncHandler) getJob(operationType schemas.RequestType) fasthttp.Reques
 			return
 		}
 
-		resp := job.ToResponse()
+		resp := lib.ClientAsyncJobResponse(job.ToResponse())
 
 		// Return 202 for pending/processing, 200 for completed/failed
 		switch job.Status {

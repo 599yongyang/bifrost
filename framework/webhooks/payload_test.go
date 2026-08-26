@@ -120,6 +120,21 @@ func TestRenderPayloadIncludeError(t *testing.T) {
 	assert.Equal(t, true, data["error_omitted"])
 }
 
+func TestRenderPayloadNeutralizesGatewayIdentityInError(t *testing.T) {
+	now := time.Now().UTC()
+	job := testFailedAsyncJob()
+	job.Error = `{"is_bifrost_error":true,"status_code":504,"error":{"message":"Bifrost HTTP client reached the configured provider timeout"},"extra_fields":{"timeout_source":"bifrost_http_client_timeout"}}`
+
+	body, err := renderPayload(job, tables.WebhookEventAsyncJobFailed, true, 256*1024, now)
+	require.NoError(t, err)
+	lower := strings.ToLower(string(body))
+	assert.NotContains(t, lower, "bifrost")
+	assert.NotContains(t, lower, "is_bifrost_error")
+	assert.Contains(t, lower, `"status_code":504`)
+	assert.Contains(t, lower, "provider request reached the configured timeout")
+	assert.Contains(t, lower, "configured_provider_timeout")
+}
+
 func TestRenderExpiredPayload(t *testing.T) {
 	now := time.Now().UTC()
 	body, err := renderExpiredPayload(&tables.TableWebhookJob{

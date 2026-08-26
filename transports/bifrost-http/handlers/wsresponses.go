@@ -788,7 +788,7 @@ func (h *WSResponsesHandler) executeHTTPBridge(
 			continue
 		}
 
-		chunkJSON, err := sonic.Marshal(chunk)
+		chunkJSON, err := marshalWSResponseChunk(chunk)
 		if err != nil {
 			logger.Warn("failed to marshal stream chunk: %v", err)
 			continue
@@ -829,8 +829,20 @@ func writeWSError(w wsWriter, status int, code, message string) {
 	w.WriteMessage(ws.TextMessage, data)
 }
 
+func marshalWSResponseChunk(chunk *schemas.BifrostStreamChunk) ([]byte, error) {
+	if chunk != nil && chunk.BifrostError != nil {
+		return sonic.Marshal(lib.ClientErrorResponse(chunk.BifrostError))
+	}
+	return sonic.Marshal(chunk)
+}
+
 // writeWSBifrostError converts a BifrostError to a WS error event.
 func writeWSBifrostError(w wsWriter, bifrostErr *schemas.BifrostError) {
+	bifrostErr = lib.SanitizeBifrostErrorForClient(bifrostErr)
+	if bifrostErr == nil {
+		writeWSError(w, 500, "server_error", lib.ClientSafeInternalErrorMessage)
+		return
+	}
 	status := 500
 	if bifrostErr.StatusCode != nil && *bifrostErr.StatusCode > 0 {
 		status = *bifrostErr.StatusCode

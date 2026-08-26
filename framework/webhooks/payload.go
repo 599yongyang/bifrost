@@ -2,6 +2,7 @@ package webhooks
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/maximhq/bifrost/core/schemas"
@@ -113,12 +114,60 @@ func renderPayload(job *logstore.AsyncJob, event tables.WebhookEvent, includeRes
 	}
 	if includeResponse && job.Error != "" {
 		if len(job.Error) <= maxResponseBytes {
-			data.Error = json.RawMessage(job.Error)
+			data.Error = clientSafeErrorPayload(job.Error)
 		} else {
 			data.ErrorOmitted = true
 		}
 	}
 	return json.Marshal(eventEnvelope{Event: event, CreatedAt: now, Data: data})
+}
+
+func clientSafeErrorPayload(raw string) json.RawMessage {
+	var payload interface{}
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return json.RawMessage(`{"error":{"message":"internal server error"}}`)
+	}
+	payload = neutralizeErrorValue(payload)
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return json.RawMessage(`{"error":{"message":"internal server error"}}`)
+	}
+	return encoded
+}
+
+func neutralizeErrorValue(value interface{}) interface{} {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		cleaned := make(map[string]interface{}, len(typed))
+		for key, child := range typed {
+			if strings.Contains(strings.ToLower(key), "bifrost") {
+				continue
+			}
+			cleaned[key] = neutralizeErrorValue(child)
+		}
+		return cleaned
+	case []interface{}:
+		for i, child := range typed {
+			typed[i] = neutralizeErrorValue(child)
+		}
+		return typed
+	case string:
+		switch typed {
+		case "bifrost_http_client_timeout":
+			return "configured_provider_timeout"
+		case "bifrost_context_deadline":
+			return "request_context_deadline"
+		}
+		return strings.NewReplacer(
+			"Bifrost HTTP client reached the configured provider timeout", "provider request reached the configured timeout",
+			"request exceeded the Bifrost context deadline", "request exceeded the configured deadline",
+			"Bifrost", "gateway",
+			"bifrost", "gateway",
+			"BIFROST", "GATEWAY",
+		).Replace(typed)
+	default:
+		return value
+	}
 }
 
 // renderExpiredPayload builds the degraded delivery body used when the async

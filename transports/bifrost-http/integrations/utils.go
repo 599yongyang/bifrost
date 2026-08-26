@@ -174,6 +174,7 @@ func (g *GenericRouter) sendStreamError(ctx *fasthttp.RequestCtx, bifrostCtx *sc
 	// in-stream SSE errors (e.g., Anthropic's returns a raw SSE string that would be
 	// double-escaped by JSON marshaling).
 	errorResponse := config.ErrorConverter(bifrostCtx, bifrostErr)
+	errorResponse = lib.ClientErrorPayload(errorResponse)
 
 	errorJSON, err := sonic.Marshal(errorResponse)
 	if err != nil {
@@ -215,6 +216,7 @@ func (g *GenericRouter) sendError(ctx *fasthttp.RequestCtx, bifrostCtx *schemas.
 
 	// Marshal the error for response and log the error for diagnostics
 	responseObj := errorConverter(bifrostCtx, bifrostErr)
+	responseObj = lib.ClientErrorPayload(responseObj)
 	errorBody, err := sonic.Marshal(responseObj)
 	if err != nil {
 		// Log the marshal failure and return a plain text error

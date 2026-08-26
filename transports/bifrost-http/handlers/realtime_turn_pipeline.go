@@ -11,6 +11,7 @@ import (
 	bifrost "github.com/maximhq/bifrost/core"
 	openaiProvider "github.com/maximhq/bifrost/core/providers/openai"
 	"github.com/maximhq/bifrost/core/schemas"
+	"github.com/maximhq/bifrost/transports/bifrost-http/lib"
 	bfws "github.com/maximhq/bifrost/transports/bifrost-http/websocket"
 )
 
@@ -479,6 +480,7 @@ func buildRealtimeResponsesUsage(usage *schemas.BifrostLLMUsage) *schemas.Respon
 }
 
 func newRealtimeTurnErrorEventPayload(bifrostErr *schemas.BifrostError) []byte {
+	bifrostErr = lib.SanitizeBifrostErrorForClient(bifrostErr)
 	if bifrostErr == nil {
 		return []byte(`{"type":"error","error":{"type":"server_error","message":"internal server error"}}`)
 	}
