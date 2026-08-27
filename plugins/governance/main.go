@@ -798,7 +798,7 @@ func (p *GovernancePlugin) applyRoutingRules(ctx *schemas.BifrostContext, req *s
 		ctx.SetValue(schemas.BifrostContextKeyRoutingPinnedAPIKeyID, decision.KeyID)
 	}
 
-	p.logger.Debug("[Governance] Applied routing decision: provider=%s, model=%s, keyID=%s, fallbacks=%v", decision.Provider, decision.Model, decision.KeyID, decision.Fallbacks)
+	p.logger.Debug("[Governance] Applied routing decision: provider=%s, model=%s, keyID=%s, fallbacks=%v, error_fallbacks=%d", decision.Provider, decision.Model, decision.KeyID, decision.Fallbacks, len(decision.ErrorFallbacks))
 	return decision, nil
 }
 
@@ -811,12 +811,9 @@ func resolveRoutingErrorFallbacks(rules []configstoreTables.TableRoutingErrorFal
 	for _, rule := range rules {
 		fallbacks := make([]schemas.Fallback, 0, len(rule.Fallbacks))
 		for _, rawFallback := range rule.Fallbacks {
-			provider, model := schemas.ParseModelString(rawFallback, "")
+			provider, model := parsePersistedRoutingFallback(rawFallback, defaultModel)
 			if provider == "" {
 				continue
-			}
-			if strings.TrimSpace(model) == "" {
-				model = defaultModel
 			}
 			fallbacks = append(fallbacks, schemas.Fallback{
 				Provider: provider,
@@ -862,6 +859,30 @@ func resolveRoutingErrorFallbacks(rules []configstoreTables.TableRoutingErrorFal
 		})
 	}
 	return resolved
+}
+
+// parsePersistedRoutingFallback parses a provider/model pair that already passed
+// routing-rule validation. Runtime resolution must not depend on the mutable global
+// known-provider registry: a temporarily unavailable custom provider should make the
+// dedicated chain fail explicitly, not silently erase the entire error_fallbacks rule
+// and allow the ordinary chain to continue.
+func parsePersistedRoutingFallback(raw, defaultModel string) (schemas.ModelProvider, string) {
+	parts := strings.SplitN(strings.TrimSpace(raw), "/", 2)
+	if len(parts) != 2 {
+		return "", ""
+	}
+	provider := strings.TrimSpace(parts[0])
+	model := strings.TrimSpace(parts[1])
+	if provider == "" {
+		return "", ""
+	}
+	if model == "" {
+		model = strings.TrimSpace(defaultModel)
+	}
+	if model == "" {
+		return "", ""
+	}
+	return schemas.ModelProvider(provider), model
 }
 
 // computeMCPIncludeTools builds the MCP include-tools list for a virtual key. Returns the list

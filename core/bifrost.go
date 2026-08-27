@@ -5014,6 +5014,15 @@ func (bifrost *Bifrost) resolveFallbackChain(req *schemas.BifrostRequest, primar
 	return ordinaryFallbacks, ordinaryFallbacks, nil, failure
 }
 
+func recordFallbackPolicySnapshot(ctx *schemas.BifrostContext, req *schemas.BifrostRequest) {
+	if ctx == nil || req == nil {
+		return
+	}
+	provider, model, ordinaryFallbacks := req.GetRequestFields()
+	ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo,
+		fmt.Sprintf("Resolved fallback policy for %s/%s: ordinary_fallbacks=%d, error_fallbacks=%d", provider, model, len(ordinaryFallbacks), len(req.GetErrorFallbacks())))
+}
+
 func attemptedFallbackTargets(provider schemas.ModelProvider, model string) map[string]struct{} {
 	attempted := make(map[string]struct{})
 	if key := fallbackTargetKey(provider, model); key != "" {
@@ -5273,6 +5282,7 @@ func (bifrost *Bifrost) handleRequest(ctx *schemas.BifrostContext, req *schemas.
 	}
 	// Re-read after PreRequestHook — provider/model/fallbacks may have changed.
 	provider, model, _ = req.GetRequestFields()
+	recordFallbackPolicySnapshot(ctx, req)
 	// Empty provider/model after PreRequestHook means no plugin
 	// could pick a provider for this model — the caller's input is unresolvable.
 	if err := validateRequestAfterPreRequestHooks(req); err != nil {
@@ -5446,6 +5456,7 @@ func (bifrost *Bifrost) handleStreamRequest(ctx *schemas.BifrostContext, req *sc
 	}
 	// Re-read after PreRequestHook — provider/model/fallbacks may have changed.
 	provider, model, _ = req.GetRequestFields()
+	recordFallbackPolicySnapshot(ctx, req)
 	// Empty provider after PreRequestHook means no plugin
 	// could pick a provider for this model — the caller's input is unresolvable.
 	if err := validateRequestAfterPreRequestHooks(req); err != nil {

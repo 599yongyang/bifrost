@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/bytedance/sonic"
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types"
 	"github.com/maximhq/bifrost/core/schemas"
@@ -252,12 +253,16 @@ func (re *RoutingEngine) EvaluateRoutingRules(ctx *schemas.BifrostContext, routi
 					keyID = *target.KeyID
 				}
 
+				errorFallbacks, err := effectiveRoutingErrorFallbacks(rule)
+				if err != nil {
+					return nil, fmt.Errorf("failed to decode error_fallbacks for routing rule %s: %w", rule.Name, err)
+				}
 				stepDecision = &RoutingDecision{
 					Provider:        provider,
 					Model:           model,
 					KeyID:           keyID,
 					Fallbacks:       rule.ParsedFallbacks,
-					ErrorFallbacks:  rule.ParsedErrorFallbacks,
+					ErrorFallbacks:  errorFallbacks,
 					MatchedRuleID:   rule.ID,
 					MatchedRuleName: rule.Name,
 				}
@@ -281,8 +286,8 @@ func (re *RoutingEngine) EvaluateRoutingRules(ctx *schemas.BifrostContext, routi
 		if matchedRule.ChainRule {
 			chainSuffix = " [chain_rule=true, continuing]"
 		}
-		re.logger.Debug("[RoutingEngine] Rule matched! Selected target (weight=%.2f): provider=%s, model=%s, fallbacks=%v%s", matchedTargetWeight, stepDecision.Provider, stepDecision.Model, stepDecision.Fallbacks, chainSuffix)
-		ctx.AppendRoutingEngineLog(schemas.RoutingEngineRoutingRule, schemas.LogLevelInfo, fmt.Sprintf("Rule '%s' [%s] → matched, selected target (weight=%.2f): provider=%s, model=%s, fallbacks=%v%s", matchedRule.Name, matchedRule.CelExpression, matchedTargetWeight, stepDecision.Provider, stepDecision.Model, stepDecision.Fallbacks, chainSuffix))
+		re.logger.Debug("[RoutingEngine] Rule matched! Selected target (weight=%.2f): provider=%s, model=%s, fallbacks=%v, error_fallbacks=%d%s", matchedTargetWeight, stepDecision.Provider, stepDecision.Model, stepDecision.Fallbacks, len(stepDecision.ErrorFallbacks), chainSuffix)
+		ctx.AppendRoutingEngineLog(schemas.RoutingEngineRoutingRule, schemas.LogLevelInfo, fmt.Sprintf("Rule '%s' [%s] → matched, selected target (weight=%.2f): provider=%s, model=%s, fallbacks=%v, error_fallbacks=%d%s", matchedRule.Name, matchedRule.CelExpression, matchedTargetWeight, stepDecision.Provider, stepDecision.Model, stepDecision.Fallbacks, len(stepDecision.ErrorFallbacks), chainSuffix))
 
 		// TERMINATION 2: Rule is terminal (chain_rule=false, the default).
 		if !matchedRule.ChainRule {
@@ -301,6 +306,23 @@ func (re *RoutingEngine) EvaluateRoutingRules(ctx *schemas.BifrostContext, routi
 		re.logger.Debug("[RoutingEngine] No routing rule matched, using default routing")
 	}
 	return finalDecision, nil
+}
+
+func effectiveRoutingErrorFallbacks(rule *configstoreTables.TableRoutingRule) ([]configstoreTables.TableRoutingErrorFallback, error) {
+	if rule == nil {
+		return nil, nil
+	}
+	if len(rule.ParsedErrorFallbacks) > 0 {
+		return rule.ParsedErrorFallbacks, nil
+	}
+	if rule.ErrorFallbacks == nil || strings.TrimSpace(*rule.ErrorFallbacks) == "" {
+		return nil, nil
+	}
+	var parsed []configstoreTables.TableRoutingErrorFallback
+	if err := sonic.Unmarshal([]byte(*rule.ErrorFallbacks), &parsed); err != nil {
+		return nil, err
+	}
+	return parsed, nil
 }
 
 // selectWeightedTarget picks one target from the slice using weighted random selection.

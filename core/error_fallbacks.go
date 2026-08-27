@@ -549,7 +549,7 @@ func detectContentPolicySignal(failure classifiedFailure) errorFallbackMatch {
 	}
 	if packProvider == schemas.OpenAI {
 		if isImageRequestType(failure.RequestType) {
-			if hit, ok := firstNormalizedHit([]string{"content_filtered", "unsafe_content"}, failure.ErrorCodes); ok {
+			if hit, ok := firstNormalizedHit([]string{"content_filtered", "unsafe_content", "moderation_blocked"}, failure.ErrorCodes); ok {
 				return errorFallbackMatch{Source: "classifier.openai_image.error_code", Detail: hit}
 			}
 			if hit, ok := firstNormalizedHit([]string{"content_filter", "unsafe_content"}, failure.ErrorTypes); ok {
@@ -612,6 +612,7 @@ func detectContentPolicySignal(failure classifiedFailure) errorFallbackMatch {
 		"safety_violations",
 		"responsible_ai_policy_violation",
 		"unsafe_content",
+		"moderation_blocked",
 	}, failure.ErrorCodes); ok {
 		return errorFallbackMatch{Source: "classifier.global.error_code", Detail: hit}
 	}
@@ -635,6 +636,7 @@ func detectContentPolicySignal(failure classifiedFailure) errorFallbackMatch {
 		{id: "content_filtered", phrases: []string{"content was filtered", "content filtered", "内容已被过滤", "内容被过滤"}},
 		{id: "content_policy", phrases: []string{"content policy", "responsible ai policy", "内容安全", "内容政策", "安全策略"}},
 		{id: "prohibited_content", phrases: []string{"prohibited content", "违规内容", "禁止内容"}},
+		{id: "sexual_content_guardrail", phrases: []string{"裸露、色情或情色内容", "色情或情色内容的防护限制", "nudity, sexual, or erotic content", "sexual or erotic content safeguards"}},
 	}); ok {
 		return errorFallbackMatch{Source: "classifier.global.message", Detail: hit}
 	}

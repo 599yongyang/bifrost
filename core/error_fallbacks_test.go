@@ -886,6 +886,22 @@ func TestErrorFallbackScenarioRecognizesStructuredAndChineseSafetyVariants(t *te
 			provider: schemas.ModelProvider("custom-provider"),
 			message:  "请求被安全系统拒绝。",
 		},
+		{
+			name:     "Chinese nudity and erotic-content guardrail",
+			provider: schemas.ModelProvider("custom-provider"),
+			message:  "非常抱歉，该提示可能违反了关于裸露、色情或情色内容的防护限制。如果你认为此判断有误，请重试或修改提示语。",
+		},
+		{
+			name:     "moderation blocked code without recognizable message",
+			provider: schemas.ModelProvider("custom-provider"),
+			code:     Ptr("moderation_blocked"),
+			message:  "request could not be processed",
+		},
+		{
+			name:     "unsafe image message with request id suffix",
+			provider: schemas.ModelProvider("custom-provider"),
+			message:  "The generated images appear to be unsafe. Try modifying the prompt or seeds. (request id: 202608270943173936198778268d9d66C5w1vEo)",
+		},
 	}
 
 	for _, tt := range tests {
