@@ -2397,3 +2397,87 @@ func TestPanicRecoveryMiddlewareReturns500AndKeepsServing(t *testing.T) {
 		t.Fatalf("second status = %d, want 204", second.Response.StatusCode())
 	}
 }
+
+type panickingTransportBoundaryPlugin struct {
+	panicGetName bool
+	panicPre     bool
+	panicPost    bool
+}
+
+func (p *panickingTransportBoundaryPlugin) GetName() string {
+	if p.panicGetName {
+		panic("transport name secret")
+	}
+	return "panic-transport"
+}
+func (*panickingTransportBoundaryPlugin) Cleanup() error { return nil }
+func (p *panickingTransportBoundaryPlugin) HTTPTransportPreHook(*schemas.BifrostContext, *schemas.HTTPRequest) (*schemas.HTTPResponse, error) {
+	if p.panicPre {
+		panic("transport pre secret")
+	}
+	return nil, nil
+}
+func (p *panickingTransportBoundaryPlugin) HTTPTransportPostHook(*schemas.BifrostContext, *schemas.HTTPRequest, *schemas.HTTPResponse) error {
+	if p.panicPost {
+		panic("transport post secret")
+	}
+	return nil
+}
+func (*panickingTransportBoundaryPlugin) HTTPTransportStreamChunkHook(_ *schemas.BifrostContext, _ *schemas.HTTPRequest, chunk *schemas.BifrostStreamChunk) (*schemas.BifrostStreamChunk, error) {
+	return chunk, nil
+}
+
+func TestTransportHookBoundariesContainPluginPanics(t *testing.T) {
+	SetLogger(&mockLogger{})
+	ctx := schemas.NewBifrostContext(context.Background(), schemas.NoDeadline)
+	req := schemas.AcquireHTTPRequest()
+	defer schemas.ReleaseHTTPRequest(req)
+	resp := schemas.AcquireHTTPResponse()
+	defer schemas.ReleaseHTTPResponse(resp)
+
+	for _, test := range []struct {
+		name   string
+		plugin *panickingTransportBoundaryPlugin
+	}{
+		{name: "GetName", plugin: &panickingTransportBoundaryPlugin{panicGetName: true}},
+		{name: "pre hook", plugin: &panickingTransportBoundaryPlugin{panicPre: true}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, gotResp, err := runTransportPreHookSafely(test.plugin, ctx, req)
+			if err == nil || gotResp != nil || strings.Contains(err.Error(), "secret") {
+				t.Fatalf("response=%v error=%v, want contained safe error", gotResp, err)
+			}
+		})
+	}
+
+	for _, test := range []struct {
+		name   string
+		plugin *panickingTransportBoundaryPlugin
+	}{
+		{name: "GetName", plugin: &panickingTransportBoundaryPlugin{panicGetName: true}},
+		{name: "post hook", plugin: &panickingTransportBoundaryPlugin{panicPost: true}},
+	} {
+		t.Run(test.name+" post", func(t *testing.T) {
+			_, err := runTransportPostHookSafely(test.plugin, ctx, req, resp)
+			if err == nil || strings.Contains(err.Error(), "secret") {
+				t.Fatalf("error=%v, want contained safe error", err)
+			}
+		})
+	}
+}
+
+func TestCapturedTransportPostHooksContainPluginPanic(t *testing.T) {
+	SetLogger(&mockLogger{})
+	ctx := schemas.NewBifrostContext(context.Background(), schemas.NoDeadline)
+	req := schemas.AcquireHTTPRequest()
+	defer schemas.ReleaseHTTPRequest(req)
+	resp := schemas.AcquireHTTPResponse()
+	defer schemas.ReleaseHTTPResponse(resp)
+
+	logs, err := runTransportPostHooksCaptured(req, resp, []schemas.HTTPTransportPlugin{
+		&panickingTransportBoundaryPlugin{panicPost: true},
+	}, ctx)
+	if err == nil || strings.Contains(err.Error(), "secret") {
+		t.Fatalf("logs=%v error=%v, want contained safe error", logs, err)
+	}
+}

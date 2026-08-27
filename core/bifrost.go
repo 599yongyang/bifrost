@@ -3376,10 +3376,19 @@ func (bifrost *Bifrost) removeLLMPlugin(name string) error {
 		}
 		var pluginToCleanup schemas.LLMPlugin
 		found := false
+		var firstNameErr error
 		// Create new slice without the plugin to remove
 		newPlugins := make([]schemas.LLMPlugin, 0, len(*oldPlugins))
 		for _, p := range *oldPlugins {
-			if p.GetName() == name {
+			pluginName, err := getPluginNameSafely(p)
+			if err != nil {
+				if firstNameErr == nil {
+					firstNameErr = err
+				}
+				newPlugins = append(newPlugins, p)
+				continue
+			}
+			if pluginName == name {
 				pluginToCleanup = p
 				bifrost.logger.Debug("removing LLM plugin %s", name)
 				found = true
@@ -3388,14 +3397,17 @@ func (bifrost *Bifrost) removeLLMPlugin(name string) error {
 			}
 		}
 		if !found {
+			if firstNameErr != nil {
+				return firstNameErr
+			}
 			return nil
 		}
 		// Atomic compare-and-swap
 		if bifrost.llmPlugins.CompareAndSwap(oldPlugins, &newPlugins) {
 			// Cleanup the old plugin
-			err := pluginToCleanup.Cleanup()
+			err := cleanupPluginSafely(pluginToCleanup)
 			if err != nil {
-				bifrost.logger.Warn("failed to cleanup old LLM plugin %s: %v", pluginToCleanup.GetName(), err)
+				bifrost.logger.Warn("failed to cleanup old LLM plugin %s: %v", name, err)
 			}
 			return nil
 		}
@@ -3412,10 +3424,19 @@ func (bifrost *Bifrost) removeMCPPlugin(name string) error {
 		}
 		var pluginToCleanup schemas.MCPPlugin
 		found := false
+		var firstNameErr error
 		// Create new slice without the plugin to remove
 		newPlugins := make([]schemas.MCPPlugin, 0, len(*oldPlugins))
 		for _, p := range *oldPlugins {
-			if p.GetName() == name {
+			pluginName, err := getPluginNameSafely(p)
+			if err != nil {
+				if firstNameErr == nil {
+					firstNameErr = err
+				}
+				newPlugins = append(newPlugins, p)
+				continue
+			}
+			if pluginName == name {
 				pluginToCleanup = p
 				bifrost.logger.Debug("removing MCP plugin %s", name)
 				found = true
@@ -3424,14 +3445,17 @@ func (bifrost *Bifrost) removeMCPPlugin(name string) error {
 			}
 		}
 		if !found {
+			if firstNameErr != nil {
+				return firstNameErr
+			}
 			return nil
 		}
 		// Atomic compare-and-swap
 		if bifrost.mcpPlugins.CompareAndSwap(oldPlugins, &newPlugins) {
 			// Cleanup the old plugin
-			err := pluginToCleanup.Cleanup()
+			err := cleanupPluginSafely(pluginToCleanup)
 			if err != nil {
-				bifrost.logger.Warn("failed to cleanup old MCP plugin %s: %v", pluginToCleanup.GetName(), err)
+				bifrost.logger.Warn("failed to cleanup old MCP plugin %s: %v", name, err)
 			}
 			return nil
 		}
@@ -3442,12 +3466,16 @@ func (bifrost *Bifrost) removeMCPPlugin(name string) error {
 // ReloadPlugin reloads a plugin with new instance
 // During the reload - it's stop the world phase where we take a global lock on the plugin mutex
 func (bifrost *Bifrost) ReloadPlugin(plugin schemas.BasePlugin, pluginTypes []schemas.PluginType) error {
+	pluginName, err := getPluginNameSafely(plugin)
+	if err != nil {
+		return err
+	}
 	for _, pluginType := range pluginTypes {
 		switch pluginType {
 		case schemas.PluginTypeLLM:
 			llmPlugin, ok := plugin.(schemas.LLMPlugin)
 			if !ok {
-				return fmt.Errorf("plugin %s is not an LLMPlugin", plugin.GetName())
+				return fmt.Errorf("plugin %s is not an LLMPlugin", pluginName)
 			}
 			err := bifrost.reloadLLMPlugin(llmPlugin)
 			if err != nil {
@@ -3456,7 +3484,7 @@ func (bifrost *Bifrost) ReloadPlugin(plugin schemas.BasePlugin, pluginTypes []sc
 		case schemas.PluginTypeMCP:
 			mcpPlugin, ok := plugin.(schemas.MCPPlugin)
 			if !ok {
-				return fmt.Errorf("plugin %s is not an MCPPlugin", plugin.GetName())
+				return fmt.Errorf("plugin %s is not an MCPPlugin", pluginName)
 			}
 			err := bifrost.reloadMCPPlugin(mcpPlugin)
 			if err != nil {
@@ -3469,8 +3497,13 @@ func (bifrost *Bifrost) ReloadPlugin(plugin schemas.BasePlugin, pluginTypes []sc
 
 // reloadLLMPlugin reloads an LLM plugin with new instance
 func (bifrost *Bifrost) reloadLLMPlugin(plugin schemas.LLMPlugin) error {
+	newPluginName, err := getPluginNameSafely(plugin)
+	if err != nil {
+		return err
+	}
 	for {
 		var pluginToCleanup schemas.LLMPlugin
+		var oldPluginName string
 		found := false
 		oldPlugins := bifrost.llmPlugins.Load()
 
@@ -3485,10 +3518,15 @@ func (bifrost *Bifrost) reloadLLMPlugin(plugin schemas.LLMPlugin) error {
 		}
 
 		for i, p := range newPlugins {
-			if p.GetName() == plugin.GetName() {
+			pluginName, nameErr := getPluginNameSafely(p)
+			if nameErr != nil {
+				continue
+			}
+			if pluginName == newPluginName {
 				// Cleaning up old plugin before replacing it
 				pluginToCleanup = p
-				bifrost.logger.Debug("replacing LLM plugin %s with new instance", plugin.GetName())
+				oldPluginName = pluginName
+				bifrost.logger.Debug("replacing LLM plugin %s with new instance", newPluginName)
 				newPlugins[i] = plugin
 				found = true
 				break
@@ -3496,16 +3534,16 @@ func (bifrost *Bifrost) reloadLLMPlugin(plugin schemas.LLMPlugin) error {
 		}
 		if !found {
 			// This means that user is adding a new plugin
-			bifrost.logger.Debug("adding new LLM plugin %s", plugin.GetName())
+			bifrost.logger.Debug("adding new LLM plugin %s", newPluginName)
 			newPlugins = append(newPlugins, plugin)
 		}
 		// Atomic compare-and-swap
 		if bifrost.llmPlugins.CompareAndSwap(oldPlugins, &newPlugins) {
 			// Cleanup the old plugin
 			if found && pluginToCleanup != nil {
-				err := pluginToCleanup.Cleanup()
+				err := cleanupPluginSafely(pluginToCleanup)
 				if err != nil {
-					bifrost.logger.Warn("failed to cleanup old LLM plugin %s: %v", pluginToCleanup.GetName(), err)
+					bifrost.logger.Warn("failed to cleanup old LLM plugin %s: %v", oldPluginName, err)
 				}
 			}
 			return nil
@@ -3516,8 +3554,13 @@ func (bifrost *Bifrost) reloadLLMPlugin(plugin schemas.LLMPlugin) error {
 
 // reloadMCPPlugin reloads an MCP plugin with new instance
 func (bifrost *Bifrost) reloadMCPPlugin(plugin schemas.MCPPlugin) error {
+	newPluginName, err := getPluginNameSafely(plugin)
+	if err != nil {
+		return err
+	}
 	for {
 		var pluginToCleanup schemas.MCPPlugin
+		var oldPluginName string
 		found := false
 		oldPlugins := bifrost.mcpPlugins.Load()
 		if oldPlugins == nil {
@@ -3527,10 +3570,15 @@ func (bifrost *Bifrost) reloadMCPPlugin(plugin schemas.MCPPlugin) error {
 		newPlugins := make([]schemas.MCPPlugin, len(*oldPlugins))
 		copy(newPlugins, *oldPlugins)
 		for i, p := range newPlugins {
-			if p.GetName() == plugin.GetName() {
+			pluginName, nameErr := getPluginNameSafely(p)
+			if nameErr != nil {
+				continue
+			}
+			if pluginName == newPluginName {
 				// Cleaning up old plugin before replacing it
 				pluginToCleanup = p
-				bifrost.logger.Debug("replacing MCP plugin %s with new instance", plugin.GetName())
+				oldPluginName = pluginName
+				bifrost.logger.Debug("replacing MCP plugin %s with new instance", newPluginName)
 				newPlugins[i] = plugin
 				found = true
 				break
@@ -3538,16 +3586,16 @@ func (bifrost *Bifrost) reloadMCPPlugin(plugin schemas.MCPPlugin) error {
 		}
 		if !found {
 			// This means that user is adding a new plugin
-			bifrost.logger.Debug("adding new MCP plugin %s", plugin.GetName())
+			bifrost.logger.Debug("adding new MCP plugin %s", newPluginName)
 			newPlugins = append(newPlugins, plugin)
 		}
 		// Atomic compare-and-swap
 		if bifrost.mcpPlugins.CompareAndSwap(oldPlugins, &newPlugins) {
 			// Cleanup the old plugin
 			if found && pluginToCleanup != nil {
-				err := pluginToCleanup.Cleanup()
+				err := cleanupPluginSafely(pluginToCleanup)
 				if err != nil {
-					bifrost.logger.Warn("failed to cleanup old MCP plugin %s: %v", pluginToCleanup.GetName(), err)
+					bifrost.logger.Warn("failed to cleanup old MCP plugin %s: %v", oldPluginName, err)
 				}
 			}
 			return nil
@@ -3570,24 +3618,30 @@ func (bifrost *Bifrost) ReorderPlugins(orderedNames []string) {
 }
 
 // pluginWithName is satisfied by both LLMPlugin and MCPPlugin.
-type pluginWithName interface {
-	GetName() string
-}
-
 // reorderAtomicSlice atomically reorders the plugin slice stored behind ptr
 // so that plugins appear in the order given by pos (name → position).
 // Uses CAS retry for lock-free safety.
-func reorderAtomicSlice[T pluginWithName](ptr *atomic.Pointer[[]T], pos map[string]int) {
+func reorderAtomicSlice[T schemas.BasePlugin](ptr *atomic.Pointer[[]T], pos map[string]int) {
 	for {
 		old := ptr.Load()
 		if old == nil || len(*old) == 0 {
 			return
 		}
-		reordered := make([]T, len(*old))
-		copy(reordered, *old)
-		sort.SliceStable(reordered, func(i, j int) bool {
-			iPos, iOk := pos[reordered[i].GetName()]
-			jPos, jOk := pos[reordered[j].GetName()]
+		type rankedPlugin struct {
+			plugin   T
+			position int
+			ranked   bool
+		}
+		ranked := make([]rankedPlugin, len(*old))
+		for i, plugin := range *old {
+			ranked[i].plugin = plugin
+			if name, err := getPluginNameSafely(plugin); err == nil {
+				ranked[i].position, ranked[i].ranked = pos[name]
+			}
+		}
+		sort.SliceStable(ranked, func(i, j int) bool {
+			iPos, iOk := ranked[i].position, ranked[i].ranked
+			jPos, jOk := ranked[j].position, ranked[j].ranked
 			if !iOk && !jOk {
 				return false
 			}
@@ -3599,6 +3653,10 @@ func reorderAtomicSlice[T pluginWithName](ptr *atomic.Pointer[[]T], pos map[stri
 			}
 			return iPos < jPos
 		})
+		reordered := make([]T, len(ranked))
+		for i := range ranked {
+			reordered[i] = ranked[i].plugin
+		}
 		if ptr.CompareAndSwap(old, &reordered) {
 			return
 		}
@@ -7934,6 +7992,36 @@ func (e *pluginPanicError) Error() string {
 	return fmt.Sprintf("plugin %s %s panicked", e.plugin, e.hook)
 }
 
+func getPluginNameSafely(plugin schemas.BasePlugin) (name string, err error) {
+	name = "unknown"
+	if schemas.IsNilInterface(plugin) {
+		return name, errors.New("plugin is nil")
+	}
+	defer func() {
+		if recover() != nil {
+			err = &pluginPanicError{plugin: name, hook: "GetName"}
+		}
+	}()
+	name = plugin.GetName()
+	return name, nil
+}
+
+func cleanupPluginSafely(plugin schemas.BasePlugin) (err error) {
+	if schemas.IsNilInterface(plugin) {
+		return errors.New("plugin is nil")
+	}
+	name, nameErr := getPluginNameSafely(plugin)
+	if nameErr != nil {
+		name = "unknown"
+	}
+	defer func() {
+		if recover() != nil {
+			err = &pluginPanicError{plugin: name, hook: "Cleanup"}
+		}
+	}()
+	return plugin.Cleanup()
+}
+
 func isPluginPanicError(err error) bool {
 	var panicErr *pluginPanicError
 	return errors.As(err, &panicErr)
@@ -7991,12 +8079,24 @@ func (p *PluginPipeline) runPluginCall(pluginName, hook string, call func() erro
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			if p != nil && p.logger != nil {
-				p.logger.Error("recovered plugin panic: plugin=%s hook=%s panic_type=%T\n%s", pluginName, hook, recovered, debug.Stack())
+				func() {
+					defer func() { _ = recover() }()
+					p.logger.Error("recovered plugin panic: plugin=%s hook=%s panic_type=%T\n%s", pluginName, hook, recovered, debug.Stack())
+				}()
 			}
 			err = &pluginPanicError{plugin: pluginName, hook: hook}
 		}
 	}()
 	return call()
+}
+
+func (p *PluginPipeline) getPluginName(plugin schemas.BasePlugin) (name string, err error) {
+	name = "unknown"
+	err = p.runPluginCall(name, "GetName", func() error {
+		name = plugin.GetName()
+		return nil
+	})
+	return name, err
 }
 
 // RunLLMPreHooks executes PreHooks in order, tracks how many ran, and returns the final request, any short-circuit decision, and the count.
@@ -8010,7 +8110,12 @@ func (p *PluginPipeline) RunLLMPreHooks(ctx *schemas.BifrostContext, req *schema
 	ctx.BlockRestrictedWrites()
 	defer ctx.UnblockRestrictedWrites()
 	for i, plugin := range p.llmPlugins {
-		pluginName := plugin.GetName()
+		pluginName, nameErr := p.getPluginName(plugin)
+		if nameErr != nil {
+			p.preHookErrors = append(p.preHookErrors, nameErr)
+			p.executedPreHooks = i
+			return req, &schemas.LLMPluginShortCircuit{Error: pluginPanicBifrostError()}, p.executedPreHooks
+		}
 		p.logger.Debug("running pre-hook for plugin %s", pluginName)
 		// Start span for this plugin's PreLLMHook
 		spanCtx, handle := p.tracer.StartSpan(ctx, fmt.Sprintf("plugin.%s.prehook", sanitizeSpanName(pluginName)), schemas.SpanKindPlugin)
@@ -8103,7 +8208,18 @@ func (p *PluginPipeline) RunPreRequestHooks(ctx *schemas.BifrostContext, req *sc
 	for _, plugin := range p.llmPlugins {
 		activeSnapshot = captureRequestRoutingSnapshot(req)
 		previousPin, hadPreviousPin = ctx.Value(schemas.BifrostContextKeyRoutingPinnedAPIKeyID).(string)
-		pluginName := plugin.GetName()
+		pluginName, nameErr := p.getPluginName(plugin)
+		if nameErr != nil {
+			p.preHookErrors = append(p.preHookErrors, nameErr)
+			activeSnapshot.restore(req)
+			if hadPreviousPin {
+				ctx.SetValue(schemas.BifrostContextKeyRoutingPinnedAPIKeyID, previousPin)
+			} else {
+				ctx.ClearValue(schemas.BifrostContextKeyRoutingPinnedAPIKeyID)
+			}
+			panicErr = pluginPanicBifrostError()
+			break
+		}
 		p.logger.Debug("running pre-request hook for plugin %s", pluginName)
 		spanCtx, handle := p.tracer.StartSpan(ctx, fmt.Sprintf("plugin.%s.prerequesthook", sanitizeSpanName(pluginName)), schemas.SpanKindPlugin)
 		if spanCtx != nil {
@@ -8181,19 +8297,23 @@ func (p *PluginPipeline) RunPostLLMHooks(ctx *schemas.BifrostContext, resp *sche
 	var err error
 	for i := runFrom - 1; i >= 0; i-- {
 		plugin := p.llmPlugins[i]
-		pluginName := plugin.GetName()
+		pluginName, nameErr := p.getPluginName(plugin)
+		if nameErr != nil {
+			p.postHookErrors = append(p.postHookErrors, nameErr)
+			return nil, pluginPanicBifrostError()
+		}
 		p.logger.Debug("running post-hook for plugin %s", pluginName)
 		if isStreaming {
 			// For streaming: accumulate timing, don't create individual spans per chunk
 			// Lazily create cached scoped contexts on first chunk (reused across all chunks)
 			if p.streamScopedCtxs == nil {
 				p.streamScopedCtxs = make(map[string]*schemas.BifrostContext, len(p.llmPlugins))
-				for _, pl := range p.llmPlugins {
-					name := pl.GetName()
-					p.streamScopedCtxs[name] = ctx.WithPluginScope(&name)
-				}
 			}
 			pluginCtx := p.streamScopedCtxs[pluginName]
+			if pluginCtx == nil {
+				pluginCtx = ctx.WithPluginScope(&pluginName)
+				p.streamScopedCtxs[pluginName] = pluginCtx
+			}
 			start := time.Now()
 			err = p.runPluginCall(pluginName, "PostLLMHook", func() (hookErr error) {
 				resp, bifrostErr, hookErr = plugin.PostLLMHook(pluginCtx, resp, bifrostErr)
@@ -8279,7 +8399,12 @@ func (p *PluginPipeline) RunMCPPreHooks(ctx *schemas.BifrostContext, req *schema
 	ctx.BlockRestrictedWrites()
 	defer ctx.UnblockRestrictedWrites()
 	for i, plugin := range p.mcpPlugins {
-		pluginName := plugin.GetName()
+		pluginName, nameErr := p.getPluginName(plugin)
+		if nameErr != nil {
+			p.preHookErrors = append(p.preHookErrors, nameErr)
+			p.executedPreHooks = i
+			return req, &schemas.MCPPluginShortCircuit{Error: pluginPanicBifrostError()}, p.executedPreHooks
+		}
 		p.logger.Debug("running MCP pre-hook for plugin %s", pluginName)
 		// Start span for this plugin's PreMCPHook
 		spanCtx, handle := p.tracer.StartSpan(ctx, fmt.Sprintf("plugin.%s.mcp_prehook", sanitizeSpanName(pluginName)), schemas.SpanKindPlugin)
@@ -8346,7 +8471,11 @@ func (p *PluginPipeline) RunMCPPostHooks(ctx *schemas.BifrostContext, mcpResp *s
 	var err error
 	for i := runFrom - 1; i >= 0; i-- {
 		plugin := p.mcpPlugins[i]
-		pluginName := plugin.GetName()
+		pluginName, nameErr := p.getPluginName(plugin)
+		if nameErr != nil {
+			p.postHookErrors = append(p.postHookErrors, nameErr)
+			return nil, pluginPanicBifrostError()
+		}
 		p.logger.Debug("running MCP post-hook for plugin %s", pluginName)
 		// Create span per plugin
 		spanCtx, handle := p.tracer.StartSpan(ctx, fmt.Sprintf("plugin.%s.mcp_posthook", sanitizeSpanName(pluginName)), schemas.SpanKindPlugin)
@@ -8412,7 +8541,12 @@ func (p *PluginPipeline) RunMCPPreConnectionHooks(ctx *schemas.BifrostContext, r
 	ctx.BlockRestrictedWrites()
 	defer ctx.UnblockRestrictedWrites()
 	for i, plugin := range p.mcpPlugins {
-		pluginName := plugin.GetName()
+		pluginName, nameErr := p.getPluginName(plugin)
+		if nameErr != nil {
+			p.preHookErrors = append(p.preHookErrors, nameErr)
+			p.executedPreHooks = i
+			return req, &schemas.MCPConnectionShortCircuit{Error: pluginPanicBifrostError()}, p.executedPreHooks
+		}
 		p.logger.Debug("running MCP connect pre-hook for plugin %s", pluginName)
 		spanCtx, handle := p.tracer.StartSpan(ctx, fmt.Sprintf("plugin.%s.mcp_connect_prehook", sanitizeSpanName(pluginName)), schemas.SpanKindPlugin)
 		if spanCtx != nil {
@@ -8485,7 +8619,11 @@ func (p *PluginPipeline) RunMCPPostConnectionHooks(ctx *schemas.BifrostContext, 
 	var err error
 	for i := runFrom - 1; i >= 0; i-- {
 		plugin := p.mcpPlugins[i]
-		pluginName := plugin.GetName()
+		pluginName, nameErr := p.getPluginName(plugin)
+		if nameErr != nil {
+			p.postHookErrors = append(p.postHookErrors, nameErr)
+			return nil, pluginPanicBifrostError()
+		}
 		p.logger.Debug("running MCP connect post-hook for plugin %s", pluginName)
 		spanCtx, handle := p.tracer.StartSpan(ctx, fmt.Sprintf("plugin.%s.mcp_connect_posthook", sanitizeSpanName(pluginName)), schemas.SpanKindPlugin)
 		if spanCtx != nil {
@@ -9344,7 +9482,7 @@ func (bifrost *Bifrost) Shutdown() {
 	// Cleanup plugins
 	if llmPlugins := bifrost.llmPlugins.Load(); llmPlugins != nil {
 		for _, plugin := range *llmPlugins {
-			err := plugin.Cleanup()
+			err := cleanupPluginSafely(plugin)
 			if err != nil {
 				bifrost.logger.Warn(fmt.Sprintf("Error cleaning up LLM plugin: %s", err.Error()))
 			}
@@ -9352,7 +9490,7 @@ func (bifrost *Bifrost) Shutdown() {
 	}
 	if mcpPlugins := bifrost.mcpPlugins.Load(); mcpPlugins != nil {
 		for _, plugin := range *mcpPlugins {
-			err := plugin.Cleanup()
+			err := cleanupPluginSafely(plugin)
 			if err != nil {
 				bifrost.logger.Warn(fmt.Sprintf("Error cleaning up MCP plugin: %s", err.Error()))
 			}

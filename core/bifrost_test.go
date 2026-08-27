@@ -2847,6 +2847,7 @@ type fakeRoutingPlugin struct {
 	pinKeyID     string // written to BifrostContextKeyRoutingPinnedAPIKeyID when non-empty
 	panicHook    string
 	panicGetName bool
+	panicCleanup bool
 	recoverPost  bool
 }
 
@@ -2856,7 +2857,12 @@ func (f *fakeRoutingPlugin) GetName() string {
 	}
 	return f.name
 }
-func (f *fakeRoutingPlugin) Cleanup() error { return nil }
+func (f *fakeRoutingPlugin) Cleanup() error {
+	if f.panicCleanup {
+		panic("cleanup secret")
+	}
+	return nil
+}
 func (f *fakeRoutingPlugin) PreRequestHook(ctx *schemas.BifrostContext, req *schemas.BifrostRequest) error {
 	if f.panicHook == "pre-request" {
 		req.SetProvider(schemas.Anthropic)
@@ -2962,6 +2968,130 @@ func TestPreRequestPipelineContainsGetNamePanicAndUnblocksContext(t *testing.T) 
 	ctx.SetValue(schemas.BifrostContextKeyAPIKeyID, "after-panic")
 	if got := ctx.Value(schemas.BifrostContextKeyAPIKeyID); got != "after-panic" {
 		t.Fatalf("restricted writes remained blocked after panic: %v", got)
+	}
+}
+
+func TestLLMPipelineContainsGetNamePanic(t *testing.T) {
+	ctx := schemas.NewBifrostContext(context.Background(), schemas.NoDeadline)
+	req := &schemas.BifrostRequest{ChatRequest: &schemas.BifrostChatRequest{Provider: schemas.OpenAI, Model: "original"}}
+	pipeline := newRoutingCommitPipeline(&fakeRoutingPlugin{panicGetName: true})
+
+	gotReq, shortCircuit, executed := pipeline.RunLLMPreHooks(ctx, req)
+	if gotReq != req || shortCircuit == nil || !isPluginPanicBifrostError(shortCircuit.Error) || executed != 0 {
+		t.Fatalf("pre-hook GetName panic was not contained: req=%p short=%+v executed=%d", gotReq, shortCircuit, executed)
+	}
+	ctx.SetValue(schemas.BifrostContextKeyAPIKeyID, "after-pre-panic")
+	if got := ctx.Value(schemas.BifrostContextKeyAPIKeyID); got != "after-pre-panic" {
+		t.Fatalf("restricted writes remained blocked after pre-hook GetName panic: %v", got)
+	}
+
+	pipeline = newRoutingCommitPipeline(&fakeRoutingPlugin{panicGetName: true})
+	resp := &schemas.BifrostResponse{}
+	gotResp, gotErr := pipeline.RunPostLLMHooks(ctx, resp, nil, 1)
+	if gotResp != nil || !isPluginPanicBifrostError(gotErr) {
+		t.Fatalf("post-hook GetName panic was not contained: resp=%p err=%+v", gotResp, gotErr)
+	}
+	ctx.SetValue(schemas.BifrostContextKeyAPIKeyID, "after-post-panic")
+	if got := ctx.Value(schemas.BifrostContextKeyAPIKeyID); got != "after-post-panic" {
+		t.Fatalf("restricted writes remained blocked after post-hook GetName panic: %v", got)
+	}
+}
+
+type fakeMCPPanicPlugin struct {
+	schemas.MCPPluginNoOpHooks
+	name         string
+	panicGetName bool
+}
+
+func (f *fakeMCPPanicPlugin) GetName() string {
+	if f.panicGetName {
+		panic("mcp get-name secret")
+	}
+	return f.name
+}
+func (*fakeMCPPanicPlugin) Cleanup() error { return nil }
+func (_ *fakeMCPPanicPlugin) PreMCPConnectionHook(_ *schemas.BifrostContext, req *schemas.BifrostMCPConnectRequest) (*schemas.BifrostMCPConnectRequest, *schemas.MCPConnectionShortCircuit, error) {
+	return req, nil, nil
+}
+func (_ *fakeMCPPanicPlugin) PostMCPConnectionHook(_ *schemas.BifrostContext, resp *schemas.BifrostMCPConnectResponse, bifrostErr *schemas.BifrostError) (*schemas.BifrostMCPConnectResponse, *schemas.BifrostError, error) {
+	return resp, bifrostErr, nil
+}
+
+func TestMCPPipelineContainsGetNamePanic(t *testing.T) {
+	ctx := schemas.NewBifrostContext(context.Background(), schemas.NoDeadline)
+	plugin := &fakeMCPPanicPlugin{panicGetName: true}
+	pipeline := &PluginPipeline{logger: NewDefaultLogger(schemas.LogLevelError), tracer: &schemas.NoOpTracer{}, mcpPlugins: []schemas.MCPPlugin{plugin}}
+
+	req := &schemas.BifrostMCPRequest{}
+	gotReq, shortCircuit, executed := pipeline.RunMCPPreHooks(ctx, req)
+	if gotReq != req || shortCircuit == nil || !isPluginPanicBifrostError(shortCircuit.Error) || executed != 0 {
+		t.Fatalf("MCP pre-hook GetName panic was not contained: req=%p short=%+v executed=%d", gotReq, shortCircuit, executed)
+	}
+
+	pipeline = &PluginPipeline{logger: NewDefaultLogger(schemas.LogLevelError), tracer: &schemas.NoOpTracer{}, mcpPlugins: []schemas.MCPPlugin{plugin}}
+	if resp, bifrostErr := pipeline.RunMCPPostHooks(ctx, &schemas.BifrostMCPResponse{}, nil, 1); resp != nil || !isPluginPanicBifrostError(bifrostErr) {
+		t.Fatalf("MCP post-hook GetName panic was not contained: resp=%p err=%+v", resp, bifrostErr)
+	}
+
+	pipeline = &PluginPipeline{logger: NewDefaultLogger(schemas.LogLevelError), tracer: &schemas.NoOpTracer{}, mcpPlugins: []schemas.MCPPlugin{plugin}}
+	connectReq := &schemas.BifrostMCPConnectRequest{}
+	gotConnectReq, connectShortCircuit, executed := pipeline.RunMCPPreConnectionHooks(ctx, connectReq)
+	if gotConnectReq != connectReq || connectShortCircuit == nil || !isPluginPanicBifrostError(connectShortCircuit.Error) || executed != 0 {
+		t.Fatalf("MCP connect pre-hook GetName panic was not contained: req=%p short=%+v executed=%d", gotConnectReq, connectShortCircuit, executed)
+	}
+
+	pipeline = &PluginPipeline{logger: NewDefaultLogger(schemas.LogLevelError), tracer: &schemas.NoOpTracer{}, mcpPlugins: []schemas.MCPPlugin{plugin}}
+	if resp, bifrostErr := pipeline.RunMCPPostConnectionHooks(ctx, &schemas.BifrostMCPConnectResponse{}, nil, 1); resp != nil || !isPluginPanicBifrostError(bifrostErr) {
+		t.Fatalf("MCP connect post-hook GetName panic was not contained: resp=%p err=%+v", resp, bifrostErr)
+	}
+}
+
+func TestPluginManagementContainsPluginPanics(t *testing.T) {
+	panicking := &fakeRoutingPlugin{panicGetName: true}
+	b := &Bifrost{logger: NewNoOpLogger()}
+	plugins := []schemas.LLMPlugin{panicking}
+	b.llmPlugins.Store(&plugins)
+
+	if err := b.RemovePlugin("missing", []schemas.PluginType{schemas.PluginTypeLLM}); err == nil || strings.Contains(err.Error(), "secret") {
+		t.Fatalf("RemovePlugin error = %v, want safe recovered error", err)
+	}
+	if err := b.ReloadPlugin(panicking, []schemas.PluginType{schemas.PluginTypeLLM}); err == nil || strings.Contains(err.Error(), "secret") {
+		t.Fatalf("ReloadPlugin error = %v, want safe recovered error", err)
+	}
+	b.ReorderPlugins([]string{"anything"})
+	if got := b.llmPlugins.Load(); got == nil || len(*got) != 1 || (*got)[0] != panicking {
+		t.Fatalf("ReorderPlugins dropped panicking plugin: %+v", got)
+	}
+
+	cleanupPanic := &fakeRoutingPlugin{name: "cleanup", panicCleanup: true}
+	plugins = []schemas.LLMPlugin{cleanupPanic}
+	b.llmPlugins.Store(&plugins)
+	if err := b.RemovePlugin("cleanup", []schemas.PluginType{schemas.PluginTypeLLM}); err != nil {
+		t.Fatalf("RemovePlugin returned cleanup panic: %v", err)
+	}
+}
+
+func TestPluginManagementSkipsBrokenPluginWhenManagingHealthyPlugin(t *testing.T) {
+	panicking := &fakeRoutingPlugin{panicGetName: true}
+	healthy := &fakeRoutingPlugin{name: "healthy"}
+	b := &Bifrost{logger: NewNoOpLogger()}
+	plugins := []schemas.LLMPlugin{panicking, healthy}
+	b.llmPlugins.Store(&plugins)
+
+	if err := b.RemovePlugin("healthy", []schemas.PluginType{schemas.PluginTypeLLM}); err != nil {
+		t.Fatalf("RemovePlugin healthy error = %v", err)
+	}
+	if got := b.llmPlugins.Load(); got == nil || len(*got) != 1 || (*got)[0] != panicking {
+		t.Fatalf("RemovePlugin changed wrong plugins: %+v", got)
+	}
+
+	plugins = []schemas.LLMPlugin{panicking}
+	b.llmPlugins.Store(&plugins)
+	if err := b.ReloadPlugin(healthy, []schemas.PluginType{schemas.PluginTypeLLM}); err != nil {
+		t.Fatalf("ReloadPlugin healthy error = %v", err)
+	}
+	if got := b.llmPlugins.Load(); got == nil || len(*got) != 2 || (*got)[0] != panicking || (*got)[1] != healthy {
+		t.Fatalf("ReloadPlugin did not preserve broken plugin and add healthy plugin: %+v", got)
 	}
 }
 

@@ -1718,7 +1718,11 @@ func (s *BifrostHTTPServer) SyncLoadedPlugin(ctx context.Context, name string, p
 	if schemas.IsNilInterface(plugin) {
 		return s.updatePluginErrorStatus(name, "registering", fmt.Errorf("plugin instance is nil"))
 	}
-	if plugin.GetName() == circuitbreaker.PluginName {
+	pluginName, err := lib.GetPluginNameSafely(plugin)
+	if err != nil {
+		return s.updatePluginErrorStatus(name, "registering", err)
+	}
+	if pluginName == circuitbreaker.PluginName {
 		placement = schemas.Ptr(schemas.PluginPlacementPostBuiltin)
 		order = schemas.Ptr(math.MaxInt)
 		if s.Client != nil {
@@ -1727,14 +1731,14 @@ func (s *BifrostHTTPServer) SyncLoadedPlugin(ctx context.Context, name string, p
 	}
 	// 2. Register (replaces old version atomically)
 	if err := s.Config.ReloadPlugin(plugin); err != nil {
-		return s.updatePluginErrorStatus(plugin.GetName(), "registering", err)
+		return s.updatePluginErrorStatus(pluginName, "registering", err)
 	}
 	// 2b. Set order info and re-sort
-	s.Config.SetPluginOrderInfo(plugin.GetName(), placement, order)
+	s.Config.SetPluginOrderInfo(pluginName, placement, order)
 	s.Config.SortAndRebuildPlugins()
 	// 3. Update Bifrost client
 	if err := s.Client.ReloadPlugin(plugin, InferPluginTypes(plugin)); err != nil {
-		return s.updatePluginErrorStatus(plugin.GetName(), "reloading bifrost config for", err)
+		return s.updatePluginErrorStatus(pluginName, "reloading bifrost config for", err)
 	}
 	// 3b. Sync plugin execution order from config to core
 	s.Client.ReorderPlugins(s.Config.GetPluginOrder())
@@ -1744,7 +1748,7 @@ func (s *BifrostHTTPServer) SyncLoadedPlugin(ctx context.Context, name string, p
 	}
 	s.wireObservationExportStore()
 	// 5. Update plugin status
-	s.Config.UpdatePluginOverallStatus(plugin.GetName(), name, schemas.PluginStatusActive,
+	s.Config.UpdatePluginOverallStatus(pluginName, name, schemas.PluginStatusActive,
 		[]string{fmt.Sprintf("plugin %s reloaded successfully", name)}, InferPluginTypes(plugin))
 	return nil
 }

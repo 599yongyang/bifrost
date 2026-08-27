@@ -193,6 +193,7 @@ tests/e2e/api/routing/ledger-*
 */build/
 *.tar
 .tmp-go-cache/
+.gocache
 *.so
 *.dll
 *.dylib

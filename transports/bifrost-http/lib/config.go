@@ -4977,6 +4977,22 @@ func (c *Config) GetAllowOnAllVirtualKeysClients() map[string]string {
 	return result
 }
 
+// GetPluginNameSafely contains panics from third-party plugin name lookups and
+// returns a client-safe error that does not expose the recovered panic value.
+func GetPluginNameSafely(plugin schemas.BasePlugin) (name string, err error) {
+	name = "unknown"
+	if schemas.IsNilInterface(plugin) {
+		return name, fmt.Errorf("plugin is nil")
+	}
+	defer func() {
+		if recover() != nil {
+			err = fmt.Errorf("plugin %s GetName panicked", name)
+		}
+	}()
+	name = plugin.GetName()
+	return name, nil
+}
+
 // GetPluginOrder returns the names of all base plugins in their sorted placement order.
 // This method is lock-free and safe for concurrent access from hot paths.
 // Do not modify the returned slice; it is a shared snapshot and must be treated read-only.
@@ -4990,7 +5006,9 @@ func (c *Config) GetPluginOrder() []string {
 		if schemas.IsNilInterface(p) {
 			continue
 		}
-		names = append(names, p.GetName())
+		if name, err := GetPluginNameSafely(p); err == nil {
+			names = append(names, name)
+		}
 	}
 	return names
 }
@@ -5015,7 +5033,11 @@ func (c *Config) GetLoadedPluginNames() []string {
 		if schemas.IsNilInterface(p) {
 			continue
 		}
-		name := schemas.SanitizePluginSpanName(p.GetName())
+		pluginName, err := GetPluginNameSafely(p)
+		if err != nil {
+			continue
+		}
+		name := schemas.SanitizePluginSpanName(pluginName)
 		if name == "" {
 			continue
 		}
@@ -5039,22 +5061,26 @@ type pluginChunkInterceptor struct {
 func (i *pluginChunkInterceptor) InterceptChunk(ctx *schemas.BifrostContext, req *schemas.HTTPRequest, stream *schemas.BifrostStreamChunk) (*schemas.BifrostStreamChunk, error) {
 	for j := len(i.plugins) - 1; j >= 0; j-- {
 		plugin := i.plugins[j]
-		pluginName := plugin.GetName()
 		var (
-			modified = stream
-			err      error
+			pluginName = "unknown"
+			modified   = stream
+			err        error
 		)
 		func() {
-			pluginCtx := ctx.WithPluginScope(&pluginName)
-			defer pluginCtx.ReleasePluginScope()
 			defer func() {
 				if recovered := recover(); recovered != nil {
 					if logger != nil {
-						logger.Error("recovered transport stream plugin panic: plugin=%s panic_type=%T\n%s", pluginName, recovered, debug.Stack())
+						func() {
+							defer func() { _ = recover() }()
+							logger.Error("recovered transport stream plugin panic: plugin=%s panic_type=%T\n%s", pluginName, recovered, debug.Stack())
+						}()
 					}
 					err = fmt.Errorf("transport stream plugin %s panicked", pluginName)
 				}
 			}()
+			pluginName = plugin.GetName()
+			pluginCtx := ctx.WithPluginScope(&pluginName)
+			defer pluginCtx.ReleasePluginScope()
 			modified, err = plugin.HTTPTransportStreamChunkHook(pluginCtx, req, stream)
 		}()
 		if err != nil {
@@ -5269,7 +5295,9 @@ func (c *Config) rebuildInterfaceCaches() {
 		}
 		if cm, ok := p.(schemas.ConfigMarshallerPlugin); ok {
 			// RegisterConfigMarshaller adds/updates atomically without clearing other entries
-			c.RegisterConfigMarshaller(p.GetName(), cm)
+			if name, err := GetPluginNameSafely(p); err == nil {
+				c.RegisterConfigMarshaller(name, cm)
+			}
 		}
 	}
 
@@ -5324,7 +5352,8 @@ func (c *Config) IsPluginLoaded(name string) bool {
 		if schemas.IsNilInterface(p) {
 			continue
 		}
-		if p.GetName() == name {
+		pluginName, err := GetPluginNameSafely(p)
+		if err == nil && pluginName == name {
 			return true
 		}
 	}
@@ -5466,7 +5495,10 @@ func (c *Config) ReloadPlugin(plugin schemas.BasePlugin) error {
 	c.pluginsMu.Lock()
 	defer c.pluginsMu.Unlock()
 
-	name := plugin.GetName()
+	name, err := GetPluginNameSafely(plugin)
+	if err != nil {
+		return err
+	}
 
 	for {
 		oldPlugins := c.BasePlugins.Load()
@@ -5482,7 +5514,12 @@ func (c *Config) ReloadPlugin(plugin schemas.BasePlugin) error {
 				if schemas.IsNilInterface(p) {
 					continue
 				}
-				if p.GetName() == name {
+				pluginName, nameErr := GetPluginNameSafely(p)
+				if nameErr != nil {
+					newPlugins = append(newPlugins, p)
+					continue
+				}
+				if pluginName == name {
 					newPlugins = append(newPlugins, plugin) // Replace with new
 					replaced = true
 				} else {
@@ -5516,11 +5553,20 @@ func (c *Config) UnregisterPlugin(name string) error {
 
 		newPlugins := make([]schemas.BasePlugin, 0, len(*oldPlugins))
 		found := false
+		var firstNameErr error
 		for _, p := range *oldPlugins {
 			if schemas.IsNilInterface(p) {
 				continue
 			}
-			if p.GetName() == name {
+			pluginName, err := GetPluginNameSafely(p)
+			if err != nil {
+				if firstNameErr == nil {
+					firstNameErr = err
+				}
+				newPlugins = append(newPlugins, p)
+				continue
+			}
+			if pluginName == name {
 				found = true
 				continue
 			}
@@ -5528,6 +5574,9 @@ func (c *Config) UnregisterPlugin(name string) error {
 		}
 
 		if !found {
+			if firstNameErr != nil {
+				return firstNameErr
+			}
 			return plugins.ErrPluginNotFound
 		}
 
@@ -5574,10 +5623,19 @@ func (c *Config) SortAndRebuildPlugins() {
 		return
 	}
 
-	sorted := make([]schemas.BasePlugin, 0, len(*oldPlugins))
+	type sortablePlugin struct {
+		plugin schemas.BasePlugin
+		info   pluginOrderInfo
+		valid  bool
+	}
+	sorted := make([]sortablePlugin, 0, len(*oldPlugins))
 	for _, plugin := range *oldPlugins {
 		if !schemas.IsNilInterface(plugin) {
-			sorted = append(sorted, plugin)
+			entry := sortablePlugin{plugin: plugin}
+			if name, err := GetPluginNameSafely(plugin); err == nil {
+				entry.info, entry.valid = c.pluginOrderMap[name]
+			}
+			sorted = append(sorted, entry)
 		}
 	}
 
@@ -5589,14 +5647,14 @@ func (c *Config) SortAndRebuildPlugins() {
 	defaultRank := 2 // Unknown placements default to post_builtin (least privileged)
 
 	sort.SliceStable(sorted, func(i, j int) bool {
-		iInfo := c.pluginOrderMap[sorted[i].GetName()]
-		jInfo := c.pluginOrderMap[sorted[j].GetName()]
+		iInfo := sorted[i].info
+		jInfo := sorted[j].info
 		iRank, iOk := groupRank[iInfo.Placement]
-		if !iOk {
+		if !iOk || !sorted[i].valid {
 			iRank = defaultRank
 		}
 		jRank, jOk := groupRank[jInfo.Placement]
-		if !jOk {
+		if !jOk || !sorted[j].valid {
 			jRank = defaultRank
 		}
 		if iRank != jRank {
@@ -5605,7 +5663,11 @@ func (c *Config) SortAndRebuildPlugins() {
 		return iInfo.Order < jInfo.Order
 	})
 
-	c.BasePlugins.Store(&sorted)
+	plugins := make([]schemas.BasePlugin, len(sorted))
+	for i := range sorted {
+		plugins[i] = sorted[i].plugin
+	}
+	c.BasePlugins.Store(&plugins)
 	c.rebuildInterfaceCaches()
 }
 
@@ -5621,16 +5683,27 @@ func FindPluginAs[T any](c *Config, name string) (T, error) {
 		return zero, fmt.Errorf("plugin %s not found", name)
 	}
 
+	var firstNameErr error
 	for _, p := range *basePlugins {
 		if schemas.IsNilInterface(p) {
 			continue
 		}
-		if p.GetName() == name {
+		pluginName, err := GetPluginNameSafely(p)
+		if err != nil {
+			if firstNameErr == nil {
+				firstNameErr = err
+			}
+			continue
+		}
+		if pluginName == name {
 			if typed, ok := p.(T); ok {
 				return typed, nil
 			}
 			return zero, fmt.Errorf("plugin %s does not implement required interface", name)
 		}
+	}
+	if firstNameErr != nil {
+		return zero, firstNameErr
 	}
 
 	return zero, fmt.Errorf("plugin %s not found", name)

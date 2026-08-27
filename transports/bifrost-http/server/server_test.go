@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -18,6 +19,26 @@ import (
 	"github.com/maximhq/bifrost/transports/bifrost-http/handlers"
 	"github.com/maximhq/bifrost/transports/bifrost-http/lib"
 )
+
+type panickingNameBasePlugin struct{}
+
+func (*panickingNameBasePlugin) GetName() string { panic("server plugin name secret") }
+func (*panickingNameBasePlugin) Cleanup() error  { return nil }
+
+func TestSyncLoadedPluginContainsGetNamePanic(t *testing.T) {
+	server := &BifrostHTTPServer{Config: &lib.Config{}}
+	err := server.SyncLoadedPlugin(context.Background(), "display-name", &panickingNameBasePlugin{}, nil, nil)
+	if err == nil {
+		t.Fatal("expected safe plugin name error")
+	}
+	if strings.Contains(err.Error(), "secret") {
+		t.Fatalf("panic detail leaked: %v", err)
+	}
+	status, ok := server.Config.GetPluginStatusByName("display-name")
+	if !ok || status.Status != schemas.PluginStatusError {
+		t.Fatalf("plugin status = %+v, found=%v; want error status", status, ok)
+	}
+}
 
 // reloadVirtualKeyConfigStore provides the persistence calls used by ReloadVirtualKey.
 type reloadVirtualKeyConfigStore struct {

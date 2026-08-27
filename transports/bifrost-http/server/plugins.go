@@ -364,9 +364,21 @@ func (s *BifrostHTTPServer) loadCustomPlugins(ctx context.Context) error {
 		}
 
 		// Register enabled plugin and mark as active
-		s.Config.ReloadPlugin(plugin)
-		s.Config.SetPluginOrderInfo(plugin.GetName(), cfg.Placement, cfg.Order)
-		s.Config.UpdatePluginOverallStatus(plugin.GetName(), cfg.Name, schemas.PluginStatusActive,
+		pluginName, nameErr := lib.GetPluginNameSafely(plugin)
+		if nameErr != nil {
+			logger.Error("failed to read plugin name for %s: %v", cfg.Name, nameErr)
+			s.Config.UpdatePluginOverallStatus(cfg.Name, cfg.Name, schemas.PluginStatusError,
+				[]string{fmt.Sprintf("error loading plugin %s: %v", cfg.Name, nameErr)}, InferPluginTypes(plugin))
+			continue
+		}
+		if err := s.Config.ReloadPlugin(plugin); err != nil {
+			logger.Error("failed to register plugin %s: %v", cfg.Name, err)
+			s.Config.UpdatePluginOverallStatus(pluginName, cfg.Name, schemas.PluginStatusError,
+				[]string{fmt.Sprintf("error registering plugin %s: %v", cfg.Name, err)}, InferPluginTypes(plugin))
+			continue
+		}
+		s.Config.SetPluginOrderInfo(pluginName, cfg.Placement, cfg.Order)
+		s.Config.UpdatePluginOverallStatus(pluginName, cfg.Name, schemas.PluginStatusActive,
 			[]string{fmt.Sprintf("plugin %s initialized successfully", cfg.Name)}, InferPluginTypes(plugin))
 	}
 	return nil

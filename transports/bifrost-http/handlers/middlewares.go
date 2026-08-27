@@ -435,10 +435,7 @@ func TransportInterceptorMiddleware(config *lib.Config) schemas.BifrostHTTPMiddl
 			fasthttpToHTTPRequest(ctx, req)
 			// Run plugin interceptors
 			for _, plugin := range plugins {
-				pluginName := plugin.GetName()
-				pluginCtx := bifrostCtx.WithPluginScope(&pluginName)
-				resp, err := plugin.HTTPTransportPreHook(pluginCtx, req)
-				pluginCtx.ReleasePluginScope()
+				_, resp, err := runTransportPreHookSafely(plugin, bifrostCtx, req)
 				if err != nil {
 					// Short-circuit with error — drain plugin logs before returning
 					if logs := bifrostCtx.DrainPluginLogs(); len(logs) > 0 {
@@ -519,6 +516,57 @@ func TransportInterceptorMiddleware(config *lib.Config) schemas.BifrostHTTPMiddl
 	}
 }
 
+func logRecoveredTransportPluginPanic(pluginName, hook string, recovered any) {
+	if logger == nil {
+		return
+	}
+	func() {
+		defer func() { _ = recover() }()
+		logger.Error("recovered HTTP transport plugin panic: plugin=%s hook=%s panic_type=%T\n%s", pluginName, hook, recovered, debug.Stack())
+	}()
+}
+
+func warnTransportPluginError(pluginName string, err error) {
+	if logger == nil {
+		return
+	}
+	func() {
+		defer func() { _ = recover() }()
+		logger.Warn("error in HTTPTransportPostHook for plugin %s: %s", pluginName, err.Error())
+	}()
+}
+
+func runTransportPreHookSafely(plugin schemas.HTTPTransportPlugin, ctx *schemas.BifrostContext, req *schemas.HTTPRequest) (pluginName string, resp *schemas.HTTPResponse, err error) {
+	pluginName = "unknown"
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			logRecoveredTransportPluginPanic(pluginName, "HTTPTransportPreHook", recovered)
+			resp = nil
+			err = fmt.Errorf("transport pre-hook plugin %s panicked", pluginName)
+		}
+	}()
+	pluginName = plugin.GetName()
+	pluginCtx := ctx.WithPluginScope(&pluginName)
+	defer pluginCtx.ReleasePluginScope()
+	resp, err = plugin.HTTPTransportPreHook(pluginCtx, req)
+	return pluginName, resp, err
+}
+
+func runTransportPostHookSafely(plugin schemas.HTTPTransportPlugin, ctx *schemas.BifrostContext, req *schemas.HTTPRequest, resp *schemas.HTTPResponse) (pluginName string, err error) {
+	pluginName = "unknown"
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			logRecoveredTransportPluginPanic(pluginName, "HTTPTransportPostHook", recovered)
+			err = fmt.Errorf("transport post-hook plugin %s panicked", pluginName)
+		}
+	}()
+	pluginName = plugin.GetName()
+	pluginCtx := ctx.WithPluginScope(&pluginName)
+	defer pluginCtx.ReleasePluginScope()
+	err = plugin.HTTPTransportPostHook(pluginCtx, req, resp)
+	return pluginName, err
+}
+
 // runTransportPostHooks runs HTTPTransportPostHook for all plugins in reverse order,
 // drains plugin logs, and applies the response back to the fasthttp context.
 // Used for both non-streaming (inline) and streaming (deferred callback) paths.
@@ -543,12 +591,9 @@ func runTransportPostHooks(ctx *fasthttp.RequestCtx, plugins []schemas.HTTPTrans
 	// Run http post-hooks in reverse order
 	for i := len(plugins) - 1; i >= 0; i-- {
 		plugin := plugins[i]
-		pluginName := plugin.GetName()
-		pluginCtx := bifrostCtx.WithPluginScope(&pluginName)
-		err := plugin.HTTPTransportPostHook(pluginCtx, req, httpResp)
-		pluginCtx.ReleasePluginScope()
+		pluginName, err := runTransportPostHookSafely(plugin, bifrostCtx, req, httpResp)
 		if err != nil {
-			logger.Warn("error in HTTPTransportPostHook for plugin %s: %s", pluginName, err.Error())
+			warnTransportPluginError(pluginName, err)
 			// Drain plugin logs before returning on error
 			if postHookLogs := bifrostCtx.DrainPluginLogs(); len(postHookLogs) > 0 {
 				if existing, ok := ctx.UserValue(schemas.BifrostContextKeyTransportPluginLogs).([]schemas.PluginLogEntry); ok {
@@ -610,12 +655,9 @@ func runTransportPostHooksCaptured(capturedReq *schemas.HTTPRequest, capturedRes
 	// Run http post-hooks in reverse order
 	for i := len(plugins) - 1; i >= 0; i-- {
 		plugin := plugins[i]
-		pluginName := plugin.GetName()
-		pluginCtx := bifrostCtx.WithPluginScope(&pluginName)
-		err := plugin.HTTPTransportPostHook(pluginCtx, req, httpResp)
-		pluginCtx.ReleasePluginScope()
+		pluginName, err := runTransportPostHookSafely(plugin, bifrostCtx, req, httpResp)
 		if err != nil {
-			logger.Warn("error in HTTPTransportPostHook for plugin %s: %s", pluginName, err.Error())
+			warnTransportPluginError(pluginName, err)
 			if postHookLogs := bifrostCtx.DrainPluginLogs(); len(postHookLogs) > 0 {
 				allLogs = append(allLogs, postHookLogs...)
 			}

@@ -13377,7 +13377,17 @@ type mockLLMPlugin struct {
 	mockPlugin
 }
 
-type panickingHTTPTransportPlugin struct{ mockPlugin }
+type panickingHTTPTransportPlugin struct {
+	mockPlugin
+	panicGetName bool
+}
+
+func (p *panickingHTTPTransportPlugin) GetName() string {
+	if p.panicGetName {
+		panic("stream name secret")
+	}
+	return p.mockPlugin.GetName()
+}
 
 func (p *panickingHTTPTransportPlugin) HTTPTransportPreHook(*schemas.BifrostContext, *schemas.HTTPRequest) (*schemas.HTTPResponse, error) {
 	return nil, nil
@@ -13391,7 +13401,21 @@ func (p *panickingHTTPTransportPlugin) HTTPTransportStreamChunkHook(*schemas.Bif
 
 func TestPluginChunkInterceptorContainsPluginPanic(t *testing.T) {
 	interceptor := &pluginChunkInterceptor{plugins: []schemas.HTTPTransportPlugin{
-		&panickingHTTPTransportPlugin{mockPlugin{name: "panic-stream"}},
+		&panickingHTTPTransportPlugin{mockPlugin: mockPlugin{name: "panic-stream"}},
+	}}
+	chunk := &schemas.BifrostStreamChunk{}
+	modified, err := interceptor.InterceptChunk(schemas.NewBifrostContext(context.Background(), schemas.NoDeadline), &schemas.HTTPRequest{}, chunk)
+	if err == nil || modified != chunk {
+		t.Fatalf("modified=%p error=%v, want original chunk plus safe error", modified, err)
+	}
+	if strings.Contains(err.Error(), "secret") {
+		t.Fatalf("panic detail leaked in error: %v", err)
+	}
+}
+
+func TestPluginChunkInterceptorContainsGetNamePanic(t *testing.T) {
+	interceptor := &pluginChunkInterceptor{plugins: []schemas.HTTPTransportPlugin{
+		&panickingHTTPTransportPlugin{mockPlugin: mockPlugin{name: "panic-name"}, panicGetName: true},
 	}}
 	chunk := &schemas.BifrostStreamChunk{}
 	modified, err := interceptor.InterceptChunk(schemas.NewBifrostContext(context.Background(), schemas.NoDeadline), &schemas.HTTPRequest{}, chunk)
@@ -13420,6 +13444,63 @@ func TestReloadPluginRejectsTypedNilPlugin(t *testing.T) {
 	var plugin *mockPlugin
 	if err := config.ReloadPlugin(plugin); err == nil {
 		t.Fatal("expected typed-nil plugin reload to fail")
+	}
+}
+
+func TestConfigPluginManagementContainsGetNamePanic(t *testing.T) {
+	config := newTestConfigForPlugins()
+	panicking := &panickingHTTPTransportPlugin{mockPlugin: mockPlugin{name: "panic-name"}, panicGetName: true}
+	plugins := []schemas.BasePlugin{panicking}
+	config.BasePlugins.Store(&plugins)
+
+	if got := config.GetPluginOrder(); len(got) != 0 {
+		t.Fatalf("plugin order = %v, want panicking plugin omitted", got)
+	}
+	if got := config.GetLoadedPluginNames(); len(got) != 0 {
+		t.Fatalf("loaded plugin names = %v, want panicking plugin omitted", got)
+	}
+	if config.IsPluginLoaded("panic-name") {
+		t.Fatal("panicking plugin must not be reported as loaded by name")
+	}
+	if _, err := FindPluginAs[*panickingHTTPTransportPlugin](config, "panic-name"); err == nil || strings.Contains(err.Error(), "secret") {
+		t.Fatalf("FindPluginAs error = %v, want safe recovered error", err)
+	}
+	if err := config.UnregisterPlugin("panic-name"); err == nil || strings.Contains(err.Error(), "secret") {
+		t.Fatalf("UnregisterPlugin error = %v, want safe recovered error", err)
+	}
+	if err := config.ReloadPlugin(panicking); err == nil || strings.Contains(err.Error(), "secret") {
+		t.Fatalf("ReloadPlugin error = %v, want safe recovered error", err)
+	}
+	config.SortAndRebuildPlugins()
+	if got := config.BasePlugins.Load(); got == nil || len(*got) != 1 || (*got)[0] != panicking {
+		t.Fatalf("SortAndRebuildPlugins dropped panicking plugin: %+v", got)
+	}
+}
+
+func TestConfigPluginManagementSkipsBrokenPluginForHealthyTarget(t *testing.T) {
+	config := newTestConfigForPlugins()
+	panicking := &panickingHTTPTransportPlugin{mockPlugin: mockPlugin{name: "panic-name"}, panicGetName: true}
+	healthy := &mockPlugin{name: "healthy"}
+	plugins := []schemas.BasePlugin{panicking, healthy}
+	config.BasePlugins.Store(&plugins)
+
+	if found, err := FindPluginAs[*mockPlugin](config, "healthy"); err != nil || found != healthy {
+		t.Fatalf("FindPluginAs healthy = %v, %v", found, err)
+	}
+	if err := config.UnregisterPlugin("healthy"); err != nil {
+		t.Fatalf("UnregisterPlugin healthy error = %v", err)
+	}
+	if got := config.BasePlugins.Load(); got == nil || len(*got) != 1 || (*got)[0] != panicking {
+		t.Fatalf("UnregisterPlugin changed wrong plugins: %+v", got)
+	}
+
+	plugins = []schemas.BasePlugin{panicking}
+	config.BasePlugins.Store(&plugins)
+	if err := config.ReloadPlugin(healthy); err != nil {
+		t.Fatalf("ReloadPlugin healthy error = %v", err)
+	}
+	if got := config.BasePlugins.Load(); got == nil || len(*got) != 2 || (*got)[0] != panicking || (*got)[1] != healthy {
+		t.Fatalf("ReloadPlugin did not preserve broken plugin and add healthy plugin: %+v", got)
 	}
 }
 
