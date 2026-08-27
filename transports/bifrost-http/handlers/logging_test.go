@@ -159,6 +159,9 @@ func TestGetDashboard(t *testing.T) {
 				if len(response.DimensionRankings) != len(dashboardRankingDimensions) {
 					t.Fatalf("expected %d dimension rankings, got %d", len(dashboardRankingDimensions), len(response.DimensionRankings))
 				}
+				if response.DimensionRankings[string(logstore.RankingDimensionRoutingRule)] == nil {
+					t.Fatal("expected routing rule rankings in dashboard response")
+				}
 				if got := mgr.lastLLMFilters.Providers; len(got) != 1 || got[0] != "openai" {
 					t.Fatalf("expected LLM providers filter, got %#v", got)
 				}

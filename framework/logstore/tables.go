@@ -1941,6 +1941,7 @@ const (
 	RankingDimensionBusinessUnit RankingDimension = "business_unit"
 	RankingDimensionUser         RankingDimension = "user"
 	RankingDimensionVirtualKey   RankingDimension = "virtual_key"
+	RankingDimensionRoutingRule  RankingDimension = "routing_rule"
 )
 
 var ValidRankingDimensions = map[RankingDimension]bool{
@@ -1949,6 +1950,7 @@ var ValidRankingDimensions = map[RankingDimension]bool{
 	RankingDimensionBusinessUnit: true,
 	RankingDimensionUser:         true,
 	RankingDimensionVirtualKey:   true,
+	RankingDimensionRoutingRule:  true,
 }
 
 type dimensionColumnDef struct {
@@ -1962,6 +1964,7 @@ var dimensionColumns = map[RankingDimension]dimensionColumnDef{
 	RankingDimensionBusinessUnit: {IDCol: "business_unit_id", NameCol: "business_unit_name"},
 	RankingDimensionUser:         {IDCol: "user_id", NameCol: "user_name"},
 	RankingDimensionVirtualKey:   {IDCol: "virtual_key_id", NameCol: "virtual_key_name"},
+	RankingDimensionRoutingRule:  {IDCol: "routing_rule_id", NameCol: "routing_rule_name"},
 }
 
 func DimensionColumnDef(d RankingDimension) (idCol, nameCol string, ok bool) {
@@ -1973,6 +1976,8 @@ type DimensionRankingEntry struct {
 	ID            string  `json:"id"`
 	Name          string  `json:"name,omitempty"`
 	TotalRequests int64   `json:"total_requests"`
+	SuccessCount  int64   `json:"success_count"`
+	ErrorCount    int64   `json:"error_count"`
 	TotalTokens   int64   `json:"total_tokens"`
 	TotalCost     float64 `json:"total_cost"`
 }
@@ -2060,7 +2065,8 @@ type DashboardMCP struct {
 
 // DashboardResult is the full consolidated payload for GET /api/logs/dashboard.
 // DimensionRankings is keyed by RankingDimension ("team", "user", "virtual_key",
-// "customer", "business_unit"); each value is that dimension's ranking table.
+// "customer", "business_unit", "routing_rule"); each value is that dimension's
+// ranking table.
 type DashboardResult struct {
 	Meta              DashboardMeta                      `json:"meta"`
 	Overview          DashboardOverview                  `json:"overview"`

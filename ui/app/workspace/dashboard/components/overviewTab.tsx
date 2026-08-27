@@ -1,6 +1,7 @@
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type {
 	CostHistogramResponse,
+	DimensionRankingsResponse,
 	LatencyHistogramResponse,
 	LogStats,
 	LogsHistogramResponse,
@@ -34,6 +35,7 @@ import { ModelFilterSelect } from "./charts/modelFilterSelect";
 import { ModelUsageChart } from "./charts/modelUsageChart";
 import { TokenUsageChart } from "./charts/tokenUsageChart";
 import i18n from "@/lib/i18n";
+import { RoutingRuleStats } from "./routingRuleStats";
 
 export interface OverviewTabProps {
 	// Data
@@ -44,6 +46,7 @@ export interface OverviewTabProps {
 	latencyData: LatencyHistogramResponse | null;
 	throughputData: ThroughputHistogramResponse | null;
 	logsStats: LogStats | null;
+	routingRuleData: DimensionRankingsResponse | null;
 
 	// Loading states
 	loadingHistogram: boolean;
@@ -53,6 +56,8 @@ export interface OverviewTabProps {
 	loadingLatency: boolean;
 	loadingThroughput: boolean;
 	loadingStats: boolean;
+	loadingRoutingRules: boolean;
+	routingRulesError: boolean;
 
 	// Time range
 	startTime: number;
@@ -96,6 +101,7 @@ function OverviewTabImpl({
 	latencyData,
 	throughputData,
 	logsStats,
+	routingRuleData,
 	loadingHistogram,
 	loadingTokens,
 	loadingCost,
@@ -103,6 +109,8 @@ function OverviewTabImpl({
 	loadingLatency,
 	loadingThroughput,
 	loadingStats,
+	loadingRoutingRules,
+	routingRulesError,
 	startTime,
 	endTime,
 	volumeChartType,
@@ -185,7 +193,9 @@ function OverviewTabImpl({
 	}, [throughputData]);
 
 	return (
-		<>
+		<div className="flex flex-col gap-2">
+			<RoutingRuleStats data={routingRuleData} loading={loadingRoutingRules} error={routingRulesError} />
+
 			{/* Charts Grid */}
 			<div className="grid grid-cols-1 gap-2 lg:grid-cols-2 2xl:grid-cols-3">
 				{/* Log Volume Chart */}
@@ -493,7 +503,7 @@ function OverviewTabImpl({
 					<ThroughputChart data={throughputData} chartType={throughputChartType} startTime={startTime} endTime={endTime} />
 				</ChartCard>
 			</div>
-		</>
+		</div>
 	);
 }
 export const OverviewTab = memo(OverviewTabImpl);

@@ -1086,6 +1086,15 @@ const en = {
 			externalCacheInfoTooltip: "This reflects provider-level caching, not Bifrost semantic cache hits.",
 			cachedTokens: "Cached: {{count}}",
 			inputTokensLabel: "Input: {{count}}",
+			routingRuleStats: "Routing rule requests",
+			routingRuleStatsDescription:
+				"Completed requests matched by each routing rule in the selected time range. Cancelled requests count toward requests, not failures.",
+			routingRuleStatsError: "Could not load routing rule statistics.",
+			noRoutingRuleStats: "No routing rule requests in this time range.",
+			routingRule: "Routing rule",
+			requests: "Requests",
+			successful: "Successful",
+			failed: "Failed",
 		},
 		logs: {
 			totalRequests: "Total Requests",

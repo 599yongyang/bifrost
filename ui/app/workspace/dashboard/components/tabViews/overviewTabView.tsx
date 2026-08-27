@@ -13,6 +13,8 @@ import {
 	useLazyGetLogsStatsQuery,
 	useLazyGetLogsThroughputHistogramQuery,
 	useLazyGetLogsTokenHistogramQuery,
+	useGetDimensionRankingsQuery,
+	useLazyGetDimensionRankingsQuery,
 } from "@/lib/store";
 import type { LogFilters } from "@/lib/types/logs";
 import { forwardRef, useCallback, useImperativeHandle, useMemo } from "react";
@@ -90,6 +92,12 @@ export const OverviewTabView = forwardRef<OverviewTabViewHandle, OverviewTabView
 	const { data: latencyData, isLoading: loadingLatency } = useGetLogsLatencyHistogramQuery(fetchArg, skipOpts);
 	const { data: throughputData, isLoading: loadingThroughput } = useGetLogsThroughputHistogramQuery(fetchArg, skipOpts);
 	const { data: logsStats, isLoading: loadingStats } = useGetLogsStatsQuery(fetchArg, skipOpts);
+	const routingRuleArg = useMemo(() => ({ filters, dimension: "routing_rule" as const, all: true }), [filters]);
+	const {
+		data: routingRuleData,
+		isLoading: loadingRoutingRules,
+		isError: routingRulesError,
+	} = useGetDimensionRankingsQuery(routingRuleArg, skipOpts);
 
 	const [triggerHistogram] = useLazyGetLogsHistogramQuery();
 	const [triggerTokens] = useLazyGetLogsTokenHistogramQuery();
@@ -98,6 +106,7 @@ export const OverviewTabView = forwardRef<OverviewTabViewHandle, OverviewTabView
 	const [triggerLatency] = useLazyGetLogsLatencyHistogramQuery();
 	const [triggerThroughput] = useLazyGetLogsThroughputHistogramQuery();
 	const [triggerStats] = useLazyGetLogsStatsQuery();
+	const [triggerRoutingRules] = useLazyGetDimensionRankingsQuery();
 
 	const loadData = useCallback(async () => {
 		await Promise.all([
@@ -108,8 +117,20 @@ export const OverviewTabView = forwardRef<OverviewTabViewHandle, OverviewTabView
 			triggerLatency(fetchArg, true),
 			triggerThroughput(fetchArg, true),
 			triggerStats(fetchArg, true),
+			triggerRoutingRules(routingRuleArg, true),
 		]);
-	}, [fetchArg, triggerHistogram, triggerTokens, triggerCost, triggerModels, triggerLatency, triggerThroughput, triggerStats]);
+	}, [
+		fetchArg,
+		routingRuleArg,
+		triggerHistogram,
+		triggerTokens,
+		triggerCost,
+		triggerModels,
+		triggerLatency,
+		triggerThroughput,
+		triggerStats,
+		triggerRoutingRules,
+	]);
 
 	useImperativeHandle(
 		ref,
@@ -120,10 +141,11 @@ export const OverviewTabView = forwardRef<OverviewTabViewHandle, OverviewTabView
 				costData: costData ?? null,
 				modelData: modelData ?? null,
 				latencyData: latencyData ?? null,
+				routingRuleData: routingRuleData ?? null,
 			}),
 			loadData,
 		}),
-		[histogramData, tokenData, costData, modelData, latencyData, loadData],
+		[histogramData, tokenData, costData, modelData, latencyData, routingRuleData, loadData],
 	);
 
 	// Legend lists mirror the charts' display order (top-N by volume + "Other"),
@@ -147,6 +169,7 @@ export const OverviewTabView = forwardRef<OverviewTabViewHandle, OverviewTabView
 			latencyData={latencyData ?? null}
 			throughputData={throughputData ?? null}
 			logsStats={logsStats ?? null}
+			routingRuleData={routingRuleData ?? null}
 			loadingHistogram={loadingHistogram}
 			loadingTokens={loadingTokens}
 			loadingCost={loadingCost}
@@ -154,6 +177,8 @@ export const OverviewTabView = forwardRef<OverviewTabViewHandle, OverviewTabView
 			loadingLatency={loadingLatency}
 			loadingThroughput={loadingThroughput}
 			loadingStats={loadingStats}
+			loadingRoutingRules={loadingRoutingRules}
+			routingRulesError={routingRulesError}
 			startTime={startTime}
 			endTime={endTime}
 			volumeChartType={volumeChartType}

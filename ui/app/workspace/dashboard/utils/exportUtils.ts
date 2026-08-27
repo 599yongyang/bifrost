@@ -166,6 +166,12 @@ export function dimensionRankingsToCSV(data: DimensionRankingsResponse | null, d
 	return { headers, rows };
 }
 
+export function routingRuleStatsToCSV(data: DimensionRankingsResponse | null): CSVData {
+	const headers = ["Routing Rule ID", "Routing Rule Name", "Total Requests", "Successful", "Failed"];
+	const rows = (data?.rankings ?? []).map((r) => [r.id, r.name ?? "", r.total_requests, r.success_count, r.error_count]);
+	return { headers, rows };
+}
+
 export function mcpVolumeToCSV(data: MCPHistogramResponse | null): CSVData {
 	const headers = ["Timestamp", "Total Executions", "Success", "Error"];
 	const rows = (data?.buckets ?? []).map((b) => [b.timestamp, b.count, b.success, b.error]);
@@ -191,6 +197,7 @@ export interface DashboardData {
 	costData: CostHistogramResponse | null;
 	modelData: ModelHistogramResponse | null;
 	latencyData: LatencyHistogramResponse | null;
+	routingRuleData: DimensionRankingsResponse | null;
 	// Provider Usage
 	providerCostData: ProviderCostHistogramResponse | null;
 	providerTokenData: ProviderTokenHistogramResponse | null;
@@ -251,6 +258,7 @@ export function getCSVSections(data: DashboardData, tab: ExportTab): { name: str
 			{ name: "overview-cost", csv: overviewCostToCSV(data.costData) },
 			{ name: "overview-model-usage", csv: overviewModelUsageToCSV(data.modelData) },
 			{ name: "overview-latency", csv: overviewLatencyToCSV(data.latencyData) },
+			{ name: "overview-routing-rules", csv: routingRuleStatsToCSV(data.routingRuleData) },
 		);
 	}
 

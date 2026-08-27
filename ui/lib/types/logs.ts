@@ -1307,7 +1307,7 @@ export interface UserRankingsResponse {
 	rankings: UserRankingEntry[];
 }
 
-export type RankingDimension = "team" | "customer" | "business_unit" | "user" | "virtual_key";
+export type RankingDimension = "team" | "customer" | "business_unit" | "user" | "virtual_key" | "routing_rule";
 
 export interface DimensionRankingTrend {
 	has_previous_period: boolean;
@@ -1320,6 +1320,8 @@ export interface DimensionRankingEntry {
 	id: string;
 	name?: string;
 	total_requests: number;
+	success_count: number;
+	error_count: number;
 	total_tokens: number;
 	total_cost: number;
 	trend: DimensionRankingTrend;
