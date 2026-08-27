@@ -32,6 +32,47 @@ func TestRewriteJSONModelValue(t *testing.T) {
 	}
 }
 
+func TestMakeRequestWithDoFuncContainsPanic(t *testing.T) {
+	_, bifrostErr, wait := makeRequestWithDoFunc(context.Background(), time.Second, func() error {
+		panic("network callback secret")
+	})
+	wait()
+	if bifrostErr == nil || bifrostErr.Error == nil {
+		t.Fatalf("expected safe provider error, got %v", bifrostErr)
+	}
+	if strings.Contains(bifrostErr.Error.Message, "secret") {
+		t.Fatalf("panic detail leaked: %q", bifrostErr.Error.Message)
+	}
+}
+
+func TestRecoverGoroutinePanicContainsDetachedPanic(t *testing.T) {
+	ctx := schemas.NewBifrostContext(context.Background(), schemas.NoDeadline)
+	func() {
+		defer RecoverGoroutinePanic(ctx, testLogger{}, "test stream")
+		panic("detached stream panic")
+	}()
+	if panicked, _ := ctx.Value(schemas.BifrostContextKeyStreamPanicked).(bool); !panicked {
+		t.Fatal("stream panic marker was not set")
+	}
+}
+
+func TestRecoverGoroutinePanicMarksFailureBeforeStreamCloses(t *testing.T) {
+	ctx := schemas.NewBifrostContext(context.Background(), schemas.NoDeadline)
+	stream := make(chan struct{})
+	go func() {
+		defer close(stream)
+		// Provider stream goroutines register recovery after their close defer,
+		// so recovery runs first and the consumer cannot observe a clean close.
+		defer RecoverGoroutinePanic(ctx, testLogger{}, "test stream")
+		panic("detached stream panic")
+	}()
+	for range stream {
+	}
+	if panicked, _ := ctx.Value(schemas.BifrostContextKeyStreamPanicked).(bool); !panicked {
+		t.Fatal("stream closed before its panic marker became visible")
+	}
+}
+
 func TestApplyLargePayloadRequestBodyWithModelNormalization(t *testing.T) {
 	ctx := schemas.NewBifrostContext(context.Background(), schemas.NoDeadline)
 	payload := `{"model":"openai/gpt-5","messages":[{"role":"user","content":"hello"}]}`
@@ -193,6 +234,38 @@ func TestEnrichError_PreservesExistingRawResponse(t *testing.T) {
 	}
 
 	t.Log("✓ EnrichError preserves existing RawResponse when responseBody is nil")
+}
+
+func TestEnrichError_PreservesInternalFailureSignalsWhenRawResponseIsCleared(t *testing.T) {
+	ctx := schemas.NewBifrostContext(context.Background(), schemas.NoDeadline)
+	bifrostErr := &schemas.BifrostError{
+		StatusCode: schemas.Ptr(400),
+		Error:      &schemas.ErrorField{Message: "image generation failed"},
+		ExtraFields: schemas.BifrostErrorExtraFields{RawResponse: map[string]any{
+			"error": map[string]any{
+				"message": "request rejected by moderation",
+				"type":    "content_policy_error",
+			},
+		}},
+	}
+
+	enriched := EnrichError(ctx, bifrostErr, nil, nil, false, false)
+	if enriched.ExtraFields.RawResponse != nil {
+		t.Fatal("RawResponse must remain hidden when send-back is disabled")
+	}
+	if len(enriched.ExtraFields.FailureSignals.ErrorTypes) != 1 || enriched.ExtraFields.FailureSignals.ErrorTypes[0] != "content_policy_error" {
+		t.Fatalf("internal error types = %v, want content_policy_error", enriched.ExtraFields.FailureSignals.ErrorTypes)
+	}
+	if len(enriched.ExtraFields.FailureSignals.Messages) != 1 || enriched.ExtraFields.FailureSignals.Messages[0] != "request rejected by moderation" {
+		t.Fatalf("internal messages = %v", enriched.ExtraFields.FailureSignals.Messages)
+	}
+	encoded, err := json.Marshal(enriched)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+	if strings.Contains(string(encoded), "request rejected by moderation") || strings.Contains(string(encoded), "content_policy_error") {
+		t.Fatalf("internal failure signals leaked into serialized error: %s", encoded)
+	}
 }
 
 // TestEnrichError_OverwritesWithProvidedResponse verifies that EnrichError sets

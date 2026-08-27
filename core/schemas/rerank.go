@@ -18,13 +18,14 @@ type RerankParameters struct {
 
 // BifrostRerankRequest represents a request to rerank documents by relevance to a query.
 type BifrostRerankRequest struct {
-	Provider       ModelProvider     `json:"provider"`
-	Model          string            `json:"model"`
-	Query          string            `json:"query"`
-	Documents      []RerankDocument  `json:"documents"`
-	Params         *RerankParameters `json:"params,omitempty"`
-	Fallbacks      []Fallback        `json:"fallbacks,omitempty"`
-	RawRequestBody []byte            `json:"-"`
+	Provider       ModelProvider       `json:"provider"`
+	Model          string              `json:"model"`
+	Query          string              `json:"query"`
+	Documents      []RerankDocument    `json:"documents"`
+	Params         *RerankParameters   `json:"params,omitempty"`
+	Fallbacks      []Fallback          `json:"fallbacks,omitempty"`
+	ErrorFallbacks []ErrorFallbackRule `json:"error_fallbacks,omitempty"`
+	RawRequestBody []byte              `json:"-"`
 }
 
 // GetRawRequestBody returns the raw request body for the rerank request.

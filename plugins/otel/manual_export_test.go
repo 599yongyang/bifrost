@@ -14,6 +14,20 @@ import (
 
 var onePixelPNG, _ = base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
 
+func TestNilOtelPluginManualExportSurfaceIsSafe(t *testing.T) {
+	var plugin *OtelPlugin
+	if ids := plugin.ObservationTargetIDs(); ids != nil {
+		t.Fatalf("target IDs = %v, want nil", ids)
+	}
+	if plugin.ManualExportAvailable() {
+		t.Fatal("nil plugin must not report manual export availability")
+	}
+	status, _, err := plugin.EnqueueManualExport(context.Background(), "log-1")
+	if err == nil || status != logstore.ObservationExportStatusUnavailable {
+		t.Fatalf("status=%q error=%v, want unavailable", status, err)
+	}
+}
+
 func manualImageLog(requestType schemas.RequestType) *logstore.Log {
 	latency := 1234.0
 	return &logstore.Log{
@@ -70,19 +84,43 @@ func TestManualTraceFromLogRejectsUnavailableContent(t *testing.T) {
 }
 
 type manualTestRepo struct {
-	mu     sync.Mutex
-	logs   map[string]*logstore.Log
-	states map[string]logstore.ObservationExport
+	mu       sync.Mutex
+	logs     map[string]*logstore.Log
+	states   map[string]logstore.ObservationExport
+	panicGet bool
 }
 
 func (r *manualTestRepo) GetLog(_ context.Context, id string) (*logstore.Log, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.panicGet {
+		panic("repository secret")
+	}
 	entry := r.logs[id]
 	if entry == nil {
 		return nil, logstore.ErrNotFound
 	}
 	return entry, nil
+}
+
+func TestManualExportPanicTransitionsPendingStateToFailed(t *testing.T) {
+	repo := &manualTestRepo{states: make(map[string]logstore.ObservationExport), panicGet: true}
+	target := &otelTarget{id: "profile-0", client: &countingTestOtelClient{}, mediaUploader: &successfulManualUploader{}}
+	p := &OtelPlugin{ctx: context.Background(), targets: []*otelTarget{target}}
+	job := manualExportJob{logID: "panic-log", attempts: map[string]int{"profile-0": 1}, repo: repo}
+	repo.states["panic-log\x00profile-0"] = logstore.ObservationExport{
+		LogID: "panic-log", TargetID: "profile-0", Status: logstore.ObservationExportStatusPending,
+	}
+
+	p.runManualExportSafely(job)
+
+	states, err := repo.GetObservationExports(context.Background(), []string{"panic-log"})
+	if err != nil || len(states) != 1 {
+		t.Fatalf("states=%v err=%v", states, err)
+	}
+	if states[0].Status != logstore.ObservationExportStatusFailed || states[0].Reason != "worker_panic" {
+		t.Fatalf("panic state=%+v, want failed/worker_panic", states[0])
+	}
 }
 
 func (r *manualTestRepo) UpsertObservationExport(_ context.Context, state *logstore.ObservationExport) error {
@@ -123,6 +161,38 @@ func (*successfulManualUploader) Upload(_ context.Context, _ string, media schem
 	return "@@@langfuseMedia:type=" + media.MIMEType + "|id=test@@@", nil
 }
 func (*successfulManualUploader) Close() {}
+
+type panickingManualClient struct{}
+
+func (*panickingManualClient) Emit(context.Context, []*ResourceSpan) error { panic("client secret") }
+func (*panickingManualClient) Close() error                                { return nil }
+
+func TestManualExportPanicPreservesCompletedTargets(t *testing.T) {
+	entry := manualImageLog(schemas.ImageGenerationRequest)
+	entry.ImageGenerationInputParsed = &schemas.ImageGenerationInput{Prompt: "test"}
+	repo := &manualTestRepo{logs: map[string]*logstore.Log{entry.ID: entry}, states: make(map[string]logstore.ObservationExport)}
+	p := &OtelPlugin{ctx: context.Background(), targets: []*otelTarget{
+		{id: "completed", client: &countingTestOtelClient{}, mediaUploader: &successfulManualUploader{}, exportTimeout: time.Second},
+		{id: "panicked", client: &panickingManualClient{}, mediaUploader: &successfulManualUploader{}, exportTimeout: time.Second},
+	}}
+	job := manualExportJob{logID: entry.ID, attempts: map[string]int{"completed": 1, "panicked": 1}, repo: repo}
+	p.runManualExportSafely(job)
+
+	states, err := repo.GetObservationExports(context.Background(), []string{entry.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	byTarget := make(map[string]logstore.ObservationExport, len(states))
+	for _, state := range states {
+		byTarget[state.TargetID] = state
+	}
+	if got := byTarget["completed"].Status; got != logstore.ObservationExportStatusExported {
+		t.Fatalf("completed target status = %q, want exported", got)
+	}
+	if got := byTarget["panicked"].Status; got != logstore.ObservationExportStatusFailed {
+		t.Fatalf("panicked target status = %q, want failed", got)
+	}
+}
 
 func TestEnqueueManualExportPersistsSuccess(t *testing.T) {
 	entry := manualImageLog(schemas.ImageGenerationRequest)

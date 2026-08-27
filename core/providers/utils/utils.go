@@ -19,6 +19,7 @@ import (
 	"net/textproto"
 	"net/url"
 	"regexp"
+	"runtime/debug"
 	"slices"
 	"sort"
 	"strings"
@@ -36,6 +37,21 @@ import (
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/fasthttpproxy"
 )
+
+// RecoverGoroutinePanic is a last-resort boundary for detached provider
+// goroutines. Callers must still register their normal cleanup/close defers;
+// this helper prevents an unexpected parser/provider panic from killing the
+// entire gateway process.
+func RecoverGoroutinePanic(ctx *schemas.BifrostContext, logger schemas.Logger, component string) {
+	if recovered := recover(); recovered != nil {
+		if ctx != nil {
+			ctx.SetStreamPanicState(true)
+		}
+		if logger != nil {
+			logger.Error("recovered detached provider panic: component=%s panic_type=%T\n%s", component, recovered, debug.Stack())
+		}
+	}
+}
 
 // ThoughtSignatureSeparator delimits a tool call's base ID from a provider reasoning
 // signature embedded in the call_id (e.g. Gemini thoughtSignatures), formatted as
@@ -413,6 +429,11 @@ func makeRequestWithDoFunc(ctx context.Context, clientTimeout time.Duration, do 
 	errChan := make(chan error, 1)
 
 	go func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				errChan <- fmt.Errorf("provider network request panicked")
+			}
+		}()
 		// do is a blocking call.
 		// It will send an error (or nil for success) to errChan when it completes.
 		errChan <- do()
@@ -1873,6 +1894,14 @@ func EnrichError(
 		return bifrostErr
 	}
 
+	// Preserve a bounded, internal-only classification summary before raw
+	// request/response fields are conditionally cleared for client privacy.
+	bifrostErr.ExtraFields.FailureSignals = schemas.MergeFailureRecognitionSignals(
+		bifrostErr.ExtraFields.FailureSignals,
+		schemas.ExtractFailureRecognitionSignals(bifrostErr.ExtraFields.RawResponse),
+		schemas.ExtractFailureRecognitionSignals(responseBody),
+	)
+
 	if len(latency) > 0 && bifrostErr.ExtraFields.TimeoutSource == schemas.TimeoutSourceUnknown && bifrostErr.Error != nil && bifrostErr.Error.Error != nil {
 		bifrostErr = ClassifyTransportError(ctx, 0, bifrostErr.Error.Error, latency[0])
 	}
@@ -2676,7 +2705,7 @@ func ProcessAndSendBifrostError(
 func EnsureStreamFinalizerCalled(ctx context.Context, finalizer func(context.Context)) {
 	defer func() {
 		if r := recover(); r != nil {
-			getLogger().Debug("recovered panic in deferred stream finalizer: %v", r)
+			getLogger().Debug("recovered panic in deferred stream finalizer: panic_type=%T", r)
 		}
 	}()
 
@@ -2708,6 +2737,10 @@ func SetupStreamCancellation(ctx *schemas.BifrostContext, bodyStream io.Reader, 
 	closed := make(chan struct{})
 
 	go func() {
+		// A cancellation-watcher panic is contained and logged, but it is not a
+		// provider parser failure and must not mark an otherwise valid stream as
+		// truncated.
+		defer RecoverGoroutinePanic(nil, logger, "stream cancellation")
 		defer close(closed)
 		select {
 		case <-ctx.Done():
@@ -2888,7 +2921,7 @@ func NewIdleTimeoutReader(reader io.Reader, bodyStream io.Reader, timeout time.D
 			// for any future, unrelated panic introduced into this path.
 			defer func() {
 				if rec := recover(); rec != nil {
-					getLogger().Debug("recovered panic in idle-timeout timer closeBodyStream: %v", rec)
+					getLogger().Debug("recovered panic in idle-timeout timer closeBodyStream: panic_type=%T", rec)
 				}
 			}()
 			closeBodyStream(r.bodyStream, ErrStreamIdleTimeout)

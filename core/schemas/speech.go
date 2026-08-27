@@ -6,12 +6,13 @@ import (
 )
 
 type BifrostSpeechRequest struct {
-	Provider       ModelProvider     `json:"provider"`
-	Model          string            `json:"model"`
-	Input          *SpeechInput      `json:"input,omitempty"`
-	Params         *SpeechParameters `json:"params,omitempty"`
-	Fallbacks      []Fallback        `json:"fallbacks,omitempty"`
-	RawRequestBody []byte            `json:"-"` // set bifrost-use-raw-request-body to true in ctx to use the raw request body. Bifrost will directly send this to the downstream provider.
+	Provider       ModelProvider       `json:"provider"`
+	Model          string              `json:"model"`
+	Input          *SpeechInput        `json:"input,omitempty"`
+	Params         *SpeechParameters   `json:"params,omitempty"`
+	Fallbacks      []Fallback          `json:"fallbacks,omitempty"`
+	ErrorFallbacks []ErrorFallbackRule `json:"error_fallbacks,omitempty"`
+	RawRequestBody []byte              `json:"-"` // set bifrost-use-raw-request-body to true in ctx to use the raw request body. Bifrost will directly send this to the downstream provider.
 }
 
 func (r *BifrostSpeechRequest) GetRawRequestBody() []byte {

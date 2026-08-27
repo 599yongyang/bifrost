@@ -666,6 +666,7 @@ func (provider *VLLMProvider) TranscriptionStream(ctx *schemas.BifrostContext, p
 
 		// Start streaming in a goroutine
 		go func() {
+
 			defer providerUtils.EnsureStreamFinalizerCalled(ctx, postHookSpanFinalizer)
 			defer func() {
 				if ctx.Err() == context.Canceled {
@@ -675,6 +676,7 @@ func (provider *VLLMProvider) TranscriptionStream(ctx *schemas.BifrostContext, p
 				}
 				providerUtils.CloseStream(ctx, responseChan)
 			}()
+			defer providerUtils.RecoverGoroutinePanic(ctx, logger, "vllm stream")
 			defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 			// Decompress gzip-encoded streams transparently (no-op for non-gzip)
 			reader, releaseGzip := providerUtils.DecompressStreamBody(resp)

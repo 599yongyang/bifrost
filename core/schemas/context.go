@@ -22,6 +22,13 @@ var reservedKeys = []any{
 	BifrostContextKeySelectedKeyName,
 	BifrostContextKeyNumberOfRetries,
 	BifrostContextKeyFallbackIndex,
+	BifrostContextKeyErrorFallbackRuleName,
+	BifrostContextKeyErrorFallbackCategory,
+	BifrostContextKeyErrorFallbackMatchSource,
+	BifrostContextKeyErrorFallbackMatchDetail,
+	BifrostContextKeyErrorFallbackMatchedBy,
+	BifrostContextKeyErrorFallbackPack,
+	BifrostContextKeyErrorFallbackPatternID,
 	BifrostContextKeyConfiguredRequestTimeoutSeconds,
 	BifrostContextKeySkipKeySelection,
 	BifrostContextKeyPassthroughHeaders,
@@ -30,6 +37,7 @@ var reservedKeys = []any{
 	BifrostContextKeyDeferTraceCompletion,
 	BifrostContextKeyAttemptTrail,
 	BifrostContextKeyStreamGated,
+	BifrostContextKeyStreamPanicked,
 	BifrostContextKeyMCPHealthCheckRequest,
 	BifrostContextKeyUpstreamLatency,
 	BifrostContextKeyRoutingInfo,
@@ -396,6 +404,16 @@ func (bc *BifrostContext) setReservedValue(key, value any) {
 // post-hook. Bifrost-internal (set by core - DO NOT SET THIS MANUALLY).
 func (bc *BifrostContext) SetRoutingInfoSnapshot(ri RoutingInfo) {
 	bc.setReservedValue(BifrostContextKeyRoutingInfo, ri)
+}
+
+// SetStreamPanicState records whether the active provider stream terminated by
+// panic. It bypasses the plugin restricted-write guard because provider stream
+// recovery can run concurrently with per-chunk post-hooks that hold that guard.
+func (bc *BifrostContext) SetStreamPanicState(panicked bool) {
+	if bc == nil {
+		return
+	}
+	bc.setReservedValue(BifrostContextKeyStreamPanicked, panicked)
 }
 
 // ClearValue clears a value from the internal userValues map.

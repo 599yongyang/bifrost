@@ -65,7 +65,7 @@ func (s *BifrostHTTPServer) registerPluginWithStatus(ctx context.Context, name s
 	}
 
 	// Ensure plugin is not nil before using it (defensive check)
-	if plugin == nil {
+	if schemas.IsNilInterface(plugin) {
 		logger.Error("plugin %s instantiated but returned nil", name)
 		s.Config.UpdatePluginOverallStatus(name, name, schemas.PluginStatusError,
 			[]string{fmt.Sprintf("plugin %s instantiated but returned nil", name)}, []schemas.PluginType{})
@@ -88,6 +88,9 @@ func (s *BifrostHTTPServer) CollectObservabilityPlugins() []schemas.Observabilit
 	// Check LLM plugins
 	for _, plugin := range s.Config.GetLoadedLLMPlugins() {
 		if observabilityPlugin, ok := plugin.(schemas.ObservabilityPlugin); ok {
+			if schemas.IsNilInterface(observabilityPlugin) {
+				continue
+			}
 			observabilityPlugins = append(observabilityPlugins, observabilityPlugin)
 		}
 	}
@@ -95,6 +98,9 @@ func (s *BifrostHTTPServer) CollectObservabilityPlugins() []schemas.Observabilit
 	// Check MCP plugins
 	for _, plugin := range s.Config.GetLoadedMCPPlugins() {
 		if observabilityPlugin, ok := plugin.(schemas.ObservabilityPlugin); ok {
+			if schemas.IsNilInterface(observabilityPlugin) {
+				continue
+			}
 			observabilityPlugins = append(observabilityPlugins, observabilityPlugin)
 		}
 	}

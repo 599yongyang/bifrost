@@ -73,6 +73,7 @@ func StreamPassthrough(
 			}
 			close(ch)
 		}()
+		defer RecoverGoroutinePanic(ctx, params.Logger, "passthrough stream")
 		defer ReleaseStreamingResponse(ctx, resp)
 		defer stopIdleTimeout()
 		defer stopCancellation()

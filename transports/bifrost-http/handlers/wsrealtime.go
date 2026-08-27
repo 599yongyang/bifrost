@@ -140,7 +140,18 @@ func (h *WSRealtimeHandler) handleUpgrade(ctx *fasthttp.RequestCtx) {
 			Model:    model,
 		},
 	}
-	h.client.RunPreRequestHooks(preReqCtx, preReq)
+	if preRequestErr := h.client.RunPreRequestHooksWithError(preReqCtx, preReq); preRequestErr != nil {
+		upgrader := h.websocketUpgrader("")
+		upgradeErr := upgrader.Upgrade(ctx, func(conn *ws.Conn) {
+			defer conn.Close()
+			clientConn := newRealtimeClientConn(conn)
+			clientConn.writeRealtimeError(newRealtimeWireBifrostError(500, "plugin_panic", "request routing failed unexpectedly"))
+		})
+		if upgradeErr != nil {
+			logger.Error("failed to upgrade realtime websocket after pre-request hook failure: %v", upgradeErr)
+		}
+		return
+	}
 	routedProvider, routedModel, _ := preReq.GetRequestFields()
 	if routedProvider == "" {
 		// Mirror the empty-provider check in core handleRequest. No routing layer

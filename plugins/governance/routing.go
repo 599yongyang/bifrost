@@ -27,12 +27,13 @@ type ScopeLevel struct {
 // RoutingDecision is the output of routing rule evaluation
 // Represents which provider/model to route to and fallback chain
 type RoutingDecision struct {
-	Provider        string   // Primary provider (e.g., "openai", "azure")
-	Model           string   // Model to use (or empty to use original)
-	KeyID           string   // Optional: pin a specific API key by UUID ("" = no pin)
-	Fallbacks       []string // Fallback chain: ["provider/model", ...]
-	MatchedRuleID   string   // ID of the rule that matched
-	MatchedRuleName string   // Name of the rule that matched
+	Provider        string                                        // Primary provider (e.g., "openai", "azure")
+	Model           string                                        // Model to use (or empty to use original)
+	KeyID           string                                        // Optional: pin a specific API key by UUID ("" = no pin)
+	Fallbacks       []string                                      // Fallback chain: ["provider/model", ...]
+	ErrorFallbacks  []configstoreTables.TableRoutingErrorFallback // Error-aware fallback chains that replace the normal chain when matched
+	MatchedRuleID   string                                        // ID of the rule that matched
+	MatchedRuleName string                                        // Name of the rule that matched
 }
 
 // RoutingContext holds all data needed for routing rule evaluation
@@ -256,6 +257,7 @@ func (re *RoutingEngine) EvaluateRoutingRules(ctx *schemas.BifrostContext, routi
 					Model:           model,
 					KeyID:           keyID,
 					Fallbacks:       rule.ParsedFallbacks,
+					ErrorFallbacks:  rule.ParsedErrorFallbacks,
 					MatchedRuleID:   rule.ID,
 					MatchedRuleName: rule.Name,
 				}

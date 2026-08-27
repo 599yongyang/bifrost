@@ -356,7 +356,7 @@ func (s *BifrostHTTPServer) loadCustomPlugins(ctx context.Context) error {
 		}
 
 		// Ensure plugin is not nil before using it (defensive check)
-		if plugin == nil {
+		if schemas.IsNilInterface(plugin) {
 			logger.Error("plugin %s instantiated but returned nil", cfg.Name)
 			s.Config.UpdatePluginOverallStatus(cfg.Name, cfg.Name, schemas.PluginStatusError,
 				[]string{fmt.Sprintf("plugin %s instantiated but returned nil", cfg.Name)}, []schemas.PluginType{})

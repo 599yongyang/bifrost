@@ -79,7 +79,7 @@ func (t *Tracer) SetObservabilityPlugins(obsPlugins []schemas.ObservabilityPlugi
 	slots := make([]*obsPluginSlot, 0, len(obsPlugins))
 	seenPlugins := make(map[string]struct{}, len(obsPlugins))
 	for _, plugin := range obsPlugins {
-		if plugin == nil {
+		if schemas.IsNilInterface(plugin) {
 			continue
 		}
 		name := plugin.GetName()
@@ -98,6 +98,9 @@ func (t *Tracer) SetObservabilityPlugins(obsPlugins []schemas.ObservabilityPlugi
 	seen := make(map[string]struct{})
 	var patterns []string
 	for _, plugin := range obsPlugins {
+		if schemas.IsNilInterface(plugin) {
+			continue
+		}
 		if w, ok := plugin.(interface{ RequestHeaderPatterns() []string }); ok {
 			for _, p := range w.RequestHeaderPatterns() {
 				normalized := strings.ToLower(strings.TrimSpace(p))
@@ -412,6 +415,27 @@ func (t *Tracer) PopulateLLMResponseAttributes(ctx *schemas.BifrostContext, hand
 	}
 	if engines, ok := ctx.Value(schemas.BifrostContextKeyRoutingEnginesUsed).([]string); ok && len(engines) > 0 {
 		span.SetAttribute(schemas.AttrBifrostRoutingEngineUsed, strings.Join(engines, ","))
+	}
+	if ruleName, ok := ctx.Value(schemas.BifrostContextKeyErrorFallbackRuleName).(string); ok && ruleName != "" {
+		span.SetAttribute(schemas.AttrBifrostErrorFallbackRule, ruleName)
+	}
+	if category, ok := ctx.Value(schemas.BifrostContextKeyErrorFallbackCategory).(string); ok && category != "" {
+		span.SetAttribute(schemas.AttrBifrostErrorFallbackCategory, category)
+	}
+	if source, ok := ctx.Value(schemas.BifrostContextKeyErrorFallbackMatchSource).(string); ok && source != "" {
+		span.SetAttribute(schemas.AttrBifrostErrorFallbackMatchSource, source)
+	}
+	if detail, ok := ctx.Value(schemas.BifrostContextKeyErrorFallbackMatchDetail).(string); ok && detail != "" {
+		span.SetAttribute(schemas.AttrBifrostErrorFallbackMatchDetail, detail)
+	}
+	if matchedBy, ok := ctx.Value(schemas.BifrostContextKeyErrorFallbackMatchedBy).(string); ok && matchedBy != "" {
+		span.SetAttribute(schemas.AttrBifrostErrorFallbackMatchedBy, matchedBy)
+	}
+	if pack, ok := ctx.Value(schemas.BifrostContextKeyErrorFallbackPack).(string); ok && pack != "" {
+		span.SetAttribute(schemas.AttrBifrostErrorFallbackPack, pack)
+	}
+	if patternID, ok := ctx.Value(schemas.BifrostContextKeyErrorFallbackPatternID).(string); ok && patternID != "" {
+		span.SetAttribute(schemas.AttrBifrostErrorFallbackPatternID, patternID)
 	}
 	requestType, _ := span.Attributes[schemas.AttrLegacyRequestType].(string)
 	routingInfo, hasRoutingInfo := imageRoutingInfo(ctx, resp, err)

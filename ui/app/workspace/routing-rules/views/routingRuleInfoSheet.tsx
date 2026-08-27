@@ -10,7 +10,7 @@ import { getOperatorLabel } from "@/lib/config/celOperatorsRouting";
 import { ProviderIconType, RenderProviderIcon } from "@/lib/constants/icons";
 import { getProviderLabel } from "@/lib/constants/logs";
 import { useGetCustomerQuery, useGetTeamQuery, useGetVirtualKeyQuery } from "@/lib/store/apis/governanceApi";
-import { RoutingRule } from "@/lib/types/routingRules";
+import { RoutingErrorFallback, RoutingRule } from "@/lib/types/routingRules";
 import { getScopeLabel } from "@/lib/utils/labels";
 import { formatDistanceToNow } from "date-fns";
 import { Check, Copy, GitMerge, Key } from "lucide-react";
@@ -35,7 +35,7 @@ function getFieldLabel(fieldName: string): string {
 	return field?.label ?? fieldName;
 }
 
-function formatRuleValue(value: any): string {
+function formatRuleValue(value: unknown): string {
 	if (Array.isArray(value)) return value.join(", ");
 	if (typeof value === "string") return value;
 	return String(value ?? "");
@@ -176,7 +176,9 @@ function ConditionGroup({ group, depth = 0 }: { group: RuleGroupType; depth?: nu
 
 	return (
 		<div className="border-foreground/25 relative mx-3 my-1 rounded border border-dashed py-1">
-			<span className="bg-background text-muted-foreground absolute -top-2 right-2 rounded px-1 text-[10px] font-medium">{i18n.t("workspace.routingRules.group")}</span>
+			<span className="bg-background text-muted-foreground absolute -top-2 right-2 rounded px-1 text-[10px] font-medium">
+				{i18n.t("workspace.routingRules.group")}
+			</span>
 			{content}
 		</div>
 	);
@@ -250,11 +252,76 @@ function FallbackChain({ fallbacks }: { fallbacks: string[] }) {
 	);
 }
 
+function ErrorFallbackRuleCard({ rule }: { rule: RoutingErrorFallback }) {
+	const when = rule.when;
+	const supplement = rule.supplement;
+	const matcherRows = (
+		rule.scenario
+			? [
+					{
+						label: i18n.t("workspace.routingRules.errorFallbackScenario"),
+						value: i18n.t(`workspace.routingRules.errorFallbackCategoryLabels.${rule.scenario}`, { defaultValue: rule.scenario }),
+					},
+					supplement?.providers?.length
+						? { label: i18n.t("workspace.routingRules.errorFallbackProviders"), value: supplement.providers.join(", ") }
+						: null,
+					supplement?.error_types?.length
+						? { label: i18n.t("workspace.routingRules.errorFallbackErrorTypes"), value: supplement.error_types.join(", ") }
+						: null,
+					supplement?.error_codes?.length
+						? { label: i18n.t("workspace.routingRules.errorFallbackErrorCodes"), value: supplement.error_codes.join(", ") }
+						: null,
+					supplement?.status_codes?.length
+						? { label: i18n.t("workspace.routingRules.errorFallbackStatusCodes"), value: supplement.status_codes.join(", ") }
+						: null,
+					supplement?.message_contains_any?.length
+						? { label: i18n.t("workspace.routingRules.errorFallbackMessageContainsAny"), value: supplement.message_contains_any.join(", ") }
+						: null,
+				]
+			: [
+					when?.categories?.length
+						? { label: i18n.t("workspace.routingRules.errorFallbackCategories"), value: when.categories.join(", ") }
+						: null,
+					when?.error_types?.length
+						? { label: i18n.t("workspace.routingRules.errorFallbackErrorTypes"), value: when.error_types.join(", ") }
+						: null,
+					when?.error_codes?.length
+						? { label: i18n.t("workspace.routingRules.errorFallbackErrorCodes"), value: when.error_codes.join(", ") }
+						: null,
+					when?.status_codes?.length
+						? { label: i18n.t("workspace.routingRules.errorFallbackStatusCodes"), value: when.status_codes.join(", ") }
+						: null,
+					when?.message_contains?.length
+						? { label: i18n.t("workspace.routingRules.errorFallbackMessageContains"), value: when.message_contains.join(", ") }
+						: null,
+				]
+	).filter(Boolean) as Array<{ label: string; value: string }>;
+
+	return (
+		<div className="space-y-3 rounded-lg border p-4">
+			<div className="flex items-center justify-between gap-2">
+				<span className="text-sm font-semibold">{rule.name?.trim() || i18n.t("workspace.routingRules.errorFallbackUnnamedRule")}</span>
+				<Badge variant="outline">{i18n.t("workspace.routingRules.errorFallbackChain")}</Badge>
+			</div>
+			<div className="space-y-2">
+				{matcherRows.map((row) => (
+					<div key={row.label} className="grid grid-cols-3 gap-3 text-sm">
+						<span className="text-muted-foreground">{row.label}</span>
+						<span className="col-span-2 break-all">{row.value}</span>
+					</div>
+				))}
+			</div>
+			{rule.fallbacks?.length ? <FallbackChain fallbacks={rule.fallbacks} /> : null}
+		</div>
+	);
+}
+
 // ─── main sheet ──────────────────────────────────────────────────────────────
 
 export function RoutingRuleInfoSheet({ rule, open, onOpenChange, onNavigate, hasPrev = false, hasNext = false }: Props) {
 	const targets = rule?.targets ?? [];
 	const fallbacks = rule?.fallbacks ?? [];
+	const errorFallbacks = rule?.error_fallbacks ?? [];
 	const hasQuery = rule?.query && (rule.query.rules?.length ?? 0) > 0;
 	// A rule can carry a CEL expression without a visual query (e.g. authored via the API).
 	// Only claim "matches all requests" when neither is present; otherwise the CEL section speaks for itself.
@@ -286,9 +353,7 @@ export function RoutingRuleInfoSheet({ rule, open, onOpenChange, onNavigate, has
 													{i18n.t("workspace.routingRules.chainRule")}
 												</Badge>
 											</TooltipTrigger>
-											<TooltipContent className="max-w-64">
-												{i18n.t("workspace.routingRules.chainRuleTooltipInfo")}
-											</TooltipContent>
+											<TooltipContent className="max-w-64">{i18n.t("workspace.routingRules.chainRuleTooltipInfo")}</TooltipContent>
 										</Tooltip>
 									)}
 								</div>
@@ -333,12 +398,12 @@ export function RoutingRuleInfoSheet({ rule, open, onOpenChange, onNavigate, has
 							<div className="space-y-3">
 								<h3 className="text-sm font-semibold">{i18n.t("workspace.routingRules.conditions")}</h3>
 								{hasQuery ? (
-										<ConditionGroup group={rule.query!} />
-									) : hasCel ? (
-										<p className="text-muted-foreground text-sm">Defined as a CEL expression below</p>
-									) : (
-										<p className="text-muted-foreground text-sm">{i18n.t("workspace.routingRules.matchesAllRequests")}</p>
-									)}
+									<ConditionGroup group={rule.query!} />
+								) : hasCel ? (
+									<p className="text-muted-foreground text-sm">{i18n.t("workspace.routingRules.definedAsCelExpression")}</p>
+								) : (
+									<p className="text-muted-foreground text-sm">{i18n.t("workspace.routingRules.matchesAllRequests")}</p>
+								)}
 
 								{/* CEL expression */}
 								<div className="space-y-1.5">
@@ -382,10 +447,27 @@ export function RoutingRuleInfoSheet({ rule, open, onOpenChange, onNavigate, has
 
 							<DottedSeparator />
 
+							<div className="space-y-3">
+								<h3 className="text-sm font-semibold">{i18n.t("workspace.routingRules.errorFallbacks")}</h3>
+								{errorFallbacks.length > 0 ? (
+									<div className="space-y-3">
+										{errorFallbacks.map((errorFallback, index) => (
+											<ErrorFallbackRuleCard key={`${errorFallback.name || "error-fallback"}-${index}`} rule={errorFallback} />
+										))}
+									</div>
+								) : (
+									<p className="text-muted-foreground text-sm">{i18n.t("workspace.routingRules.noErrorFallbacksConfigured")}</p>
+								)}
+							</div>
+
+							<DottedSeparator />
+
 							{/* Timestamps */}
 							<div className="grid grid-cols-2 gap-4">
 								<div>
-									<p className="text-muted-foreground mb-1 text-xs font-medium tracking-wider uppercase">{i18n.t("workspace.virtualKeys.createdAt")}</p>
+									<p className="text-muted-foreground mb-1 text-xs font-medium tracking-wider uppercase">
+										{i18n.t("workspace.virtualKeys.createdAt")}
+									</p>
 									<span className="text-sm">
 										{formatDistanceToNow(new Date(rule.created_at), {
 											addSuffix: true,
@@ -393,7 +475,9 @@ export function RoutingRuleInfoSheet({ rule, open, onOpenChange, onNavigate, has
 									</span>
 								</div>
 								<div>
-									<p className="text-muted-foreground mb-1 text-xs font-medium tracking-wider uppercase">{i18n.t("workspace.virtualKeys.lastUpdatedAt")}</p>
+									<p className="text-muted-foreground mb-1 text-xs font-medium tracking-wider uppercase">
+										{i18n.t("workspace.virtualKeys.lastUpdatedAt")}
+									</p>
 									<span className="text-sm">
 										{formatDistanceToNow(new Date(rule.updated_at), {
 											addSuffix: true,

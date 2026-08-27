@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"context"
+	"fmt"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -44,40 +46,19 @@ func (h *HealthHandler) getHealth(ctx *fasthttp.RequestCtx) {
 
 	if h.config.ConfigStore != nil {
 		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if err := h.config.ConfigStore.Ping(reqCtx); err != nil {
-				mu.Lock()
-				errors = append(errors, "config store not available")
-				mu.Unlock()
-			}
-		}()
+		go runHealthProbe(&wg, &mu, &errors, "config store", func() error { return h.config.ConfigStore.Ping(reqCtx) })
 	}
 
 	// Pinging log store
 	if h.config.LogsStore != nil {
 		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if err := h.config.LogsStore.Ping(reqCtx); err != nil {
-				mu.Lock()
-				errors = append(errors, "log store not available")
-				mu.Unlock()
-			}
-		}()
+		go runHealthProbe(&wg, &mu, &errors, "log store", func() error { return h.config.LogsStore.Ping(reqCtx) })
 	}
 
 	// Pinging vector store
 	if h.config.VectorStore != nil {
 		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if err := h.config.VectorStore.Ping(reqCtx); err != nil {
-				mu.Lock()
-				errors = append(errors, "vector store not available")
-				mu.Unlock()
-			}
-		}()
+		go runHealthProbe(&wg, &mu, &errors, "vector store", func() error { return h.config.VectorStore.Ping(reqCtx) })
 	}
 
 	wg.Wait()
@@ -87,4 +68,23 @@ func (h *HealthHandler) getHealth(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	SendJSON(ctx, map[string]any{"status": "ok", "components": map[string]any{"db_pings": "ok"}})
+}
+
+func runHealthProbe(wg *sync.WaitGroup, mu *sync.Mutex, errors *[]string, name string, probe func() error) {
+	defer wg.Done()
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			if logger != nil {
+				logger.Error("recovered health probe panic: component=%s panic_type=%T\n%s", name, recovered, debug.Stack())
+			}
+			mu.Lock()
+			*errors = append(*errors, fmt.Sprintf("%s not available", name))
+			mu.Unlock()
+		}
+	}()
+	if err := probe(); err != nil {
+		mu.Lock()
+		*errors = append(*errors, fmt.Sprintf("%s not available", name))
+		mu.Unlock()
+	}
 }

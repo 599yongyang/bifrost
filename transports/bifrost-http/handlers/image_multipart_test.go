@@ -5,6 +5,7 @@ import (
 	"mime/multipart"
 	"testing"
 
+	"github.com/maximhq/bifrost/core/schemas"
 	"github.com/maximhq/bifrost/transports/bifrost-http/lib"
 	"github.com/valyala/fasthttp"
 )
@@ -68,5 +69,40 @@ func TestPrepareImageVariationRequestPreservesMultipartMedia(t *testing.T) {
 	}
 	if req.Input == nil || !bytes.Equal(req.Input.Image.Image, image) {
 		t.Fatalf("variation input image was not preserved: %#v", req.Input)
+	}
+}
+
+func TestPrepareImageVariationRequestAcceptsErrorFallbacksMultipart(t *testing.T) {
+	image := []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a, 'e', 'r', 'r'}
+	ctx := imageMultipartContext(t, map[string]string{
+		"model":           "openai/dall-e-2",
+		"error_fallbacks": `[{"when":{"message_contains":["unsafe"]},"fallbacks":["azure/"]}]`,
+	}, map[string][]byte{"image": image})
+
+	req, err := prepareImageVariationRequest(ctx, &lib.Config{})
+	if err != nil {
+		t.Fatalf("prepare image variation with error_fallbacks: %v", err)
+	}
+	if req.Input == nil || !bytes.Equal(req.Input.Image.Image, image) {
+		t.Fatalf("variation input image was not preserved: %#v", req.Input)
+	}
+	if len(req.ErrorFallbacks) != 1 || len(req.ErrorFallbacks[0].Fallbacks) != 1 {
+		t.Fatalf("error_fallbacks were not parsed: %#v", req.ErrorFallbacks)
+	}
+	if req.ErrorFallbacks[0].Fallbacks[0].Provider != schemas.Azure || req.ErrorFallbacks[0].Fallbacks[0].Model != "dall-e-2" {
+		t.Fatalf("provider-only shorthand did not inherit the current model: %#v", req.ErrorFallbacks)
+	}
+}
+
+func TestPrepareImageVariationRequestRejectsInvalidErrorFallbacksMultipart(t *testing.T) {
+	image := []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a, 'b', 'a', 'd'}
+	ctx := imageMultipartContext(t, map[string]string{
+		"model":           "openai/dall-e-2",
+		"error_fallbacks": `[{"when":{"status_codes":[99]},"fallbacks":["azure/"]}]`,
+	}, map[string][]byte{"image": image})
+
+	_, err := prepareImageVariationRequest(ctx, &lib.Config{})
+	if err == nil {
+		t.Fatal("expected invalid error_fallbacks to be rejected")
 	}
 }

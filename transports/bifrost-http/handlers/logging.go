@@ -58,6 +58,10 @@ func (h *LoggingHandler) SetManualObservationExporterProvider(provider func() Ma
 	h.manualExporterProvider = provider
 }
 
+func manualObservationExporterUnavailable(exporter ManualObservationExporter) bool {
+	return schemas.IsNilInterface(exporter)
+}
+
 type ObservationExportStatusReader interface {
 	GetObservationExports(ctx context.Context, logIDs []string) ([]logstore.ObservationExport, error)
 }
@@ -67,6 +71,16 @@ type ManualObservationExportAuthorizer interface {
 }
 
 func (h *LoggingHandler) attachObservationExportStatuses(ctx context.Context, logs []*logstore.Log) {
+	// Observability status is optional enrichment. A broken exporter must never
+	// make the underlying log list/detail endpoint unavailable.
+	defer func() {
+		if recovered := recover(); recovered != nil && logger != nil {
+			func() {
+				defer func() { _ = recover() }()
+				logger.Warn("skipping observation export status enrichment after panic: panic_type=%T", recovered)
+			}()
+		}
+	}()
 	if len(logs) == 0 {
 		return
 	}
@@ -74,7 +88,7 @@ func (h *LoggingHandler) attachObservationExportStatuses(ctx context.Context, lo
 		return
 	}
 	exporter := h.manualExporterProvider()
-	if exporter == nil {
+	if manualObservationExporterUnavailable(exporter) {
 		return
 	}
 	activeTargets := make(map[string]struct{})
@@ -489,7 +503,7 @@ func (h *LoggingHandler) exportLogsToObservability(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	exporter := h.manualExporterProvider()
-	if exporter == nil {
+	if manualObservationExporterUnavailable(exporter) {
 		SendError(ctx, fasthttp.StatusServiceUnavailable, "Langfuse OTel target is unavailable")
 		return
 	}

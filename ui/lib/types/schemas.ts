@@ -1352,6 +1352,45 @@ export const routingRuleSchema = z
 		provider: z.string().min(1, "Provider is required"),
 		model: z.string().optional(),
 		fallbacks: z.array(z.string()).optional().default([]),
+		error_fallbacks: z
+			.array(
+				z
+					.object({
+						name: z.string().optional(),
+						scenario: z.string().optional(),
+						supplement: z
+							.object({
+								providers: z.array(z.string()).optional().default([]),
+								error_codes: z.array(z.string()).optional().default([]),
+								error_types: z.array(z.string()).optional().default([]),
+								status_codes: z.array(z.number()).optional().default([]),
+								message_contains_any: z.array(z.string()).optional().default([]),
+							})
+							.optional(),
+						when: z
+							.object({
+								categories: z.array(z.string()).optional().default([]),
+								error_codes: z.array(z.string()).optional().default([]),
+								error_types: z.array(z.string()).optional().default([]),
+								status_codes: z.array(z.number()).optional().default([]),
+								message_contains: z.array(z.string()).optional().default([]),
+							})
+							.optional(),
+						fallbacks: z.array(z.string()).default([]),
+					})
+					.refine((rule) => Boolean(rule.scenario) !== Boolean(rule.when), "Use either scenario or legacy when, not both")
+					.refine(
+						(rule) =>
+							!rule.supplement ||
+							rule.supplement.error_codes.length > 0 ||
+							rule.supplement.error_types.length > 0 ||
+							rule.supplement.status_codes.length > 0 ||
+							rule.supplement.message_contains_any.length > 0,
+						"Supplement requires at least one signal beyond provider scope",
+					),
+			)
+			.optional()
+			.default([]),
 		scope: z.enum(["global", "team", "customer", "virtual_key"]),
 		scope_id: z.string().optional(),
 		priority: z.number().min(0, "Priority must be 0 or greater").max(1000, "Priority must be 1000 or less"),

@@ -17,6 +17,19 @@ type testRealtimeObservabilityPlugin struct {
 	injectedPayload chan string
 }
 
+func TestSetObservabilityPluginsSkipsTypedNil(t *testing.T) {
+	store := NewTraceStore(5*time.Minute, nil)
+	defer store.Stop()
+	tracer := NewTracer(store, nil, nil)
+	defer tracer.Stop()
+	var plugin *testRealtimeObservabilityPlugin
+	tracer.SetObservabilityPlugins([]schemas.ObservabilityPlugin{plugin})
+	slots := tracer.obsPlugins.Load()
+	if slots == nil || len(*slots) != 0 {
+		t.Fatalf("observability slots = %v, want empty", slots)
+	}
+}
+
 type rejectMediaCapturePlugin struct {
 	testRealtimeObservabilityPlugin
 }
@@ -111,6 +124,53 @@ func TestTracer_CompleteAndFlushTraceInjectsObservabilityPlugins(t *testing.T) {
 
 	if got := tracer.store.GetTrace(traceID); got != nil {
 		t.Fatalf("trace %q was not released after flush", traceID)
+	}
+}
+
+func TestPopulateLLMResponseAttributesIncludesErrorFallbackDecision(t *testing.T) {
+	store := NewTraceStore(5*time.Minute, nil)
+	defer store.Stop()
+	tracer := NewTracer(store, nil, nil)
+	defer tracer.Stop()
+
+	traceID := tracer.CreateTrace("")
+	ctx := schemas.NewBifrostContext(context.Background(), time.Now().Add(time.Minute))
+	ctx.SetValue(schemas.BifrostContextKeyTraceID, traceID)
+	ctx.SetValue(schemas.BifrostContextKeyErrorFallbackRuleName, "content-policy")
+	ctx.SetValue(schemas.BifrostContextKeyErrorFallbackCategory, string(schemas.FailureCategoryContentPolicy))
+	ctx.SetValue(schemas.BifrostContextKeyErrorFallbackMatchSource, "classifier.azure.message")
+	ctx.SetValue(schemas.BifrostContextKeyErrorFallbackMatchDetail, "rejected_by_safety_system")
+	ctx.SetValue(schemas.BifrostContextKeyErrorFallbackMatchedBy, "provider_pack")
+	ctx.SetValue(schemas.BifrostContextKeyErrorFallbackPack, "azure_content_policy")
+	ctx.SetValue(schemas.BifrostContextKeyErrorFallbackPatternID, "azure_safety_system")
+	_, handle := tracer.StartSpan(ctx, "fallback", schemas.SpanKindFallback)
+	tracer.PopulateLLMResponseAttributes(ctx, handle, &schemas.BifrostResponse{}, nil)
+
+	internalHandle, ok := handle.(*spanHandle)
+	if !ok || internalHandle == nil {
+		t.Fatal("expected concrete span handle")
+	}
+	span := store.GetTrace(traceID).GetSpan(internalHandle.spanID)
+	if got := span.Attributes[schemas.AttrBifrostErrorFallbackRule]; got != "content-policy" {
+		t.Fatalf("error fallback rule attribute = %v, want content-policy", got)
+	}
+	if got := span.Attributes[schemas.AttrBifrostErrorFallbackCategory]; got != string(schemas.FailureCategoryContentPolicy) {
+		t.Fatalf("error fallback category attribute = %v, want %q", got, schemas.FailureCategoryContentPolicy)
+	}
+	if got := span.Attributes[schemas.AttrBifrostErrorFallbackMatchSource]; got != "classifier.azure.message" {
+		t.Fatalf("error fallback match source attribute = %v, want classifier.azure.message", got)
+	}
+	if got := span.Attributes[schemas.AttrBifrostErrorFallbackMatchDetail]; got != "rejected_by_safety_system" {
+		t.Fatalf("error fallback match detail attribute = %v, want rejected_by_safety_system", got)
+	}
+	if got := span.Attributes[schemas.AttrBifrostErrorFallbackMatchedBy]; got != "provider_pack" {
+		t.Fatalf("error fallback matched-by attribute = %v, want provider_pack", got)
+	}
+	if got := span.Attributes[schemas.AttrBifrostErrorFallbackPack]; got != "azure_content_policy" {
+		t.Fatalf("error fallback pack attribute = %v, want azure_content_policy", got)
+	}
+	if got := span.Attributes[schemas.AttrBifrostErrorFallbackPatternID]; got != "azure_safety_system" {
+		t.Fatalf("error fallback pattern attribute = %v, want azure_safety_system", got)
 	}
 }
 

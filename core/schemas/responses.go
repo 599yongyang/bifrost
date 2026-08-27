@@ -43,6 +43,7 @@ type BifrostResponsesRequest struct {
 	Input          []ResponsesMessage   `json:"input,omitempty"`
 	Params         *ResponsesParameters `json:"params,omitempty"`
 	Fallbacks      []Fallback           `json:"fallbacks,omitempty"`
+	ErrorFallbacks []ErrorFallbackRule  `json:"error_fallbacks,omitempty"`
 	RawRequestBody []byte               `json:"-"` // set bifrost-use-raw-request-body to true in ctx to use the raw request body. Bifrost will directly send this to the downstream provider.
 }
 
@@ -162,6 +163,7 @@ type BifrostCompactionRequest struct {
 	PromptCacheOptions   *PromptCacheOptions    `json:"prompt_cache_options,omitempty"`
 	ServiceTier          *BifrostServiceTier    `json:"service_tier,omitempty"`
 	Fallbacks            []Fallback             `json:"fallbacks,omitempty"`
+	ErrorFallbacks       []ErrorFallbackRule    `json:"error_fallbacks,omitempty"`
 	ExtraParams          map[string]interface{} `json:"-"`
 	RawRequestBody       []byte                 `json:"-"`
 }

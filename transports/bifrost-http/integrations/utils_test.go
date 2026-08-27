@@ -2,6 +2,7 @@ package integrations
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"strings"
 	"testing"
@@ -68,6 +69,131 @@ func TestExtractAndParseFallbacks_GeminiGenerationRequest(t *testing.T) {
 	require.Len(t, bifrostReq.ResponsesRequest.Fallbacks, 1)
 	assert.Equal(t, schemas.Vertex, bifrostReq.ResponsesRequest.Fallbacks[0].Provider)
 	assert.Equal(t, "gemini-3-flash-preview", bifrostReq.ResponsesRequest.Fallbacks[0].Model)
+}
+
+func TestExtractErrorFallbacksFromRequestAndApply(t *testing.T) {
+	type requestCarrier struct {
+		ErrorFallbacks json.RawMessage `json:"error_fallbacks,omitempty"`
+	}
+	type fallbackRule struct {
+		Name      string             `json:"name,omitempty"`
+		Fallbacks []schemas.Fallback `json:"fallbacks"`
+	}
+	type targetCarrier struct {
+		ErrorFallbacks []fallbackRule `json:"error_fallbacks,omitempty"`
+	}
+
+	raw := json.RawMessage(`[{"name":"unsafe-images","when":{"message_contains":["unsafe"]},"fallbacks":["openai/gpt-image-1"]}]`)
+
+	extracted, err := extractErrorFallbacksFromRequest(&requestCarrier{ErrorFallbacks: raw})
+	require.NoError(t, err)
+	require.JSONEq(t, string(raw), string(extracted))
+
+	var target targetCarrier
+	require.NoError(t, setErrorFallbacksOnValue(&target, extracted))
+	require.Len(t, target.ErrorFallbacks, 1)
+	assert.Equal(t, "unsafe-images", target.ErrorFallbacks[0].Name)
+	assert.Equal(t, []schemas.Fallback{{Provider: schemas.OpenAI, Model: "gpt-image-1"}}, target.ErrorFallbacks[0].Fallbacks)
+}
+
+func TestSetErrorFallbacksOnValue_ValidatesMalformedRules(t *testing.T) {
+	type targetCarrier struct {
+		Model          string                      `json:"model"`
+		ErrorFallbacks []schemas.ErrorFallbackRule `json:"error_fallbacks,omitempty"`
+	}
+
+	tests := []struct {
+		name    string
+		raw     string
+		wantErr string
+	}{
+		{
+			name:    "empty matcher rejected",
+			raw:     `[{"when":{},"fallbacks":["openai/gpt-4o"]}]`,
+			wantErr: "must define at least one matcher",
+		},
+		{
+			name:    "unknown category rejected",
+			raw:     `[{"when":{"categories":["not-real"]},"fallbacks":["openai/gpt-4o"]}]`,
+			wantErr: "is invalid",
+		},
+		{
+			name:    "invalid status rejected",
+			raw:     `[{"when":{"status_codes":[99]},"fallbacks":["openai/gpt-4o"]}]`,
+			wantErr: "must be between 100 and 599",
+		},
+		{
+			name:    "unknown field rejected",
+			raw:     `[{"when":{"message_contains":["unsafe"],"bogus":true},"fallbacks":["openai/gpt-4o"]}]`,
+			wantErr: "unknown field",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target := &targetCarrier{Model: "gpt-4o"}
+			err := setErrorFallbacksOnValue(target, json.RawMessage(tt.raw))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+}
+
+func TestSetErrorFallbacksOnValue_InheritsProviderOnlyShorthand(t *testing.T) {
+	type targetCarrier struct {
+		Model          string                      `json:"model"`
+		ErrorFallbacks []schemas.ErrorFallbackRule `json:"error_fallbacks,omitempty"`
+	}
+
+	target := &targetCarrier{Model: "openai/gpt-image-1"}
+	raw := json.RawMessage(`[{"when":{"message_contains":["unsafe"]},"fallbacks":["azure/"]}]`)
+
+	require.NoError(t, setErrorFallbacksOnValue(target, raw))
+	require.Len(t, target.ErrorFallbacks, 1)
+	require.Len(t, target.ErrorFallbacks[0].Fallbacks, 1)
+	assert.Equal(t, schemas.Azure, target.ErrorFallbacks[0].Fallbacks[0].Provider)
+	assert.Equal(t, "gpt-image-1", target.ErrorFallbacks[0].Fallbacks[0].Model)
+}
+
+func TestSetErrorFallbacksOnValue_AcceptsScenarioAndSupplement(t *testing.T) {
+	type targetCarrier struct {
+		Model          string                      `json:"model"`
+		ErrorFallbacks []schemas.ErrorFallbackRule `json:"error_fallbacks,omitempty"`
+	}
+
+	target := &targetCarrier{Model: "gpt-image-1"}
+	raw := json.RawMessage(`[{"scenario":"content_policy","supplement":{"providers":["custom-provider"],"message_contains_any":["unsafe"]},"fallbacks":["azure/"]}]`)
+
+	require.NoError(t, setErrorFallbacksOnValue(target, raw))
+	require.Len(t, target.ErrorFallbacks, 1)
+	assert.Equal(t, schemas.FailureCategoryContentPolicy, target.ErrorFallbacks[0].Scenario)
+	require.NotNil(t, target.ErrorFallbacks[0].Supplement)
+	assert.Equal(t, []schemas.ModelProvider{schemas.ModelProvider("custom-provider")}, target.ErrorFallbacks[0].Supplement.Providers)
+	assert.Equal(t, []string{"unsafe"}, target.ErrorFallbacks[0].Supplement.MessageContainsAny)
+}
+
+func TestSetErrorFallbacksOnValue_RejectsMixedScenarioAndWhen(t *testing.T) {
+	type targetCarrier struct {
+		Model          string                      `json:"model"`
+		ErrorFallbacks []schemas.ErrorFallbackRule `json:"error_fallbacks,omitempty"`
+	}
+
+	target := &targetCarrier{Model: "gpt-image-1"}
+	raw := json.RawMessage(`[{"scenario":"content_policy","when":{"message_contains":["unsafe"]},"fallbacks":["azure/"]}]`)
+
+	err := setErrorFallbacksOnValue(target, raw)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot define both scenario and when")
+}
+
+func TestStripTransportOnlyJSONFields_RemovesErrorFallbacks(t *testing.T) {
+	raw := []byte(`{"model":"openai/gpt-4o","error_fallbacks":[{"when":{"message_contains":["unsafe"]},"fallbacks":["openai/gpt-image-1"]}],"messages":[{"role":"user","content":"hi"}]}`)
+
+	stripped, err := stripTransportOnlyJSONFields(raw)
+	require.NoError(t, err)
+	assert.NotContains(t, string(stripped), `"error_fallbacks"`)
+	assert.Contains(t, string(stripped), `"model":"openai/gpt-4o"`)
+	assert.Contains(t, string(stripped), `"messages"`)
 }
 
 // TestSendStreamError_PropagatesProviderStatusCode verifies that sendStreamError

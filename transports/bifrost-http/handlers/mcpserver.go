@@ -291,6 +291,7 @@ func (h *MCPServerHandler) handleMCPServerSSE(ctx *fasthttp.RequestCtx) {
 				traceCompleter(transportLogs)
 			}
 		}()
+		defer recoverSSEProducerPanic("mcp", reader)
 
 		// Send initial connection message
 		initMessage := map[string]interface{}{

@@ -2,7 +2,9 @@ package integrations
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 	"reflect"
 	"strconv"
@@ -11,6 +13,7 @@ import (
 	"github.com/bytedance/sonic"
 	bifrost "github.com/maximhq/bifrost/core"
 	"github.com/maximhq/bifrost/core/providers/gemini"
+	providerutils "github.com/maximhq/bifrost/core/providers/utils"
 	"github.com/maximhq/bifrost/core/schemas"
 	"github.com/maximhq/bifrost/framework/kvstore"
 	"github.com/maximhq/bifrost/transports/bifrost-http/lib"
@@ -359,6 +362,478 @@ func (g *GenericRouter) extractAndParseFallbacks(ctx *schemas.BifrostContext, re
 		}
 	}
 
+	return nil
+}
+
+func copyRawJSONMessage(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return nil
+	}
+	copied := make(json.RawMessage, len(raw))
+	copy(copied, raw)
+	return copied
+}
+
+func stripTransportOnlyJSONFields(rawBody []byte) ([]byte, error) {
+	if len(rawBody) == 0 || !json.Valid(rawBody) {
+		return rawBody, nil
+	}
+	if !providerutils.JSONFieldExists(rawBody, "error_fallbacks") {
+		return rawBody, nil
+	}
+	stripped, err := providerutils.DeleteJSONField(rawBody, "error_fallbacks")
+	if err != nil {
+		return nil, err
+	}
+	return stripped, nil
+}
+
+func parseErrorFallbacksFormValue(values []string) (json.RawMessage, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+	nonEmpty := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed != "" {
+			nonEmpty = append(nonEmpty, trimmed)
+		}
+	}
+	if len(nonEmpty) == 0 {
+		return nil, nil
+	}
+	if len(nonEmpty) == 1 {
+		raw := json.RawMessage(nonEmpty[0])
+		if !json.Valid(raw) {
+			return nil, fmt.Errorf("error_fallbacks must be valid JSON")
+		}
+		return copyRawJSONMessage(raw), nil
+	}
+	elements := make([]json.RawMessage, 0, len(nonEmpty))
+	for _, value := range nonEmpty {
+		raw := json.RawMessage(value)
+		if !json.Valid(raw) {
+			return nil, fmt.Errorf("error_fallbacks must be valid JSON")
+		}
+		elements = append(elements, raw)
+	}
+	encoded, err := json.Marshal(elements)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode error_fallbacks: %w", err)
+	}
+	return encoded, nil
+}
+
+var validErrorFallbackCategories = map[string]schemas.FailureCategory{
+	string(schemas.FailureCategoryContentPolicy):        schemas.FailureCategoryContentPolicy,
+	string(schemas.FailureCategoryUnsupportedOperation): schemas.FailureCategoryUnsupportedOperation,
+	string(schemas.FailureCategoryRateLimit):            schemas.FailureCategoryRateLimit,
+	string(schemas.FailureCategoryAuthentication):       schemas.FailureCategoryAuthentication,
+	string(schemas.FailureCategoryBilling):              schemas.FailureCategoryBilling,
+	string(schemas.FailureCategoryPermission):           schemas.FailureCategoryPermission,
+	string(schemas.FailureCategoryTimeout):              schemas.FailureCategoryTimeout,
+	string(schemas.FailureCategoryProviderUnavailable):  schemas.FailureCategoryProviderUnavailable,
+	string(schemas.FailureCategoryNetwork):              schemas.FailureCategoryNetwork,
+	string(schemas.FailureCategoryInvalidRequest):       schemas.FailureCategoryInvalidRequest,
+	string(schemas.FailureCategoryInternal):             schemas.FailureCategoryInternal,
+	string(schemas.FailureCategoryUnknown):              schemas.FailureCategoryUnknown,
+}
+
+func strictDecodeJSON(raw []byte, target interface{}) error {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	var extra interface{}
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("unexpected trailing JSON")
+		}
+		return err
+	}
+	return nil
+}
+
+func currentErrorFallbackModel(model string) string {
+	_, currentModel := schemas.ParseModelString(strings.TrimSpace(model), "")
+	return strings.TrimSpace(currentModel)
+}
+
+func normalizeErrorFallbacksRaw(raw json.RawMessage, currentModel string) (json.RawMessage, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	currentModel = currentErrorFallbackModel(currentModel)
+	type rawErrorFallbackSupplement struct {
+		Providers          []string `json:"providers,omitempty"`
+		ErrorCodes         []string `json:"error_codes,omitempty"`
+		ErrorTypes         []string `json:"error_types,omitempty"`
+		StatusCodes        []int    `json:"status_codes,omitempty"`
+		MessageContainsAny []string `json:"message_contains_any,omitempty"`
+	}
+	type rawErrorFallbackRule struct {
+		Name       string                      `json:"name,omitempty"`
+		Scenario   string                      `json:"scenario,omitempty"`
+		Supplement *rawErrorFallbackSupplement `json:"supplement,omitempty"`
+		When       json.RawMessage             `json:"when,omitempty"`
+		Fallbacks  []json.RawMessage           `json:"fallbacks,omitempty"`
+	}
+	var rawRules []rawErrorFallbackRule
+	if err := strictDecodeJSON(raw, &rawRules); err != nil {
+		return nil, err
+	}
+	if len(rawRules) == 0 {
+		return nil, fmt.Errorf("error_fallbacks must contain at least one rule")
+	}
+	type rawErrorFallbackCondition struct {
+		Categories      []string `json:"categories,omitempty"`
+		ErrorCodes      []string `json:"error_codes,omitempty"`
+		ErrorTypes      []string `json:"error_types,omitempty"`
+		StatusCodes     []int    `json:"status_codes,omitempty"`
+		MessageContains []string `json:"message_contains,omitempty"`
+	}
+	normalizedRules := make([]schemas.ErrorFallbackRule, 0, len(rawRules))
+	for ruleIndex, rule := range rawRules {
+		normalizedRule := schemas.ErrorFallbackRule{Name: strings.TrimSpace(rule.Name)}
+
+		scenario := strings.ToLower(strings.TrimSpace(rule.Scenario))
+		if scenario != "" {
+			normalizedScenario, ok := validErrorFallbackCategories[scenario]
+			if !ok {
+				return nil, fmt.Errorf("error_fallbacks[%d].scenario %q is invalid", ruleIndex, scenario)
+			}
+			normalizedRule.Scenario = normalizedScenario
+		}
+		if normalizedRule.Scenario != "" && len(rule.When) > 0 {
+			return nil, fmt.Errorf("error_fallbacks[%d] cannot define both scenario and when", ruleIndex)
+		}
+
+		if rule.Supplement != nil {
+			if normalizedRule.Scenario == "" {
+				return nil, fmt.Errorf("error_fallbacks[%d].supplement requires scenario", ruleIndex)
+			}
+			normalizedSupplement := &schemas.ErrorFallbackSupplement{}
+			for providerIndex, provider := range rule.Supplement.Providers {
+				trimmedProvider := strings.ToLower(strings.TrimSpace(provider))
+				if trimmedProvider == "" {
+					return nil, fmt.Errorf("error_fallbacks[%d].supplement.providers[%d] must not be empty", ruleIndex, providerIndex)
+				}
+				normalizedSupplement.Providers = append(normalizedSupplement.Providers, schemas.ModelProvider(trimmedProvider))
+			}
+			for codeIndex, code := range rule.Supplement.ErrorCodes {
+				trimmedCode := strings.TrimSpace(code)
+				if trimmedCode == "" {
+					return nil, fmt.Errorf("error_fallbacks[%d].supplement.error_codes[%d] must not be empty", ruleIndex, codeIndex)
+				}
+				normalizedSupplement.ErrorCodes = append(normalizedSupplement.ErrorCodes, trimmedCode)
+			}
+			for typeIndex, errorType := range rule.Supplement.ErrorTypes {
+				trimmedType := strings.TrimSpace(errorType)
+				if trimmedType == "" {
+					return nil, fmt.Errorf("error_fallbacks[%d].supplement.error_types[%d] must not be empty", ruleIndex, typeIndex)
+				}
+				normalizedSupplement.ErrorTypes = append(normalizedSupplement.ErrorTypes, trimmedType)
+			}
+			for statusIndex, statusCode := range rule.Supplement.StatusCodes {
+				if statusCode < 100 || statusCode > 599 {
+					return nil, fmt.Errorf("error_fallbacks[%d].supplement.status_codes[%d] must be between 100 and 599", ruleIndex, statusIndex)
+				}
+				normalizedSupplement.StatusCodes = append(normalizedSupplement.StatusCodes, statusCode)
+			}
+			for messageIndex, messageContains := range rule.Supplement.MessageContainsAny {
+				trimmedMessage := strings.TrimSpace(messageContains)
+				if trimmedMessage == "" {
+					return nil, fmt.Errorf("error_fallbacks[%d].supplement.message_contains_any[%d] must not be empty", ruleIndex, messageIndex)
+				}
+				normalizedSupplement.MessageContainsAny = append(normalizedSupplement.MessageContainsAny, trimmedMessage)
+			}
+			if len(normalizedSupplement.ErrorCodes) == 0 &&
+				len(normalizedSupplement.ErrorTypes) == 0 &&
+				len(normalizedSupplement.StatusCodes) == 0 &&
+				len(normalizedSupplement.MessageContainsAny) == 0 {
+				return nil, fmt.Errorf("error_fallbacks[%d].supplement must define at least one non-provider matcher", ruleIndex)
+			}
+			hasNonProviderMatchers := len(normalizedSupplement.ErrorCodes) > 0 ||
+				len(normalizedSupplement.ErrorTypes) > 0 ||
+				len(normalizedSupplement.StatusCodes) > 0 ||
+				len(normalizedSupplement.MessageContainsAny) > 0
+			hasAnyMatchers := len(normalizedSupplement.Providers) > 0 || hasNonProviderMatchers
+			if len(normalizedSupplement.Providers) > 0 && !hasNonProviderMatchers {
+				return nil, fmt.Errorf("error_fallbacks[%d].supplement must define at least one non-provider matcher", ruleIndex)
+			}
+			if hasAnyMatchers {
+				normalizedRule.Supplement = normalizedSupplement
+			}
+		}
+
+		if len(rule.When) > 0 {
+			var rawCondition rawErrorFallbackCondition
+			if err := strictDecodeJSON(rule.When, &rawCondition); err != nil {
+				return nil, fmt.Errorf("error_fallbacks[%d].when: %w", ruleIndex, err)
+			}
+			matcherCount := 0
+			for categoryIndex, category := range rawCondition.Categories {
+				trimmedCategory := strings.TrimSpace(category)
+				if trimmedCategory == "" {
+					return nil, fmt.Errorf("error_fallbacks[%d].when.categories[%d] must not be empty", ruleIndex, categoryIndex)
+				}
+				normalizedCategory, ok := validErrorFallbackCategories[trimmedCategory]
+				if !ok {
+					return nil, fmt.Errorf("error_fallbacks[%d].when.categories[%d] %q is invalid", ruleIndex, categoryIndex, trimmedCategory)
+				}
+				normalizedRule.When.Categories = append(normalizedRule.When.Categories, normalizedCategory)
+				matcherCount++
+			}
+			for codeIndex, code := range rawCondition.ErrorCodes {
+				trimmedCode := strings.TrimSpace(code)
+				if trimmedCode == "" {
+					return nil, fmt.Errorf("error_fallbacks[%d].when.error_codes[%d] must not be empty", ruleIndex, codeIndex)
+				}
+				normalizedRule.When.ErrorCodes = append(normalizedRule.When.ErrorCodes, trimmedCode)
+				matcherCount++
+			}
+			for typeIndex, errorType := range rawCondition.ErrorTypes {
+				trimmedType := strings.TrimSpace(errorType)
+				if trimmedType == "" {
+					return nil, fmt.Errorf("error_fallbacks[%d].when.error_types[%d] must not be empty", ruleIndex, typeIndex)
+				}
+				normalizedRule.When.ErrorTypes = append(normalizedRule.When.ErrorTypes, trimmedType)
+				matcherCount++
+			}
+			for statusIndex, statusCode := range rawCondition.StatusCodes {
+				if statusCode < 100 || statusCode > 599 {
+					return nil, fmt.Errorf("error_fallbacks[%d].when.status_codes[%d] must be between 100 and 599", ruleIndex, statusIndex)
+				}
+				normalizedRule.When.StatusCodes = append(normalizedRule.When.StatusCodes, statusCode)
+				matcherCount++
+			}
+			for messageIndex, messageContains := range rawCondition.MessageContains {
+				trimmedMessage := strings.TrimSpace(messageContains)
+				if trimmedMessage == "" {
+					return nil, fmt.Errorf("error_fallbacks[%d].when.message_contains[%d] must not be empty", ruleIndex, messageIndex)
+				}
+				normalizedRule.When.MessageContains = append(normalizedRule.When.MessageContains, trimmedMessage)
+				matcherCount++
+			}
+			if matcherCount == 0 {
+				return nil, fmt.Errorf("error_fallbacks[%d].when must define at least one matcher", ruleIndex)
+			}
+		}
+
+		if normalizedRule.Scenario == "" && len(rule.When) == 0 {
+			return nil, fmt.Errorf("error_fallbacks[%d] must define either scenario or when", ruleIndex)
+		}
+		if len(rule.Fallbacks) == 0 {
+			return nil, fmt.Errorf("error_fallbacks[%d].fallbacks must contain at least one fallback", ruleIndex)
+		}
+		if len(rule.Fallbacks) > 0 {
+			normalizedRule.Fallbacks = make([]schemas.Fallback, 0, len(rule.Fallbacks))
+		}
+		for fallbackIndex, fallbackRaw := range rule.Fallbacks {
+			trimmed := strings.TrimSpace(string(fallbackRaw))
+			if trimmed == "" || trimmed == "null" {
+				return nil, fmt.Errorf("error_fallbacks[%d].fallbacks[%d] must not be empty", ruleIndex, fallbackIndex)
+			}
+			if strings.HasPrefix(trimmed, "\"") {
+				var fallbackString string
+				if err := strictDecodeJSON(fallbackRaw, &fallbackString); err != nil {
+					return nil, fmt.Errorf("error_fallbacks[%d].fallbacks[%d]: %w", ruleIndex, fallbackIndex, err)
+				}
+				fallbackProvider, fallbackModel := schemas.ParseModelString(strings.TrimSpace(fallbackString), "")
+				if fallbackProvider == "" {
+					return nil, fmt.Errorf("error_fallbacks[%d].fallbacks[%d] %q must include a known provider prefix", ruleIndex, fallbackIndex, fallbackString)
+				}
+				if strings.TrimSpace(fallbackModel) == "" {
+					if currentModel == "" {
+						return nil, fmt.Errorf("error_fallbacks[%d].fallbacks[%d] %q requires a current model to inherit", ruleIndex, fallbackIndex, fallbackString)
+					}
+					fallbackModel = currentModel
+				}
+				normalizedRule.Fallbacks = append(normalizedRule.Fallbacks, schemas.Fallback{
+					Provider: fallbackProvider,
+					Model:    strings.TrimSpace(fallbackModel),
+				})
+				continue
+			}
+			var fallback struct {
+				Provider schemas.ModelProvider `json:"provider"`
+				Model    string                `json:"model"`
+			}
+			if err := strictDecodeJSON(fallbackRaw, &fallback); err != nil {
+				return nil, fmt.Errorf("error_fallbacks[%d].fallbacks[%d]: %w", ruleIndex, fallbackIndex, err)
+			}
+			if fallback.Provider == "" || !schemas.IsKnownProvider(string(fallback.Provider)) {
+				return nil, fmt.Errorf("error_fallbacks[%d].fallbacks[%d].provider must be a known provider", ruleIndex, fallbackIndex)
+			}
+			fallbackModel := strings.TrimSpace(fallback.Model)
+			if fallbackModel == "" {
+				if currentModel == "" {
+					return nil, fmt.Errorf("error_fallbacks[%d].fallbacks[%d] requires a current model to inherit", ruleIndex, fallbackIndex)
+				}
+				fallbackModel = currentModel
+			}
+			normalizedRule.Fallbacks = append(normalizedRule.Fallbacks, schemas.Fallback{
+				Provider: fallback.Provider,
+				Model:    fallbackModel,
+			})
+		}
+		normalizedRules = append(normalizedRules, normalizedRule)
+	}
+	normalized, err := json.Marshal(normalizedRules)
+	if err != nil {
+		return nil, err
+	}
+	return normalized, nil
+}
+
+func setErrorFallbacksOnValue(target interface{}, raw json.RawMessage) error {
+	if len(raw) == 0 || target == nil {
+		return nil
+	}
+	targetValue := reflect.ValueOf(target)
+	if !targetValue.IsValid() || targetValue.Kind() != reflect.Ptr || targetValue.IsNil() {
+		return nil
+	}
+	currentModel := ""
+	if targetValue.Elem().IsValid() && targetValue.Elem().Kind() == reflect.Struct {
+		modelField := targetValue.Elem().FieldByName("Model")
+		if modelField.IsValid() && modelField.Kind() == reflect.String {
+			currentModel = modelField.String()
+		}
+	}
+	normalized, err := normalizeErrorFallbacksRaw(raw, currentModel)
+	if err != nil {
+		return err
+	}
+	targetValue = targetValue.Elem()
+	if !targetValue.IsValid() || targetValue.Kind() != reflect.Struct {
+		return nil
+	}
+	field := targetValue.FieldByName("ErrorFallbacks")
+	if !field.IsValid() {
+		targetType := targetValue.Type()
+		for i := 0; i < targetValue.NumField(); i++ {
+			structField := targetType.Field(i)
+			if strings.Split(structField.Tag.Get("json"), ",")[0] == "error_fallbacks" {
+				field = targetValue.Field(i)
+				break
+			}
+		}
+	}
+	if !field.IsValid() || !field.CanSet() {
+		return nil
+	}
+	if field.Kind() == reflect.Ptr {
+		value := reflect.New(field.Type().Elem())
+		if err := json.Unmarshal(normalized, value.Interface()); err != nil {
+			return err
+		}
+		field.Set(value)
+		return nil
+	}
+	value := reflect.New(field.Type())
+	if err := json.Unmarshal(normalized, value.Interface()); err != nil {
+		return err
+	}
+	field.Set(value.Elem())
+	return nil
+}
+
+func extractErrorFallbacksFromRequest(req interface{}) (json.RawMessage, error) {
+	if req == nil {
+		return nil, nil
+	}
+	reqValue := reflect.ValueOf(req)
+	if reqValue.Kind() == reflect.Ptr {
+		if reqValue.IsNil() {
+			return nil, nil
+		}
+		reqValue = reqValue.Elem()
+	}
+	if reqValue.Kind() != reflect.Struct {
+		return nil, nil
+	}
+	field := reqValue.FieldByName("ErrorFallbacks")
+	if !field.IsValid() {
+		reqType := reqValue.Type()
+		for i := 0; i < reqValue.NumField(); i++ {
+			structField := reqType.Field(i)
+			if strings.Split(structField.Tag.Get("json"), ",")[0] == "error_fallbacks" {
+				field = reqValue.Field(i)
+				break
+			}
+		}
+	}
+	if !field.IsValid() {
+		return nil, nil
+	}
+	if field.Kind() == reflect.Ptr {
+		if field.IsNil() {
+			return nil, nil
+		}
+		field = field.Elem()
+	}
+	if !field.IsValid() {
+		return nil, nil
+	}
+	if raw, ok := field.Interface().(json.RawMessage); ok {
+		if len(raw) == 0 {
+			return nil, nil
+		}
+		return copyRawJSONMessage(raw), nil
+	}
+	if field.Kind() == reflect.String {
+		trimmed := strings.TrimSpace(field.String())
+		if trimmed == "" {
+			return nil, nil
+		}
+		raw := json.RawMessage(trimmed)
+		if !json.Valid(raw) {
+			return nil, fmt.Errorf("error_fallbacks must be valid JSON")
+		}
+		return copyRawJSONMessage(raw), nil
+	}
+	if field.Kind() == reflect.Slice && field.IsNil() {
+		return nil, nil
+	}
+	raw, err := sonic.Marshal(field.Interface())
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(raw), nil
+}
+
+func applyErrorFallbacksToBifrostRequest(bifrostReq *schemas.BifrostRequest, raw json.RawMessage) error {
+	if len(raw) == 0 || bifrostReq == nil {
+		return nil
+	}
+	_, currentModel, _ := bifrostReq.GetRequestFields()
+	normalized, err := normalizeErrorFallbacksRaw(raw, currentModel)
+	if err != nil {
+		return err
+	}
+	var rules []schemas.ErrorFallbackRule
+	if err := strictDecodeJSON(normalized, &rules); err != nil {
+		return err
+	}
+	bifrostReq.SetErrorFallbacks(rules)
+	reqValue := reflect.ValueOf(bifrostReq)
+	if reqValue.Kind() != reflect.Ptr || reqValue.IsNil() {
+		return nil
+	}
+	reqValue = reqValue.Elem()
+	if reqValue.Kind() != reflect.Struct {
+		return nil
+	}
+	for i := 0; i < reqValue.NumField(); i++ {
+		field := reqValue.Field(i)
+		if field.Kind() == reflect.Ptr && !field.IsNil() {
+			if err := setErrorFallbacksOnValue(field.Interface(), normalized); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 

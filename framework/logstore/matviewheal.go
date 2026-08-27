@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/maximhq/bifrost/core/schemas"
 )
 
 // This file implements runtime resilience for the materialized-view read
@@ -86,6 +87,7 @@ func (s *RDBLogStore) triggerMatViewSelfHeal() {
 		return // a heal is already running
 	}
 	go func() {
+		defer schemas.RecoverGoroutinePanic(s.logger, "logstore materialized view self-heal")
 		defer s.matViewHealInFlight.Store(false)
 		if time.Since(time.Unix(0, s.matViewHealLastAttempt.Load())) < matViewHealCooldown {
 			return

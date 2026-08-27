@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime/debug"
 	"slices"
 	"sort"
 	"strings"
@@ -4984,9 +4985,12 @@ func (c *Config) GetPluginOrder() []string {
 	if plugins == nil {
 		return nil
 	}
-	names := make([]string, len(*plugins))
-	for i, p := range *plugins {
-		names[i] = p.GetName()
+	names := make([]string, 0, len(*plugins))
+	for _, p := range *plugins {
+		if schemas.IsNilInterface(p) {
+			continue
+		}
+		names = append(names, p.GetName())
 	}
 	return names
 }
@@ -5008,6 +5012,9 @@ func (c *Config) GetLoadedPluginNames() []string {
 	seen := make(map[string]struct{}, len(*plugins))
 	names := make([]string, 0, len(*plugins))
 	for _, p := range *plugins {
+		if schemas.IsNilInterface(p) {
+			continue
+		}
 		name := schemas.SanitizePluginSpanName(p.GetName())
 		if name == "" {
 			continue
@@ -5034,12 +5041,20 @@ func (i *pluginChunkInterceptor) InterceptChunk(ctx *schemas.BifrostContext, req
 		plugin := i.plugins[j]
 		pluginName := plugin.GetName()
 		var (
-			modified *schemas.BifrostStreamChunk
+			modified = stream
 			err      error
 		)
 		func() {
 			pluginCtx := ctx.WithPluginScope(&pluginName)
 			defer pluginCtx.ReleasePluginScope()
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					if logger != nil {
+						logger.Error("recovered transport stream plugin panic: plugin=%s panic_type=%T\n%s", pluginName, recovered, debug.Stack())
+					}
+					err = fmt.Errorf("transport stream plugin %s panicked", pluginName)
+				}
+			}()
 			modified, err = plugin.HTTPTransportStreamChunkHook(pluginCtx, req, stream)
 		}()
 		if err != nil {
@@ -5240,6 +5255,9 @@ func (c *Config) rebuildInterfaceCaches() {
 	var httpTransport []schemas.HTTPTransportPlugin
 
 	for _, p := range *basePlugins {
+		if schemas.IsNilInterface(p) {
+			continue
+		}
 		if llmPlugin, ok := p.(schemas.LLMPlugin); ok {
 			llm = append(llm, llmPlugin)
 		}
@@ -5303,6 +5321,9 @@ func (c *Config) IsPluginLoaded(name string) bool {
 	}
 
 	for _, p := range *basePlugins {
+		if schemas.IsNilInterface(p) {
+			continue
+		}
 		if p.GetName() == name {
 			return true
 		}
@@ -5439,6 +5460,9 @@ func (c *Config) GetPluginStatusByName(name string) (schemas.PluginStatus, bool)
 // If a plugin with the same name exists, it will be replaced (atomic find-and-replace)
 // If no plugin exists with that name, it will be added
 func (c *Config) ReloadPlugin(plugin schemas.BasePlugin) error {
+	if schemas.IsNilInterface(plugin) {
+		return fmt.Errorf("cannot reload nil plugin")
+	}
 	c.pluginsMu.Lock()
 	defer c.pluginsMu.Unlock()
 
@@ -5455,6 +5479,9 @@ func (c *Config) ReloadPlugin(plugin schemas.BasePlugin) error {
 
 			replaced := false
 			for _, p := range *oldPlugins {
+				if schemas.IsNilInterface(p) {
+					continue
+				}
 				if p.GetName() == name {
 					newPlugins = append(newPlugins, plugin) // Replace with new
 					replaced = true
@@ -5490,6 +5517,9 @@ func (c *Config) UnregisterPlugin(name string) error {
 		newPlugins := make([]schemas.BasePlugin, 0, len(*oldPlugins))
 		found := false
 		for _, p := range *oldPlugins {
+			if schemas.IsNilInterface(p) {
+				continue
+			}
 			if p.GetName() == name {
 				found = true
 				continue
@@ -5544,8 +5574,12 @@ func (c *Config) SortAndRebuildPlugins() {
 		return
 	}
 
-	sorted := make([]schemas.BasePlugin, len(*oldPlugins))
-	copy(sorted, *oldPlugins)
+	sorted := make([]schemas.BasePlugin, 0, len(*oldPlugins))
+	for _, plugin := range *oldPlugins {
+		if !schemas.IsNilInterface(plugin) {
+			sorted = append(sorted, plugin)
+		}
+	}
 
 	groupRank := map[schemas.PluginPlacement]int{
 		schemas.PluginPlacementPreBuiltin:  0,
@@ -5588,6 +5622,9 @@ func FindPluginAs[T any](c *Config, name string) (T, error) {
 	}
 
 	for _, p := range *basePlugins {
+		if schemas.IsNilInterface(p) {
+			continue
+		}
 		if p.GetName() == name {
 			if typed, ok := p.(T); ok {
 				return typed, nil

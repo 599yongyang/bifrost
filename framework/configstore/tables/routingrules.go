@@ -21,8 +21,10 @@ type TableRoutingRule struct {
 	// Routing Targets (output) — 1:many relationship; weights must sum to 1
 	Targets []TableRoutingTarget `gorm:"foreignKey:RuleID;constraint:OnDelete:CASCADE" json:"targets"`
 
-	Fallbacks       *string  `gorm:"type:text" json:"-"`           // JSON array of fallback chains
-	ParsedFallbacks []string `gorm:"-" json:"fallbacks,omitempty"` // Parsed fallbacks from JSON
+	Fallbacks            *string                     `gorm:"type:text" json:"-"`                 // JSON array of fallback chains
+	ParsedFallbacks      []string                    `gorm:"-" json:"fallbacks,omitempty"`       // Parsed fallbacks from JSON
+	ErrorFallbacks       *string                     `gorm:"type:text" json:"-"`                 // JSON array of error-aware fallback rules
+	ParsedErrorFallbacks []TableRoutingErrorFallback `gorm:"-" json:"error_fallbacks,omitempty"` // Parsed error-aware fallback rules from JSON
 
 	Query       *string        `gorm:"type:text" json:"-"`
 	ParsedQuery map[string]any `gorm:"-" json:"query,omitempty"`
@@ -40,6 +42,37 @@ type TableRoutingRule struct {
 	// Timestamps
 	CreatedAt time.Time `gorm:"index;not null" json:"created_at"`
 	UpdatedAt time.Time `gorm:"index;not null" json:"updated_at"`
+}
+
+// TableRoutingErrorFallback defines an error-aware fallback chain that only
+// activates when the primary attempt fails with a matching error shape.
+type TableRoutingErrorFallback struct {
+	Name       string                               `json:"name,omitempty"`
+	Scenario   string                               `json:"scenario,omitempty"`
+	Supplement *TableRoutingErrorFallbackSupplement `json:"supplement,omitempty"`
+	When       TableRoutingErrorFallbackCondition   `json:"when,omitempty"`
+	Fallbacks  []string                             `json:"fallbacks"`
+}
+
+// TableRoutingErrorFallbackCondition matches the normalized provider/core error
+// metadata the runtime exposes after a failed primary attempt.
+type TableRoutingErrorFallbackCondition struct {
+	Categories      []string `json:"categories,omitempty"`
+	ErrorCodes      []string `json:"error_codes,omitempty"`
+	ErrorTypes      []string `json:"error_types,omitempty"`
+	StatusCodes     []int    `json:"status_codes,omitempty"`
+	MessageContains []string `json:"message_contains,omitempty"`
+}
+
+// TableRoutingErrorFallbackSupplement stores optional user-supplied clues that
+// broaden a built-in scenario matcher without exposing the full legacy `when`
+// condition in the default UI.
+type TableRoutingErrorFallbackSupplement struct {
+	Providers          []string `json:"providers,omitempty"`
+	ErrorCodes         []string `json:"error_codes,omitempty"`
+	ErrorTypes         []string `json:"error_types,omitempty"`
+	StatusCodes        []int    `json:"status_codes,omitempty"`
+	MessageContainsAny []string `json:"message_contains_any,omitempty"`
 }
 
 // TableName for TableRoutingRule
@@ -67,6 +100,15 @@ func (r *TableRoutingRule) BeforeSave(tx *gorm.DB) error {
 	} else {
 		r.Fallbacks = nil
 	}
+	if len(r.ParsedErrorFallbacks) > 0 {
+		data, err := sonic.Marshal(r.ParsedErrorFallbacks)
+		if err != nil {
+			return err
+		}
+		r.ErrorFallbacks = bifrost.Ptr(string(data))
+	} else {
+		r.ErrorFallbacks = nil
+	}
 	if r.ParsedQuery != nil {
 		data, err := sonic.Marshal(r.ParsedQuery)
 		if err != nil {
@@ -83,6 +125,11 @@ func (r *TableRoutingRule) BeforeSave(tx *gorm.DB) error {
 func (r *TableRoutingRule) AfterFind(tx *gorm.DB) error {
 	if r.Fallbacks != nil && strings.TrimSpace(*r.Fallbacks) != "" {
 		if err := sonic.Unmarshal([]byte(*r.Fallbacks), &r.ParsedFallbacks); err != nil {
+			return err
+		}
+	}
+	if r.ErrorFallbacks != nil && strings.TrimSpace(*r.ErrorFallbacks) != "" {
+		if err := sonic.Unmarshal([]byte(*r.ErrorFallbacks), &r.ParsedErrorFallbacks); err != nil {
 			return err
 		}
 	}

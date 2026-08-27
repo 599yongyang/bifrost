@@ -361,6 +361,7 @@ var configstoreMigrationSteps = []migrationStep{
 	{IDs: []string{"add_open_ai_config_json_column"}, run: migrationAddOpenAIConfigJSONColumn},
 	{IDs: []string{"add_key_blacklisted_models_json_column"}, run: migrationAddKeyBlacklistedModelsJSONColumn},
 	{IDs: []string{"add_chain_rule_column_to_routing_rules"}, run: migrationAddChainRuleColumnToRoutingRules},
+	{IDs: []string{"add_error_fallbacks_column_to_routing_rules"}, run: migrationAddErrorFallbacksColumnToRoutingRules},
 	{IDs: []string{"drop_deployment_columns_and_add_aliases"}, run: migrationDropDeploymentColumnsAndAddAliases},
 	{IDs: []string{"add_replicate_key_config_column"}, run: migrationAddReplicateKeyConfigColumn},
 	{IDs: []string{"add_budget_calendar_aligned_column"}, run: migrationAddBudgetCalendarAlignedColumn},
@@ -7020,6 +7021,51 @@ func migrationAddChainRuleColumnToRoutingRules(ctx context.Context, db *gorm.DB,
 	}})
 	if err := m.Migrate(); err != nil {
 		return fmt.Errorf("error running add_chain_rule_column_to_routing_rules migration: %s", err.Error())
+	}
+	return nil
+}
+
+// migrationAddErrorFallbacksColumnToRoutingRules adds error_fallbacks to
+// routing_rules and refreshes config hashes so unchanged configs do not appear
+// stale after upgrade.
+func migrationAddErrorFallbacksColumnToRoutingRules(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	migrationName := "add_error_fallbacks_column_to_routing_rules"
+	logger.Info("[configstore] starting migration %s", migrationName)
+	defer logger.Info("[configstore] finished migration %s", migrationName)
+	m := migrator.New(db, migrator.DefaultOptions, []*migrator.Migration{{
+		ID: migrationName,
+		Migrate: func(tx *gorm.DB) error {
+			tx = tx.WithContext(ctx)
+			if err := addColumnIfNotExists(tx, logger, &tables.TableRoutingRule{}, "error_fallbacks"); err != nil {
+				return fmt.Errorf("failed to add error_fallbacks column: %w", err)
+			}
+
+			var rules []tables.TableRoutingRule
+			if err := tx.Preload("Targets").Find(&rules).Error; err != nil {
+				return fmt.Errorf("failed to load routing rules for config_hash backfill: %w", err)
+			}
+			logger.Info("[configstore] %s: processing %d rules", migrationName, len(rules))
+			for _, rule := range rules {
+				hash, err := GenerateRoutingRuleHash(rule)
+				if err != nil {
+					return fmt.Errorf("failed to generate config_hash for routing rule %s: %w", rule.ID, err)
+				}
+				if err := tx.Model(&tables.TableRoutingRule{}).Where("id = ?", rule.ID).Update("config_hash", hash).Error; err != nil {
+					return fmt.Errorf("failed to update config_hash for routing rule %s: %w", rule.ID, err)
+				}
+			}
+			return nil
+		},
+		Rollback: func(tx *gorm.DB) error {
+			tx = tx.WithContext(ctx)
+			if err := dropColumnIfExists(tx, logger, &tables.TableRoutingRule{}, "error_fallbacks"); err != nil {
+				return fmt.Errorf("failed to drop error_fallbacks column: %w", err)
+			}
+			return nil
+		},
+	}})
+	if err := m.Migrate(); err != nil {
+		return fmt.Errorf("error running add_error_fallbacks_column_to_routing_rules migration: %s", err.Error())
 	}
 	return nil
 }

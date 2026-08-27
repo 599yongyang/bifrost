@@ -360,6 +360,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -13374,6 +13375,72 @@ func (p *mockPlugin) Cleanup() error  { return nil }
 // mockLLMPlugin extends mockPlugin with LLMPlugin interface for cache rebuild tests.
 type mockLLMPlugin struct {
 	mockPlugin
+}
+
+type panickingHTTPTransportPlugin struct{ mockPlugin }
+
+func (p *panickingHTTPTransportPlugin) HTTPTransportPreHook(*schemas.BifrostContext, *schemas.HTTPRequest) (*schemas.HTTPResponse, error) {
+	return nil, nil
+}
+func (p *panickingHTTPTransportPlugin) HTTPTransportPostHook(*schemas.BifrostContext, *schemas.HTTPRequest, *schemas.HTTPResponse) error {
+	return nil
+}
+func (p *panickingHTTPTransportPlugin) HTTPTransportStreamChunkHook(*schemas.BifrostContext, *schemas.HTTPRequest, *schemas.BifrostStreamChunk) (*schemas.BifrostStreamChunk, error) {
+	panic("stream hook secret")
+}
+
+func TestPluginChunkInterceptorContainsPluginPanic(t *testing.T) {
+	interceptor := &pluginChunkInterceptor{plugins: []schemas.HTTPTransportPlugin{
+		&panickingHTTPTransportPlugin{mockPlugin{name: "panic-stream"}},
+	}}
+	chunk := &schemas.BifrostStreamChunk{}
+	modified, err := interceptor.InterceptChunk(schemas.NewBifrostContext(context.Background(), schemas.NoDeadline), &schemas.HTTPRequest{}, chunk)
+	if err == nil || modified != chunk {
+		t.Fatalf("modified=%p error=%v, want original chunk plus safe error", modified, err)
+	}
+	if strings.Contains(err.Error(), "secret") {
+		t.Fatalf("panic detail leaked in error: %v", err)
+	}
+}
+
+func TestFindPluginAsSkipsTypedNilPlugin(t *testing.T) {
+	config := newTestConfigForPlugins()
+	var plugin *mockPlugin
+	plugins := []schemas.BasePlugin{plugin}
+	config.BasePlugins.Store(&plugins)
+
+	found, err := FindPluginAs[*mockPlugin](config, "plugin-a")
+	if err == nil || found != nil {
+		t.Fatalf("found=%v error=%v, want not found without panic", found, err)
+	}
+}
+
+func TestReloadPluginRejectsTypedNilPlugin(t *testing.T) {
+	config := newTestConfigForPlugins()
+	var plugin *mockPlugin
+	if err := config.ReloadPlugin(plugin); err == nil {
+		t.Fatal("expected typed-nil plugin reload to fail")
+	}
+}
+
+func TestPluginSnapshotsDropTypedNilEntries(t *testing.T) {
+	config := newTestConfigForPlugins()
+	var nilPlugin *mockPlugin
+	valid := &mockLLMPlugin{mockPlugin{name: "valid"}}
+	plugins := []schemas.BasePlugin{nilPlugin, valid}
+	config.BasePlugins.Store(&plugins)
+
+	config.rebuildInterfaceCaches()
+	config.SortAndRebuildPlugins()
+	if got := config.GetPluginOrder(); !slices.Equal(got, []string{"valid"}) {
+		t.Fatalf("plugin order = %v, want [valid]", got)
+	}
+	if got := config.GetLoadedPluginNames(); !slices.Equal(got, []string{"valid"}) {
+		t.Fatalf("plugin names = %v, want [valid]", got)
+	}
+	if got := config.GetLoadedLLMPlugins(); len(got) != 1 || schemas.IsNilInterface(got[0]) {
+		t.Fatalf("LLM plugins = %v, want one valid plugin", got)
+	}
 }
 
 func (p *mockLLMPlugin) PreRequestHook(_ *schemas.BifrostContext, _ *schemas.BifrostRequest) error {

@@ -222,6 +222,7 @@ func newPostgresLogStore(ctx context.Context, config *PostgresConfig, logger sch
 	// Each function is idempotent and acquires its own advisory lock for
 	// cross-node serialization. Running in a goroutine avoids blocking pod startup.
 	go func() {
+		defer schemas.RecoverGoroutinePanic(logger, "logstore index build")
 		if db.Dialector.Name() != "postgres" {
 			return
 		}
@@ -260,6 +261,7 @@ func newPostgresLogStore(ctx context.Context, config *PostgresConfig, logger sch
 
 	// Create materialized views and start periodic refresh for dashboard queries.
 	go func() {
+		defer schemas.RecoverGoroutinePanic(logger, "logstore materialized view refresh")
 		if db.Dialector.Name() != "postgres" {
 			return
 		}

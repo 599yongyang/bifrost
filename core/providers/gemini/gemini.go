@@ -480,6 +480,7 @@ func HandleGeminiChatCompletionStream(
 			}
 			providerUtils.CloseStream(ctx, responseChan)
 		}()
+		defer providerUtils.RecoverGoroutinePanic(ctx, logger, "gemini chat stream")
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 
 		if resp.BodyStream() == nil {
@@ -984,6 +985,7 @@ func HandleGeminiResponsesStream(
 			}
 			providerUtils.CloseStream(ctx, responseChan)
 		}()
+		defer providerUtils.RecoverGoroutinePanic(ctx, logger, "gemini responses stream")
 
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 
@@ -1482,6 +1484,7 @@ func (provider *GeminiProvider) SpeechStream(ctx *schemas.BifrostContext, postHo
 			}
 			providerUtils.CloseStream(ctx, responseChan)
 		}()
+		defer providerUtils.RecoverGoroutinePanic(ctx, provider.logger, "gemini speech stream")
 
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 
@@ -1770,6 +1773,7 @@ func (provider *GeminiProvider) TranscriptionStream(ctx *schemas.BifrostContext,
 			}
 			providerUtils.CloseStream(ctx, responseChan)
 		}()
+		defer providerUtils.RecoverGoroutinePanic(ctx, provider.logger, "gemini transcription stream")
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		// Decompress gzip-encoded streams transparently (no-op for non-gzip)
 		reader, releaseGzip := providerUtils.DecompressStreamBody(resp)

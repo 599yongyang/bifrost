@@ -18,6 +18,7 @@ type BifrostImageGenerationRequest struct {
 	Input          *ImageGenerationInput      `json:"input"`
 	Params         *ImageGenerationParameters `json:"params,omitempty"`
 	Fallbacks      []Fallback                 `json:"fallbacks,omitempty"`
+	ErrorFallbacks []ErrorFallbackRule        `json:"error_fallbacks,omitempty"`
 	RawRequestBody []byte                     `json:"-"`
 }
 
@@ -294,6 +295,7 @@ type BifrostImageEditRequest struct {
 	Input          *ImageEditInput      `json:"input"`
 	Params         *ImageEditParameters `json:"params,omitempty"`
 	Fallbacks      []Fallback           `json:"fallbacks,omitempty"`
+	ErrorFallbacks []ErrorFallbackRule  `json:"error_fallbacks,omitempty"`
 	RawRequestBody []byte               `json:"-"`
 }
 
@@ -337,6 +339,7 @@ type BifrostImageVariationRequest struct {
 	Input          *ImageVariationInput      `json:"input"`
 	Params         *ImageVariationParameters `json:"params,omitempty"`
 	Fallbacks      []Fallback                `json:"fallbacks,omitempty"`
+	ErrorFallbacks []ErrorFallbackRule       `json:"error_fallbacks,omitempty"`
 	RawRequestBody []byte                    `json:"-"`
 }
 

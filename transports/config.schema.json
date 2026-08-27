@@ -3458,6 +3458,159 @@
       "required": ["weight"],
       "additionalProperties": false
     },
+    "error_fallback_category": {
+      "type": "string",
+      "enum": [
+        "content_policy",
+        "unsupported_operation",
+        "rate_limit",
+        "authentication",
+        "billing",
+        "permission",
+        "timeout",
+        "provider_unavailable",
+        "network",
+        "invalid_request",
+        "internal",
+        "unknown"
+      ]
+    },
+    "error_fallback_condition": {
+      "type": "object",
+      "description": "First-match error classifier. Different fields are ANDed together; values within a field use OR semantics.",
+      "properties": {
+        "categories": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/error_fallback_category" },
+          "uniqueItems": true,
+          "minItems": 1
+        },
+        "error_codes": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true,
+          "minItems": 1
+        },
+        "error_types": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true,
+          "minItems": 1
+        },
+        "status_codes": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 100, "maximum": 599 },
+          "uniqueItems": true,
+          "minItems": 1
+        },
+        "message_contains": {
+          "type": "array",
+          "description": "Case-insensitive message substrings to match.",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true,
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false,
+      "anyOf": [
+        { "required": ["categories"] },
+        { "required": ["error_codes"] },
+        { "required": ["error_types"] },
+        { "required": ["status_codes"] },
+        { "required": ["message_contains"] }
+      ]
+    },
+    "error_fallback_supplement": {
+      "type": "object",
+      "description": "Optional extra clues that broaden a built-in scenario matcher. If providers is present it scopes the matcher first, then any matching signal field (error_codes, error_types, status_codes, or message_contains_any) is enough to match.",
+      "properties": {
+        "providers": {
+          "type": "array",
+          "description": "Optional provider names that scope supplemental signals; custom providers are allowed.",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true,
+          "minItems": 1
+        },
+        "error_codes": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true,
+          "minItems": 1
+        },
+        "error_types": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true,
+          "minItems": 1
+        },
+        "status_codes": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 100, "maximum": 599 },
+          "uniqueItems": true,
+          "minItems": 1
+        },
+        "message_contains_any": {
+          "type": "array",
+          "description": "Case-insensitive message substrings to match.",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true,
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false,
+      "anyOf": [
+        { "required": ["error_codes"] },
+        { "required": ["error_types"] },
+        { "required": ["status_codes"] },
+        { "required": ["message_contains_any"] }
+      ]
+    },
+    "error_fallback_rule": {
+      "type": "object",
+      "description": "Error-specific fallback chain that replaces the remaining default fallbacks when its condition first matches any provider attempt failure.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scenario": {
+          "$ref": "#/$defs/error_fallback_category"
+        },
+        "supplement": {
+          "$ref": "#/$defs/error_fallback_supplement"
+        },
+        "when": {
+          "$ref": "#/$defs/error_fallback_condition"
+        },
+        "fallbacks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": ["fallbacks"],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "anyOf": [
+            { "required": ["scenario"] },
+            { "required": ["when"] }
+          ]
+        },
+        {
+          "not": {
+            "required": ["scenario", "when"]
+          }
+        },
+        {
+          "if": { "required": ["supplement"] },
+          "then": { "required": ["scenario"] }
+        }
+      ]
+    },
     "routing_rule": {
       "type": "object",
       "description": "Routing rule for dynamic provider/model selection",
@@ -3503,6 +3656,13 @@
           "description": "Fallback provider chain in order",
           "items": {
             "type": "string"
+          }
+        },
+        "error_fallbacks": {
+          "type": "array",
+          "description": "First-match error-aware fallback chains. The first rule matched by any failed provider attempt replaces all remaining ordinary fallbacks; at most one dedicated chain activates per request.",
+          "items": {
+            "$ref": "#/$defs/error_fallback_rule"
           }
         },
         "scope": {

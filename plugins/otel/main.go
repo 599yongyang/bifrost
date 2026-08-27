@@ -521,6 +521,9 @@ func (p *OtelPlugin) SetObservationExportStore(store logstore.ObservationExportS
 }
 
 func (p *OtelPlugin) ObservationTargetIDs() []string {
+	if p == nil {
+		return nil
+	}
 	ids := make([]string, 0, len(p.targets))
 	for _, target := range p.targets {
 		if target != nil && target.mediaUploader != nil {
@@ -530,7 +533,7 @@ func (p *OtelPlugin) ObservationTargetIDs() []string {
 	return ids
 }
 
-func (p *OtelPlugin) ManualExportAvailable() bool { return len(p.manualTargets()) > 0 }
+func (p *OtelPlugin) ManualExportAvailable() bool { return p != nil && len(p.manualTargets()) > 0 }
 
 func (p *OtelPlugin) observationExportStores() (logstore.ObservationExportStore, ManualExportRepository) {
 	p.exportStoreMu.RLock()

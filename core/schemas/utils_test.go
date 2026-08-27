@@ -1,11 +1,36 @@
 package schemas
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestIsNilInterfaceRecognizesTypedNil(t *testing.T) {
+	var pointer *int
+	var wrapped any = pointer
+	if !IsNilInterface(wrapped) {
+		t.Fatal("typed nil pointer must be recognized as nil")
+	}
+	if IsNilInterface(Ptr(1)) {
+		t.Fatal("non-nil pointer must not be recognized as nil")
+	}
+}
+
+func TestStreamPanicStateBypassesRestrictedWritesButCannotBeSpoofed(t *testing.T) {
+	ctx := NewBifrostContext(context.Background(), NoDeadline)
+	ctx.BlockRestrictedWrites()
+	ctx.SetValue(BifrostContextKeyStreamPanicked, true)
+	if value := ctx.Value(BifrostContextKeyStreamPanicked); value != nil {
+		t.Fatalf("public reserved write was accepted: %v", value)
+	}
+	ctx.SetStreamPanicState(true)
+	if panicked, _ := ctx.Value(BifrostContextKeyStreamPanicked).(bool); !panicked {
+		t.Fatal("internal stream panic state was not recorded")
+	}
+}
 
 func TestSanitizeImageURLDefaultRejectsNonHTTPSchemes(t *testing.T) {
 	// The no-args overload must keep the historical http/https-only policy. Providers

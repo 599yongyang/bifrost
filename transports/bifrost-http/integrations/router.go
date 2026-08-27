@@ -865,12 +865,24 @@ func (g *GenericRouter) createHandler(config RouteConfig) fasthttp.RequestHandle
 			return
 		}
 		if sendRawRequestBody, ok := (*bifrostCtx).Value(schemas.BifrostContextKeyUseRawRequestBody).(bool); ok && sendRawRequestBody {
-			bifrostReq.SetRawRequestBody(rawBody)
+			rawForProvider, err := stripTransportOnlyJSONFields(rawBody)
+			if err != nil {
+				g.sendError(ctx, bifrostCtx, config.ErrorConverter, newBifrostError(err, "failed to sanitize request body"))
+				return
+			}
+			bifrostReq.SetRawRequestBody(rawForProvider)
 		}
 
 		// Extract and parse fallbacks from the request if present
 		if err := g.extractAndParseFallbacks(bifrostCtx, req, bifrostReq); err != nil {
 			g.sendError(ctx, bifrostCtx, config.ErrorConverter, newBifrostError(err, "failed to parse fallbacks: "+err.Error()))
+			return
+		}
+		if errorFallbacks, err := extractErrorFallbacksFromRequest(req); err != nil {
+			g.sendError(ctx, bifrostCtx, config.ErrorConverter, newBifrostError(err, "failed to parse error_fallbacks: "+err.Error()))
+			return
+		} else if err := applyErrorFallbacksToBifrostRequest(bifrostReq, errorFallbacks); err != nil {
+			g.sendError(ctx, bifrostCtx, config.ErrorConverter, newBifrostError(err, "failed to apply error_fallbacks: "+err.Error()))
 			return
 		}
 

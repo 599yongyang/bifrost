@@ -2116,6 +2116,14 @@ type captureTracePlugin struct {
 	foundLLM  bool
 }
 
+func TestGetObservabilityPluginsSkipsTypedNil(t *testing.T) {
+	var plugin *captureTracePlugin
+	plugins := []schemas.BasePlugin{plugin}
+	if got := GetObservabilityPlugins(plugins); len(got) != 0 {
+		t.Fatalf("observability plugins = %v, want empty", got)
+	}
+}
+
 func (p *captureTracePlugin) GetName() string { return "capture-trace" }
 func (p *captureTracePlugin) Cleanup() error  { return nil }
 func (p *captureTracePlugin) Inject(_ context.Context, trace *schemas.Trace) error {
@@ -2353,5 +2361,39 @@ func TestTracingMiddleware_AccessLogIncludesRequestID(t *testing.T) {
 	}
 	if got := fields["trace_id"]; got == "" {
 		t.Error("expected access log to include a non-empty trace_id")
+	}
+}
+
+func TestPanicRecoveryMiddlewareReturns500AndKeepsServing(t *testing.T) {
+	SetLogger(&mockLogger{})
+	requests := 0
+	handler := PanicRecoveryMiddleware(func(ctx *fasthttp.RequestCtx) {
+		requests++
+		if requests == 1 {
+			panic("boom")
+		}
+		ctx.SetStatusCode(fasthttp.StatusNoContent)
+	})
+
+	first := &fasthttp.RequestCtx{}
+	first.Request.SetRequestURI("/api/logs/log-1")
+	first.Request.Header.SetMethod(fasthttp.MethodGet)
+	handler(first)
+	if first.Response.StatusCode() != fasthttp.StatusInternalServerError {
+		t.Fatalf("first status = %d, want 500", first.Response.StatusCode())
+	}
+	if strings.Contains(string(first.Response.Body()), "boom") {
+		t.Fatalf("panic detail leaked to client: %s", first.Response.Body())
+	}
+	if got := string(first.Response.Header.Peek("X-Content-Type-Options")); got != "nosniff" {
+		t.Fatalf("security header = %q, want nosniff", got)
+	}
+
+	second := &fasthttp.RequestCtx{}
+	second.Request.SetRequestURI("/health")
+	second.Request.Header.SetMethod(fasthttp.MethodGet)
+	handler(second)
+	if second.Response.StatusCode() != fasthttp.StatusNoContent {
+		t.Fatalf("second status = %d, want 204", second.Response.StatusCode())
 	}
 }

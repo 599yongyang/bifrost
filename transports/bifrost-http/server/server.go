@@ -1715,6 +1715,9 @@ func (s *BifrostHTTPServer) updatePluginErrorStatus(name, step string, originalE
 
 // SyncLoadedPlugin syncs a loaded plugin to the Bifrost client and updates the plugin status
 func (s *BifrostHTTPServer) SyncLoadedPlugin(ctx context.Context, name string, plugin schemas.BasePlugin, placement *schemas.PluginPlacement, order *int) error {
+	if schemas.IsNilInterface(plugin) {
+		return s.updatePluginErrorStatus(name, "registering", fmt.Errorf("plugin instance is nil"))
+	}
 	if plugin.GetName() == circuitbreaker.PluginName {
 		placement = schemas.Ptr(schemas.PluginPlacementPostBuiltin)
 		order = schemas.Ptr(math.MaxInt)
@@ -1900,7 +1903,10 @@ func (s *BifrostHTTPServer) RegisterAPIRoutes(ctx context.Context, callbacks Ser
 		loggingHandler = handlers.NewLoggingHandler(loggerPlugin.GetPluginLogManager(), s, s.Config)
 		s.wireObservationExportStore()
 		loggingHandler.SetManualObservationExporterProvider(func() handlers.ManualObservationExporter {
-			plugin, _ := lib.FindPluginAs[*otel.OtelPlugin](s.Config, otel.PluginName)
+			plugin, err := lib.FindPluginAs[*otel.OtelPlugin](s.Config, otel.PluginName)
+			if err != nil || plugin == nil {
+				return nil
+			}
 			return plugin
 		})
 		if resolverProvider, ok := callbacks.(LogRedactionMappingResolverProvider); ok {
@@ -2504,7 +2510,7 @@ func (s *BifrostHTTPServer) Bootstrap(ctx context.Context) error {
 	logger.Debug("server read buffer size: %d", s.Config.ServerConfig.ReadBufferSize)
 	// Create fasthttp server instance
 	s.Server = &fasthttp.Server{
-		Handler:            handlers.SecurityHeadersMiddleware()(s.CORSMiddleware.Middleware()(handlers.RequestDecompressionMiddleware(s.Config)(s.Router.Handler))),
+		Handler:            handlers.PanicRecoveryMiddleware(handlers.SecurityHeadersMiddleware()(s.CORSMiddleware.Middleware()(handlers.RequestDecompressionMiddleware(s.Config)(s.Router.Handler)))),
 		MaxRequestBodySize: s.Config.ClientConfig.MaxRequestBodySizeMB * 1024 * 1024,
 		ReadBufferSize:     s.Config.ServerConfig.ReadBufferSize,
 	}

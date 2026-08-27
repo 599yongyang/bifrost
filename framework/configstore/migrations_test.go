@@ -796,6 +796,65 @@ func TestMigrationAddStoreRawRequestResponseColumn(t *testing.T) {
 	}
 }
 
+func TestMigrationAddErrorFallbacksColumnToRoutingRules(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+
+	require.NoError(t, db.Exec(`
+		CREATE TABLE migrations (
+			id VARCHAR(255) PRIMARY KEY
+		)
+	`).Error)
+	require.NoError(t, db.Exec(`
+		CREATE TABLE routing_rules (
+			id VARCHAR(255) PRIMARY KEY,
+			config_hash VARCHAR(255),
+			name VARCHAR(255) NOT NULL,
+			description TEXT,
+			enabled BOOLEAN NOT NULL DEFAULT 1,
+			cel_expression TEXT NOT NULL,
+			fallbacks TEXT,
+			query TEXT,
+			scope VARCHAR(50) NOT NULL,
+			scope_id VARCHAR(255),
+			chain_rule BOOLEAN NOT NULL DEFAULT 0,
+			priority INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)
+	`).Error)
+	require.NoError(t, db.Exec(`
+		CREATE TABLE routing_targets (
+			rule_id VARCHAR(255) NOT NULL,
+			provider VARCHAR(255),
+			model VARCHAR(255),
+			key_id VARCHAR(255),
+			weight REAL NOT NULL DEFAULT 1
+		)
+	`).Error)
+
+	now := time.Now().UTC()
+	require.NoError(t, db.Exec(`
+		INSERT INTO routing_rules (
+			id, config_hash, name, description, enabled, cel_expression, scope, priority, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, "route-1", "stale-hash", "Route 1", "legacy", true, "true", "global", 0, now, now).Error)
+	require.NoError(t, db.Exec(`
+		INSERT INTO routing_targets (rule_id, provider, model, weight) VALUES (?, ?, ?, ?)
+	`, "route-1", "openai", "gpt-4o", 1.0).Error)
+
+	require.False(t, db.Migrator().HasColumn(&tables.TableRoutingRule{}, "error_fallbacks"))
+
+	require.NoError(t, migrationAddErrorFallbacksColumnToRoutingRules(context.Background(), db, testMigrationLogger))
+
+	require.True(t, db.Migrator().HasColumn(&tables.TableRoutingRule{}, "error_fallbacks"))
+
+	var gotHash string
+	require.NoError(t, db.Table("routing_rules").Select("config_hash").Where("id = ?", "route-1").Scan(&gotHash).Error)
+	assert.NotEmpty(t, gotHash)
+	assert.NotEqual(t, "stale-hash", gotHash)
+}
+
 func TestMigrationAddStoreRawRequestResponseColumn_MultipleProviders(t *testing.T) {
 	for _, ndb := range forEachProviderMigrationDB(t, "multiple") {
 		ndb := ndb

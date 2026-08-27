@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand/v2"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"sync"
@@ -783,6 +784,10 @@ func (p *GovernancePlugin) applyRoutingRules(ctx *schemas.BifrostContext, req *s
 		}
 		req.SetFallbacks(resolvedFallbacks)
 	}
+	_, routedModel, _ := req.GetRequestFields()
+	if resolvedErrorFallbacks := resolveRoutingErrorFallbacks(decision.ErrorFallbacks, routedModel); len(resolvedErrorFallbacks) > 0 {
+		req.SetErrorFallbacks(resolvedErrorFallbacks)
+	}
 
 	// Pin specific API key by ID if the routing rule specifies one. This uses a dedicated,
 	// non-reserved context key (not BifrostContextKeyAPIKeyID): routing runs inside
@@ -795,6 +800,68 @@ func (p *GovernancePlugin) applyRoutingRules(ctx *schemas.BifrostContext, req *s
 
 	p.logger.Debug("[Governance] Applied routing decision: provider=%s, model=%s, keyID=%s, fallbacks=%v", decision.Provider, decision.Model, decision.KeyID, decision.Fallbacks)
 	return decision, nil
+}
+
+func resolveRoutingErrorFallbacks(rules []configstoreTables.TableRoutingErrorFallback, defaultModel string) []schemas.ErrorFallbackRule {
+	if len(rules) == 0 {
+		return nil
+	}
+
+	resolved := make([]schemas.ErrorFallbackRule, 0, len(rules))
+	for _, rule := range rules {
+		fallbacks := make([]schemas.Fallback, 0, len(rule.Fallbacks))
+		for _, rawFallback := range rule.Fallbacks {
+			provider, model := schemas.ParseModelString(rawFallback, "")
+			if provider == "" {
+				continue
+			}
+			if strings.TrimSpace(model) == "" {
+				model = defaultModel
+			}
+			fallbacks = append(fallbacks, schemas.Fallback{
+				Provider: provider,
+				Model:    model,
+			})
+		}
+		if len(fallbacks) == 0 {
+			continue
+		}
+
+		categories := make([]schemas.FailureCategory, 0, len(rule.When.Categories))
+		for _, category := range rule.When.Categories {
+			categories = append(categories, schemas.FailureCategory(category))
+		}
+
+		var supplement *schemas.ErrorFallbackSupplement
+		if rule.Supplement != nil {
+			providers := make([]schemas.ModelProvider, 0, len(rule.Supplement.Providers))
+			for _, provider := range rule.Supplement.Providers {
+				providers = append(providers, schemas.ModelProvider(provider))
+			}
+			supplement = &schemas.ErrorFallbackSupplement{
+				Providers:          providers,
+				ErrorCodes:         append([]string(nil), rule.Supplement.ErrorCodes...),
+				ErrorTypes:         append([]string(nil), rule.Supplement.ErrorTypes...),
+				StatusCodes:        append([]int(nil), rule.Supplement.StatusCodes...),
+				MessageContainsAny: append([]string(nil), rule.Supplement.MessageContainsAny...),
+			}
+		}
+
+		resolved = append(resolved, schemas.ErrorFallbackRule{
+			Name:       rule.Name,
+			Scenario:   schemas.FailureCategory(rule.Scenario),
+			Supplement: supplement,
+			When: schemas.ErrorFallbackCondition{
+				Categories:      categories,
+				ErrorCodes:      append([]string(nil), rule.When.ErrorCodes...),
+				ErrorTypes:      append([]string(nil), rule.When.ErrorTypes...),
+				StatusCodes:     append([]int(nil), rule.When.StatusCodes...),
+				MessageContains: append([]string(nil), rule.When.MessageContains...),
+			},
+			Fallbacks: fallbacks,
+		})
+	}
+	return resolved
 }
 
 // computeMCPIncludeTools builds the MCP include-tools list for a virtual key. Returns the list
@@ -1378,7 +1445,7 @@ func (p *GovernancePlugin) PostLLMHook(ctx *schemas.BifrostContext, result *sche
 			// crash the process and lose in-memory counters.
 			defer func() {
 				if r := recover(); r != nil {
-					p.logger.Error("recovered from panic in governance postHookWorker: %v", r)
+					p.logger.Error("recovered from panic in governance postHookWorker: panic_type=%T", r)
 				}
 			}()
 			// Use the requested model for usage tracking
@@ -1562,6 +1629,11 @@ func (p *GovernancePlugin) PostMCPHook(ctx *schemas.BifrostContext, resp *schema
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
+		defer func() {
+			if recovered := recover(); recovered != nil && p.logger != nil {
+				p.logger.Error("recovered asynchronous governance usage panic: request_id=%s panic_type=%T\n%s", requestID, recovered, debug.Stack())
+			}
+		}()
 		p.tracker.UpdateUsage(p.ctx, usageUpdate)
 	}()
 

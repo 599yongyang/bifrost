@@ -3599,6 +3599,11 @@ func parseOpenAIImageEditMultipartRequest(ctx *fasthttp.RequestCtx, req interfac
 	if fallbackValues := form.Value["fallbacks"]; len(fallbackValues) > 0 {
 		imageEditReq.Fallbacks = fallbackValues
 	}
+	if errorFallbacks, err := parseErrorFallbacksFormValue(form.Value["error_fallbacks"]); err != nil {
+		return err
+	} else if err := setErrorFallbacksOnValue(imageEditReq, errorFallbacks); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -3682,6 +3687,11 @@ func parseOpenAIImageVariationMultipartRequest(ctx *fasthttp.RequestCtx, req int
 	// Extract fallbacks
 	if fallbackValues := form.Value["fallbacks"]; len(fallbackValues) > 0 {
 		imageVariationReq.Fallbacks = fallbackValues
+	}
+	if errorFallbacks, err := parseErrorFallbacksFormValue(form.Value["error_fallbacks"]); err != nil {
+		return err
+	} else if err := setErrorFallbacksOnValue(imageVariationReq, errorFallbacks); err != nil {
+		return err
 	}
 	return nil
 }
@@ -3781,6 +3791,11 @@ func parseOpenAIVideoGenerationMultipartRequest(ctx *fasthttp.RequestCtx, req in
 	// Extract fallbacks
 	if fallbackValues := form.Value["fallbacks"]; len(fallbackValues) > 0 {
 		videoGenerationReq.Fallbacks = fallbackValues
+	}
+	if errorFallbacks, err := parseErrorFallbacksFormValue(form.Value["error_fallbacks"]); err != nil {
+		return err
+	} else if err := setErrorFallbacksOnValue(videoGenerationReq, errorFallbacks); err != nil {
+		return err
 	}
 
 	return nil

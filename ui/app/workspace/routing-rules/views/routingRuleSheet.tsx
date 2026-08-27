@@ -8,6 +8,7 @@ import { TeamSelector } from "@/components/entitySelectors/teamSelector";
 import { VirtualKeySelector } from "@/components/entitySelectors/virtualKeySelector";
 import { Button } from "@/components/ui/button";
 import { ComboboxSelect } from "@/components/ui/combobox";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ModelMultiselect } from "@/components/ui/modelMultiselect";
@@ -23,17 +24,23 @@ import { getErrorMessage } from "@/lib/store";
 import { useGetAllKeysQuery, useGetProvidersQuery } from "@/lib/store/apis/providersApi";
 import { useCreateRoutingRuleMutation, useGetRoutingRulesQuery, useUpdateRoutingRuleMutation } from "@/lib/store/apis/routingRulesApi";
 import {
+	DEFAULT_ROUTING_ERROR_FALLBACK,
+	DEFAULT_ROUTING_ERROR_FALLBACK_SUPPLEMENT,
 	DEFAULT_ROUTING_RULE_FORM_DATA,
 	DEFAULT_ROUTING_TARGET,
 	ROUTING_RULE_SCOPES,
 	RoutingRule,
+	RoutingErrorFallback,
+	RoutingErrorFallbackCategory,
+	RoutingErrorFallbackFormData,
 	RoutingRuleFormData,
 	RoutingTargetFormData,
 } from "@/lib/types/routingRules";
 import { validateRateLimitAndBudgetRules, validateRoutingRules } from "@/lib/utils/celConverterRouting";
+import { switchErrorFallbackMode, toErrorFallbackFormData, toErrorFallbackPayload } from "@/lib/utils/errorFallbackRules";
 import { isValidRuleGroupType, normalizeRoutingRuleGroupQuery } from "@/lib/utils/routingRuleGroupQuery";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
-import { Plus, Trash2, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, GripVertical, Plus, ShieldCheck, SlidersHorizontal, Trash2, X } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { RuleGroupType } from "react-querybuilder";
@@ -55,6 +62,73 @@ const defaultQuery: RuleGroupType = {
 };
 
 type ConditionMode = "builder" | "cel";
+
+const ERROR_FALLBACK_CATEGORY_OPTIONS = [
+	"content_policy",
+	"unsupported_operation",
+	"rate_limit",
+	"authentication",
+	"billing",
+	"permission",
+	"timeout",
+	"provider_unavailable",
+	"network",
+	"invalid_request",
+	"internal",
+	"unknown",
+] as const;
+
+function formatErrorFallbackCategoryLabel(category: string) {
+	return i18n.t(`workspace.routingRules.errorFallbackCategoryLabels.${category}`, {
+		defaultValue: category.replaceAll("_", " "),
+	});
+}
+
+function toCommaSeparated(values: Array<string | number> | undefined) {
+	return (values ?? []).join(", ");
+}
+
+function parseCommaSeparatedList(value: string) {
+	return value
+		.split(",")
+		.map((item) => item.trim())
+		.filter(Boolean);
+}
+
+function parseCommaSeparatedNumbers(value: string) {
+	return parseCommaSeparatedList(value)
+		.map((item) => Number.parseInt(item, 10))
+		.filter((item) => Number.isFinite(item));
+}
+
+function normalizeFallbackString(value: string) {
+	const parts = value.split("/");
+	const provider = parts[0]?.trim() || "";
+	const model = parts.slice(1).join("/").trim();
+	return provider ? `${provider}/${model}` : "";
+}
+
+function normalizedFallbackDedupKey(value: string) {
+	return normalizeFallbackString(value).toLowerCase();
+}
+
+function isBlankErrorFallbackRule(rule: RoutingErrorFallbackFormData | undefined) {
+	if (!rule) {
+		return true;
+	}
+	if (rule.mode === "scenario") {
+		return false;
+	}
+	return (
+		!rule.name?.trim() &&
+		(rule.fallbacks?.length ?? 0) === 0 &&
+		(rule.when.categories?.length ?? 0) === 0 &&
+		(rule.when.error_codes?.length ?? 0) === 0 &&
+		(rule.when.error_types?.length ?? 0) === 0 &&
+		(rule.when.status_codes?.length ?? 0) === 0 &&
+		(rule.when.message_contains?.length ?? 0) === 0
+	);
+}
 
 /**
  * Decides which conditions editor a rule opens in. Rules authored outside the visual
@@ -125,6 +199,7 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 	// without a user directory, which hides the "User" scope option.
 	const UserPicker = getUserPicker();
 	const fallbacks = watch("fallbacks");
+	const errorFallbacks = watch("error_fallbacks");
 
 	// Get available providers from configured providers, plus any provider already
 	// referenced by the current targets, existing rules' targets, or rules' fallbacks
@@ -135,6 +210,9 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 			...(targets.map((t) => t.provider).filter(Boolean) as string[]),
 			...(rules.flatMap((r) => r.targets?.map((t) => t.provider).filter(Boolean) ?? []) as string[]),
 			...rules.flatMap((r) => (r.fallbacks ?? []).map((f) => f.split("/")[0]?.trim()).filter(Boolean)),
+			...rules.flatMap((r) =>
+				(r.error_fallbacks ?? []).flatMap((ef) => (ef.fallbacks ?? []).map((f) => f.split("/")[0]?.trim()).filter(Boolean)),
+			),
 		]),
 	);
 	const providerOptions = availableProviders.map((prov) => ({
@@ -151,6 +229,7 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 			setValue("description", editingRule.description);
 			setValue("cel_expression", editingRule.cel_expression);
 			setValue("fallbacks", editingRule.fallbacks || []);
+			setValue("error_fallbacks", (editingRule.error_fallbacks || []).map(toErrorFallbackFormData));
 			setValue("scope", editingRule.scope);
 			setValue("scope_id", editingRule.scope_id || "");
 			setValue("priority", editingRule.priority);
@@ -201,7 +280,13 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 
 	const addTarget = () => {
 		const remaining = 1 - targets.reduce((sum, t) => sum + (t.weight || 0), 0);
-		setTargets((prev) => [...prev, { ...DEFAULT_ROUTING_TARGET, weight: Math.max(0, parseFloat(remaining.toFixed(4))) }]);
+		setTargets((prev) => [
+			...prev,
+			{
+				...DEFAULT_ROUTING_TARGET,
+				weight: Math.max(0, parseFloat(remaining.toFixed(4))),
+			},
+		]);
 	};
 
 	const removeTarget = (index: number) => {
@@ -213,6 +298,43 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 	};
 
 	const totalWeight = targets.reduce((sum, t) => sum + (t.weight || 0), 0);
+
+	const setErrorFallbackRules = (next: RoutingErrorFallbackFormData[]) => {
+		setValue("error_fallbacks", next, { shouldDirty: true });
+	};
+
+	const updateErrorFallbackRule = (index: number, updater: (rule: RoutingErrorFallbackFormData) => RoutingErrorFallbackFormData) => {
+		const next = [...(errorFallbacks || [])];
+		next[index] = updater(next[index] || { ...DEFAULT_ROUTING_ERROR_FALLBACK });
+		setErrorFallbackRules(next);
+	};
+
+	const addErrorFallbackRule = () => {
+		setErrorFallbackRules([
+			...(errorFallbacks || []),
+			{
+				...DEFAULT_ROUTING_ERROR_FALLBACK,
+				name: i18n.t("workspace.routingRules.errorFallbackDefaultRuleName"),
+				supplement: { ...DEFAULT_ROUTING_ERROR_FALLBACK_SUPPLEMENT },
+				when: { ...DEFAULT_ROUTING_ERROR_FALLBACK.when },
+				fallbacks: [""],
+			},
+		]);
+	};
+
+	const removeErrorFallbackRule = (index: number) => {
+		setErrorFallbackRules((errorFallbacks || []).filter((_, i) => i !== index));
+	};
+
+	const moveErrorFallbackTarget = (ruleIndex: number, fromIndex: number, toIndex: number) => {
+		if (fromIndex === toIndex) return;
+		updateErrorFallbackRule(ruleIndex, (current) => {
+			const fallbacks = [...current.fallbacks];
+			const [moved] = fallbacks.splice(fromIndex, 1);
+			fallbacks.splice(toIndex, 0, moved);
+			return { ...current, fallbacks };
+		});
+	};
 
 	const onSubmit = (data: RoutingRuleFormData) => {
 		setCelError(null);
@@ -265,6 +387,66 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 			return provider && provider.length > 0;
 		});
 
+		const normalizedErrorFallbacks: RoutingErrorFallback[] = (data.error_fallbacks || [])
+			.filter((rule) => !isBlankErrorFallbackRule(rule))
+			.map(toErrorFallbackPayload);
+
+		for (let i = 0; i < normalizedErrorFallbacks.length; i++) {
+			const rule = normalizedErrorFallbacks[i];
+			const hasLegacyMatchers =
+				!rule.scenario &&
+				!!rule.when &&
+				((rule.when.categories?.length ?? 0) > 0 ||
+					(rule.when.error_codes?.length ?? 0) > 0 ||
+					(rule.when.error_types?.length ?? 0) > 0 ||
+					(rule.when.status_codes?.length ?? 0) > 0 ||
+					(rule.when.message_contains?.length ?? 0) > 0);
+			if (!rule.scenario && !hasLegacyMatchers) {
+				toast.error(
+					i18n.t("workspace.routingRules.errorFallbackMatcherRequired", {
+						index: i + 1,
+					}),
+				);
+				return;
+			}
+			if (rule.scenario && rule.supplement && (rule.supplement.providers?.length ?? 0) > 0) {
+				const hasSupplementSignals =
+					(rule.supplement.error_codes?.length ?? 0) > 0 ||
+					(rule.supplement.error_types?.length ?? 0) > 0 ||
+					(rule.supplement.status_codes?.length ?? 0) > 0 ||
+					(rule.supplement.message_contains_any?.length ?? 0) > 0;
+				if (!hasSupplementSignals) {
+					toast.error(
+						i18n.t("workspace.routingRules.errorFallbackSupplementSignalRequired", {
+							index: i + 1,
+						}),
+					);
+					return;
+				}
+			}
+			if (rule.fallbacks.length === 0) {
+				toast.error(
+					i18n.t("workspace.routingRules.errorFallbackChainRequired", {
+						index: i + 1,
+					}),
+				);
+				return;
+			}
+			const seenFallbacks = new Set<string>();
+			for (const fallback of rule.fallbacks) {
+				const dedupKey = normalizedFallbackDedupKey(fallback);
+				if (seenFallbacks.has(dedupKey)) {
+					toast.error(
+						i18n.t("workspace.routingRules.errorFallbackDuplicateTarget", {
+							index: i + 1,
+						}),
+					);
+					return;
+				}
+				seenFallbacks.add(dedupKey);
+			}
+		}
+
 		const payload = {
 			name: data.name,
 			description: data.description,
@@ -276,6 +458,7 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 				weight,
 			})),
 			fallbacks: validFallbacks,
+			error_fallbacks: normalizedErrorFallbacks,
 			scope: data.scope,
 			scope_id: data.scope === "global" ? undefined : data.scope_id || undefined,
 			priority: data.priority,
@@ -287,9 +470,9 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 		const submitPromise =
 			isEditing && editingRule
 				? updateRoutingRule({
-					id: editingRule.id,
-					data: payload,
-				}).unwrap()
+						id: editingRule.id,
+						data: payload,
+					}).unwrap()
 				: createRoutingRule(payload).unwrap();
 
 		submitPromise
@@ -304,7 +487,7 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 				onOpenChange(false);
 				onSuccess?.();
 			})
-			.catch((error: any) => {
+			.catch((error: unknown) => {
 				const message = getErrorMessage(error);
 				// A malformed CEL expression is a field-level problem — show it beneath the CEL
 				// editor rather than in a toast (which turns a syntax error into a jarring popup).
@@ -346,7 +529,10 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 							<Input
 								id="name"
 								placeholder={i18n.t("workspace.routingRules.ruleNamePlaceholder")}
-								{...register("name", { required: "Rule name is required", maxLength: 255 })}
+								{...register("name", {
+									required: "Rule name is required",
+									maxLength: 255,
+								})}
 							/>
 							{errors.name && <p className="text-destructive text-sm">{errors.name.message}</p>}
 						</div>
@@ -354,7 +540,12 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 						{/* Description */}
 						<div className="space-y-3">
 							<Label htmlFor="description">{i18n.t("workspace.virtualKeys.description")}</Label>
-							<Textarea id="description" placeholder={i18n.t("workspace.routingRules.descriptionFieldPlaceholder")} rows={2} {...register("description")} />
+							<Textarea
+								id="description"
+								placeholder={i18n.t("workspace.routingRules.descriptionFieldPlaceholder")}
+								rows={2}
+								{...register("description")}
+							/>
 						</div>
 
 						{/* Enabled Switch */}
@@ -390,7 +581,7 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 								<Select
 									value={scope}
 									onValueChange={(value) => {
-										setValue("scope", value as any);
+										setValue("scope", value as RoutingRuleFormData["scope"]);
 										// Clear scope_id when scope changes
 										setValue("scope_id", "");
 									}}
@@ -457,7 +648,7 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 									))}
 								{/* Teams, customers and virtual keys are all searched lazily inside their
 								    selectors, each of which surfaces its own empty state. */}
-								{errors.scope_id &&<p className="text-destructive text-sm">{errors.scope_id.message}</p>}
+								{errors.scope_id && <p className="text-destructive text-sm">{errors.scope_id.message}</p>}
 							</div>
 						)}
 
@@ -498,9 +689,7 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 							<div className="flex items-center justify-between">
 								<div>
 									<Label>{i18n.t("workspace.routingRules.routingTargets")}</Label>
-									<p className="text-muted-foreground mt-0.5 text-xs">
-										{i18n.t("workspace.routingRules.routingTargetsDescription")}
-									</p>
+									<p className="text-muted-foreground mt-0.5 text-xs">{i18n.t("workspace.routingRules.routingTargetsDescription")}</p>
 								</div>
 								<Button
 									type="button"
@@ -630,6 +819,482 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 							</div>
 							<p className="text-muted-foreground text-xs">{i18n.t("workspace.routingRules.fallbacksOrderNote")}</p>
 						</div>
+
+						<div className="space-y-3" data-testid="routing-rule-error-fallbacks-section">
+							<div className="flex items-center justify-between">
+								<div>
+									<Label>{i18n.t("workspace.routingRules.errorFallbacks")}</Label>
+									<p className="text-muted-foreground mt-0.5 text-xs">{i18n.t("workspace.routingRules.errorFallbacksDescription")}</p>
+								</div>
+								<Button
+									type="button"
+									variant="outline"
+									size="sm"
+									onClick={addErrorFallbackRule}
+									className="gap-2"
+									data-testid="add-error-fallback-rule-btn"
+								>
+									<Plus className="h-4 w-4" />
+									{i18n.t("workspace.routingRules.addErrorFallbackRule")}
+								</Button>
+							</div>
+
+							{(errorFallbacks || []).length === 0 ? (
+								<p className="text-muted-foreground text-sm">{i18n.t("workspace.routingRules.noErrorFallbacksConfigured")}</p>
+							) : (
+								<div className="space-y-4">
+									{(errorFallbacks || []).map((rule, index) => {
+										const isScenarioRule = rule.mode === "scenario";
+										const advancedLabel = isScenarioRule
+											? i18n.t("workspace.routingRules.errorFallbackSupplementalRecognition")
+											: i18n.t("workspace.routingRules.errorFallbackAdvancedConditions");
+										const summary = isScenarioRule
+											? i18n.t("workspace.routingRules.errorFallbackSimpleDescription")
+											: i18n.t("workspace.routingRules.errorFallbackLegacyPreserved");
+										const modeTitle = isScenarioRule
+											? i18n.t("workspace.routingRules.errorFallbackExpertMode")
+											: i18n.t("workspace.routingRules.errorFallbackScenarioMode");
+										const modeDescription = isScenarioRule
+											? i18n.t("workspace.routingRules.errorFallbackExpertModeDescription")
+											: i18n.t("workspace.routingRules.errorFallbackScenarioModeDescription");
+										const modeAction = isScenarioRule
+											? i18n.t("workspace.routingRules.useExpertMode")
+											: i18n.t("workspace.routingRules.useScenarioMode");
+										return (
+											<div key={index} className="overflow-hidden rounded-lg border" data-testid="error-fallback-rule-card">
+												<div className="flex items-center justify-between gap-4 border-b px-4 py-3">
+													<span className="text-sm font-medium">
+														{i18n.t("workspace.routingRules.errorFallbackRuleNumber", { index: index + 1 })}
+													</span>
+													<Button
+														type="button"
+														variant="ghost"
+														size="icon"
+														onClick={() => removeErrorFallbackRule(index)}
+														aria-label={`Remove error fallback rule ${index + 1}`}
+													>
+														<Trash2 className="h-4 w-4" />
+													</Button>
+												</div>
+
+												<Collapsible defaultOpen={false}>
+													<div className="flex flex-wrap items-end gap-3 p-4 pb-2">
+														{rule.mode === "scenario" ? (
+															<div className="space-y-2">
+																<Label>{i18n.t("workspace.routingRules.errorFallbackScenario")}</Label>
+																<Select
+																	value={rule.scenario}
+																	onValueChange={(value) =>
+																		updateErrorFallbackRule(index, (current) => ({
+																			...current,
+																			mode: "scenario",
+																			scenario: value as RoutingErrorFallbackCategory,
+																		}))
+																	}
+																>
+																	<SelectTrigger className="h-10 w-[260px]" data-testid="error-fallback-primary-category-select">
+																		<ShieldCheck className="mr-2 h-4 w-4" />
+																		<SelectValue />
+																	</SelectTrigger>
+																	<SelectContent>
+																		{ERROR_FALLBACK_CATEGORY_OPTIONS.map((category) => (
+																			<SelectItem key={category} value={category}>
+																				{formatErrorFallbackCategoryLabel(category)}
+																			</SelectItem>
+																		))}
+																	</SelectContent>
+																</Select>
+															</div>
+														) : (
+															<div className="space-y-1">
+																<Label>{i18n.t("workspace.routingRules.errorFallbackLegacyRule")}</Label>
+																<p className="text-muted-foreground text-xs">
+																	{i18n.t("workspace.routingRules.errorFallbackLegacyRuleDescription")}
+																</p>
+															</div>
+														)}
+														<CollapsibleTrigger asChild>
+															<Button
+																type="button"
+																variant="outline"
+																size="sm"
+																className="group ml-auto gap-2"
+																data-testid="error-fallback-advanced-trigger"
+															>
+																<SlidersHorizontal className="h-4 w-4" />
+																{advancedLabel}
+																<ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]:rotate-180" />
+															</Button>
+														</CollapsibleTrigger>
+													</div>
+													<p className="text-muted-foreground px-4 pb-4 text-xs">{summary}</p>
+
+													<CollapsibleContent className="bg-muted/20 border-t p-4" data-testid="error-fallback-advanced-content">
+														<div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-dashed px-3 py-2.5">
+															<div className="space-y-0.5">
+																<p className="text-sm font-medium">{modeTitle}</p>
+																<p className="text-muted-foreground text-xs">{modeDescription}</p>
+															</div>
+															<Button
+																type="button"
+																variant="outline"
+																size="sm"
+																onClick={() =>
+																	updateErrorFallbackRule(index, (current) =>
+																		switchErrorFallbackMode(current, current.mode === "scenario" ? "legacy" : "scenario"),
+																	)
+																}
+																data-testid="error-fallback-mode-toggle"
+															>
+																{modeAction}
+															</Button>
+														</div>
+														<div className="mb-4 max-w-sm space-y-2">
+															<Label>{i18n.t("workspace.routingRules.errorFallbackRuleName")}</Label>
+															<Input
+																value={rule.name || ""}
+																onChange={(event) =>
+																	updateErrorFallbackRule(index, (current) => ({ ...current, name: event.target.value }))
+																}
+																placeholder={i18n.t("workspace.routingRules.errorFallbackRuleNamePlaceholder")}
+																data-testid="error-fallback-rule-name-input"
+															/>
+														</div>
+														{rule.mode === "scenario" ? (
+															<div className="space-y-4">
+																<div className="text-muted-foreground rounded-md border border-dashed px-3 py-2 text-xs">
+																	{i18n.t("workspace.routingRules.errorFallbackSupplementDescription")}
+																</div>
+																<div className="grid gap-3 md:grid-cols-2">
+																	<div className="space-y-2">
+																		<Label>{i18n.t("workspace.routingRules.errorFallbackProviders")}</Label>
+																		<Input
+																			value={toCommaSeparated(rule.supplement.providers)}
+																			onChange={(event) =>
+																				updateErrorFallbackRule(index, (current) => ({
+																					...current,
+																					mode: "scenario",
+																					supplement: {
+																						...current.supplement,
+																						providers: parseCommaSeparatedList(event.target.value),
+																					},
+																				}))
+																			}
+																			placeholder={i18n.t("workspace.routingRules.errorFallbackProvidersPlaceholder")}
+																		/>
+																	</div>
+																	<div className="space-y-2">
+																		<Label>{i18n.t("workspace.routingRules.errorFallbackErrorTypes")}</Label>
+																		<Input
+																			value={toCommaSeparated(rule.supplement.error_types)}
+																			onChange={(event) =>
+																				updateErrorFallbackRule(index, (current) => ({
+																					...current,
+																					mode: "scenario",
+																					supplement: {
+																						...current.supplement,
+																						error_types: parseCommaSeparatedList(event.target.value),
+																					},
+																				}))
+																			}
+																			placeholder={i18n.t("workspace.routingRules.errorFallbackCommaSeparatedPlaceholder")}
+																		/>
+																	</div>
+																	<div className="space-y-2">
+																		<Label>{i18n.t("workspace.routingRules.errorFallbackErrorCodes")}</Label>
+																		<Input
+																			value={toCommaSeparated(rule.supplement.error_codes)}
+																			onChange={(event) =>
+																				updateErrorFallbackRule(index, (current) => ({
+																					...current,
+																					mode: "scenario",
+																					supplement: {
+																						...current.supplement,
+																						error_codes: parseCommaSeparatedList(event.target.value),
+																					},
+																				}))
+																			}
+																			placeholder={i18n.t("workspace.routingRules.errorFallbackCommaSeparatedPlaceholder")}
+																		/>
+																	</div>
+																	<div className="space-y-2">
+																		<Label>{i18n.t("workspace.routingRules.errorFallbackStatusCodes")}</Label>
+																		<Input
+																			value={toCommaSeparated(rule.supplement.status_codes)}
+																			onChange={(event) =>
+																				updateErrorFallbackRule(index, (current) => ({
+																					...current,
+																					mode: "scenario",
+																					supplement: {
+																						...current.supplement,
+																						status_codes: parseCommaSeparatedNumbers(event.target.value),
+																					},
+																				}))
+																			}
+																			placeholder="400, 429, 503"
+																		/>
+																	</div>
+																	<div className="space-y-2 md:col-span-2">
+																		<Label>{i18n.t("workspace.routingRules.errorFallbackMessageContainsAny")}</Label>
+																		<Input
+																			value={toCommaSeparated(rule.supplement.message_contains_any)}
+																			onChange={(event) =>
+																				updateErrorFallbackRule(index, (current) => ({
+																					...current,
+																					mode: "scenario",
+																					supplement: {
+																						...current.supplement,
+																						message_contains_any: parseCommaSeparatedList(event.target.value),
+																					},
+																				}))
+																			}
+																			placeholder={i18n.t("workspace.routingRules.errorFallbackMessageContainsAnyPlaceholder")}
+																		/>
+																	</div>
+																</div>
+															</div>
+														) : (
+															<>
+																<div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+																	{i18n.t("workspace.routingRules.errorFallbackLegacyWarning")}
+																</div>
+																<div className="mb-4 space-y-2">
+																	<Label>{i18n.t("workspace.routingRules.errorFallbackAdditionalCategories")}</Label>
+																	<div className="flex flex-wrap gap-2">
+																		{ERROR_FALLBACK_CATEGORY_OPTIONS.map((category) => {
+																			const active = rule.when.categories.includes(category);
+																			return (
+																				<Button
+																					key={category}
+																					type="button"
+																					variant={active ? "default" : "outline"}
+																					size="sm"
+																					onClick={() =>
+																						updateErrorFallbackRule(index, (current) => ({
+																							...current,
+																							when: {
+																								...current.when,
+																								categories: active
+																									? current.when.categories.filter((item) => item !== category)
+																									: [...current.when.categories, category],
+																							},
+																						}))
+																					}
+																					data-testid={`error-fallback-category-${category}-btn`}
+																				>
+																					{formatErrorFallbackCategoryLabel(category)}
+																				</Button>
+																			);
+																		})}
+																	</div>
+																</div>
+
+																<div className="grid gap-3 md:grid-cols-2">
+																	<div className="space-y-2">
+																		<Label>{i18n.t("workspace.routingRules.errorFallbackErrorTypes")}</Label>
+																		<Input
+																			value={toCommaSeparated(rule.when.error_types)}
+																			onChange={(event) =>
+																				updateErrorFallbackRule(index, (current) => ({
+																					...current,
+																					when: {
+																						...current.when,
+																						error_types: parseCommaSeparatedList(event.target.value),
+																					},
+																				}))
+																			}
+																			placeholder={i18n.t("workspace.routingRules.errorFallbackCommaSeparatedPlaceholder")}
+																		/>
+																	</div>
+																	<div className="space-y-2">
+																		<Label>{i18n.t("workspace.routingRules.errorFallbackErrorCodes")}</Label>
+																		<Input
+																			value={toCommaSeparated(rule.when.error_codes)}
+																			onChange={(event) =>
+																				updateErrorFallbackRule(index, (current) => ({
+																					...current,
+																					when: {
+																						...current.when,
+																						error_codes: parseCommaSeparatedList(event.target.value),
+																					},
+																				}))
+																			}
+																			placeholder={i18n.t("workspace.routingRules.errorFallbackCommaSeparatedPlaceholder")}
+																		/>
+																	</div>
+																	<div className="space-y-2">
+																		<Label>{i18n.t("workspace.routingRules.errorFallbackStatusCodes")}</Label>
+																		<Input
+																			value={toCommaSeparated(rule.when.status_codes)}
+																			onChange={(event) =>
+																				updateErrorFallbackRule(index, (current) => ({
+																					...current,
+																					when: {
+																						...current.when,
+																						status_codes: parseCommaSeparatedNumbers(event.target.value),
+																					},
+																				}))
+																			}
+																			placeholder="400, 429, 503"
+																		/>
+																	</div>
+																	<div className="space-y-2">
+																		<Label>{i18n.t("workspace.routingRules.errorFallbackMessageContains")}</Label>
+																		<Input
+																			value={toCommaSeparated(rule.when.message_contains)}
+																			onChange={(event) =>
+																				updateErrorFallbackRule(index, (current) => ({
+																					...current,
+																					when: {
+																						...current.when,
+																						message_contains: parseCommaSeparatedList(event.target.value),
+																					},
+																				}))
+																			}
+																			placeholder={i18n.t("workspace.routingRules.errorFallbackMessageContainsPlaceholder")}
+																		/>
+																	</div>
+																</div>
+															</>
+														)}
+													</CollapsibleContent>
+												</Collapsible>
+
+												<div className="space-y-3 p-4 pt-0">
+													<div className="flex items-center justify-between">
+														<div>
+															<Label className="text-base">
+																{i18n.t("workspace.routingRules.errorFallbackChain")}
+																<span className="text-muted-foreground ml-2 font-normal">
+																	{i18n.t("workspace.routingRules.errorFallbackOrderedHint")}
+																</span>
+															</Label>
+															<p className="text-muted-foreground mt-0.5 text-xs">
+																{i18n.t("workspace.routingRules.errorFallbackChainDescription")}
+															</p>
+														</div>
+														<Button
+															type="button"
+															variant="outline"
+															size="sm"
+															onClick={() =>
+																updateErrorFallbackRule(index, (current) => ({
+																	...current,
+																	fallbacks: [...current.fallbacks, ""],
+																}))
+															}
+															className="gap-2"
+															data-testid="add-error-fallback-target-btn"
+														>
+															<Plus className="h-4 w-4" />
+															{i18n.t("workspace.routingRules.addErrorFallbackTarget")}
+														</Button>
+													</div>
+
+													<div
+														className="text-muted-foreground flex items-start gap-2 rounded-md border px-3 py-2.5 text-xs"
+														data-testid="error-fallback-exhaustion-note"
+													>
+														<AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+														<span>{i18n.t("workspace.routingRules.errorFallbackExhaustionNote")}</span>
+													</div>
+
+													{rule.fallbacks.length === 0 ? (
+														<p className="text-muted-foreground text-sm">{i18n.t("workspace.routingRules.noFallbacksConfigured")}</p>
+													) : (
+														<div className="space-y-2">
+															{rule.fallbacks.map((fallback, fallbackIndex) => {
+																const parts = fallback.split("/");
+																const fbProvider = parts[0] || "";
+																const fbModel = parts.slice(1).join("/");
+
+																return (
+																	<div
+																		key={fallbackIndex}
+																		className="flex items-stretch gap-2"
+																		draggable
+																		onDragStart={(event) => event.dataTransfer.setData("text/plain", String(fallbackIndex))}
+																		onDragOver={(event) => event.preventDefault()}
+																		onDrop={(event) => {
+																			event.preventDefault();
+																			const fromIndex = Number.parseInt(event.dataTransfer.getData("text/plain"), 10);
+																			if (Number.isFinite(fromIndex)) moveErrorFallbackTarget(index, fromIndex, fallbackIndex);
+																		}}
+																		data-testid={`error-fallback-target-${fallbackIndex}`}
+																	>
+																		<div className="text-muted-foreground flex w-12 shrink-0 cursor-grab items-center justify-between active:cursor-grabbing">
+																			<GripVertical className="h-4 w-4" aria-hidden="true" />
+																			<span className="border-primary text-primary flex h-8 w-8 items-center justify-center rounded-full border text-sm font-semibold">
+																				{fallbackIndex + 1}
+																			</span>
+																		</div>
+																		<div className="flex flex-1 items-center gap-2 rounded-md border p-2">
+																			<div className="flex-1">
+																				<ComboboxSelect
+																					options={providerOptions}
+																					value={fbProvider || null}
+																					onValueChange={(value) =>
+																						updateErrorFallbackRule(index, (current) => {
+																							const nextFallbacks = [...current.fallbacks];
+																							nextFallbacks[fallbackIndex] = `${value ?? ""}/${fbModel}`;
+																							return {
+																								...current,
+																								fallbacks: nextFallbacks,
+																							};
+																						})
+																					}
+																					placeholder={i18n.t("workspace.routingRules.selectProvider")}
+																					className="h-9"
+																					noPortal
+																				/>
+																			</div>
+																			<div className="flex-1">
+																				<ModelMultiselect
+																					provider={fbProvider || undefined}
+																					value={fbModel}
+																					onChange={(value) =>
+																						updateErrorFallbackRule(index, (current) => {
+																							const nextFallbacks = [...current.fallbacks];
+																							nextFallbacks[fallbackIndex] = `${fbProvider}/${value}`;
+																							return {
+																								...current,
+																								fallbacks: nextFallbacks,
+																							};
+																						})
+																					}
+																					placeholder={i18n.t("workspace.routingRules.incoming")}
+																					isSingleSelect
+																					disabled={!fbProvider}
+																					className="!h-9 !min-h-9 w-full"
+																				/>
+																			</div>
+																			<Button
+																				type="button"
+																				variant="ghost"
+																				size="sm"
+																				onClick={() =>
+																					updateErrorFallbackRule(index, (current) => ({
+																						...current,
+																						fallbacks: current.fallbacks.filter((_, currentIndex) => currentIndex !== fallbackIndex),
+																					}))
+																				}
+																				className="h-9 px-2"
+																			>
+																				<Trash2 className="h-4 w-4" />
+																			</Button>
+																		</div>
+																	</div>
+																);
+															})}
+														</div>
+													)}
+												</div>
+											</div>
+										);
+									})}
+								</div>
+							)}
+						</div>
 					</div>
 					{/* Action Buttons */}
 					<div className="bg-card sticky bottom-0 flex justify-end gap-3 border-t px-8 py-4">
@@ -649,7 +1314,11 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 interface TargetRowProps {
 	target: RoutingTargetFormData;
 	index: number;
-	providerOptions: Array<{ label: string; value: string; icon: React.ReactNode }>;
+	providerOptions: Array<{
+		label: string;
+		value: string;
+		icon: React.ReactNode;
+	}>;
 	allKeys: Array<{ key_id: string; name: string; provider: string }>;
 	showRemove: boolean;
 	onUpdate: (index: number, field: keyof RoutingTargetFormData, value: string | number) => void;
@@ -775,7 +1444,8 @@ function TargetRow({ target, index, providerOptions, allKeys, showRemove, onUpda
 			{target.provider && (availableKeys.length > 0 || target.key_id) && (
 				<div className="space-y-1.5">
 					<Label id={`routing-target-${index}-apikey-label`} className="text-xs">
-						{i18n.t("workspace.virtualKeys.apiKey")} <span className="text-muted-foreground">(optional; leave unset for load-balanced selection)</span>
+						{i18n.t("workspace.virtualKeys.apiKey")}{" "}
+						<span className="text-muted-foreground">(optional; leave unset for load-balanced selection)</span>
 					</Label>
 					<div className="flex gap-1.5">
 						<Select value={target.key_id || ""} onValueChange={(value) => onUpdate(index, "key_id", value)}>

@@ -266,9 +266,17 @@ const (
 	BifrostContextKeyGovernanceIncludeOnlyKeys           BifrostContextKey = "bf-governance-include-only-keys"        // []string (to store the include-only key IDs for provider config routing (set by bifrost governance plugin - DO NOT SET THIS MANUALLY))
 	BifrostContextKeyNumberOfRetries                     BifrostContextKey = "bifrost-number-of-retries"              // int (to store the number of retries (set by bifrost - DO NOT SET THIS MANUALLY))
 	BifrostContextKeyFallbackIndex                       BifrostContextKey = "bifrost-fallback-index"                 // int (to store the fallback index (set by bifrost - DO NOT SET THIS MANUALLY)) 0 for primary, 1 for first fallback, etc.
+	BifrostContextKeyErrorFallbackRuleName               BifrostContextKey = "bifrost-error-fallback-rule-name"       // string (matched error_fallbacks rule, set by bifrost)
+	BifrostContextKeyErrorFallbackCategory               BifrostContextKey = "bifrost-error-fallback-category"        // string (normalized failure category that selected the dedicated chain)
+	BifrostContextKeyErrorFallbackMatchSource            BifrostContextKey = "bifrost-error-fallback-match-source"    // string (which matcher path selected the dedicated chain: scenario, supplement.error_codes, legacy_when.message_contains, etc.)
+	BifrostContextKeyErrorFallbackMatchDetail            BifrostContextKey = "bifrost-error-fallback-match-detail"    // string (safe detector/matcher identifier, never raw upstream content)
+	BifrostContextKeyErrorFallbackMatchedBy              BifrostContextKey = "bifrost-error-fallback-matched-by"      // string (response_signal, structured, provider_pack, message_pack, supplement, or legacy_when)
+	BifrostContextKeyErrorFallbackPack                   BifrostContextKey = "bifrost-error-fallback-pack"            // string (stable built-in recognition-pack identifier)
+	BifrostContextKeyErrorFallbackPatternID              BifrostContextKey = "bifrost-error-fallback-pattern-id"      // string (stable safe pattern identifier; never raw upstream content)
 	BifrostContextKeyResolvedAlias                       BifrostContextKey = "bifrost-resolved-alias"                 // *ResolvedAlias (set by bifrost after key-level alias resolution — providers read this for model_family routing and provider-specific overrides; nil/absent when no alias matched)
 	BifrostContextKeyRoutingInfo                         BifrostContextKey = "bifrost-routing-info"                   // RoutingInfo (set by bifrost per stream attempt - DO NOT SET THIS MANUALLY) - streams carry RoutingInfo only on chunks, so the transport reads this snapshot to emit routed-identity response headers before the first chunk
 	BifrostContextKeyStreamEndIndicator                  BifrostContextKey = "bifrost-stream-end-indicator"           // bool (set by bifrost - DO NOT SET THIS MANUALLY)
+	BifrostContextKeyStreamPanicked                      BifrostContextKey = "bifrost-stream-panicked"                // bool (provider panic: transport emits terminal error instead of [DONE])
 	BifrostContextKeyStreamGated                         BifrostContextKey = "bifrost-stream-gated"                   // bool (set by ctx.PauseStream/ResumeStream/EndStream when a plugin first engages the pause/resume gate; provider helpers use this as a fast-path check to skip Tracer.GateSend on streams that never engage the gate)
 	BifrostContextKeyStreamIdleTimeout                   BifrostContextKey = "bifrost-stream-idle-timeout"            // time.Duration (per-chunk idle timeout for streaming)
 	BifrostContextKeySkipKeySelection                    BifrostContextKey = "bifrost-skip-key-selection"             // bool (will pass an empty key to the provider)
@@ -494,6 +502,68 @@ type Fallback struct {
 	Model    string        `json:"model"`
 }
 
+// FailureCategory is a normalized classification of an upstream failure. It is
+// used by error_fallbacks to route known failure families (for example content
+// policy rejections) to dedicated fallback chains.
+type FailureCategory string
+
+const (
+	FailureCategoryContentPolicy        FailureCategory = "content_policy"
+	FailureCategoryUnsupportedOperation FailureCategory = "unsupported_operation"
+	FailureCategoryRateLimit            FailureCategory = "rate_limit"
+	FailureCategoryAuthentication       FailureCategory = "authentication"
+	FailureCategoryBilling              FailureCategory = "billing"
+	FailureCategoryPermission           FailureCategory = "permission"
+	FailureCategoryTimeout              FailureCategory = "timeout"
+	FailureCategoryProviderUnavailable  FailureCategory = "provider_unavailable"
+	FailureCategoryNetwork              FailureCategory = "network"
+	FailureCategoryInvalidRequest       FailureCategory = "invalid_request"
+	FailureCategoryInternal             FailureCategory = "internal"
+	FailureCategoryUnknown              FailureCategory = "unknown"
+)
+
+// ErrorFallbackCondition decides whether an error_fallbacks rule applies.
+//
+// Matching semantics:
+//   - populated fields are ANDed together
+//   - values within one field are ORed
+//   - message_contains is case-insensitive substring matching
+type ErrorFallbackCondition struct {
+	Categories      []FailureCategory `json:"categories,omitempty"`
+	ErrorCodes      []string          `json:"error_codes,omitempty"`
+	ErrorTypes      []string          `json:"error_types,omitempty"`
+	StatusCodes     []int             `json:"status_codes,omitempty"`
+	MessageContains []string          `json:"message_contains,omitempty"`
+}
+
+// ErrorFallbackSupplement lets operators extend a built-in scenario matcher
+// with a few provider-specific clues without having to author the full legacy
+// `when` condition by hand.
+//
+// Matching semantics:
+//   - providers is a scope filter
+//   - the remaining populated fields are ORed together
+//   - values within one field are ORed
+//   - message_contains_any is case-insensitive substring matching
+type ErrorFallbackSupplement struct {
+	Providers          []ModelProvider `json:"providers,omitempty"`
+	ErrorCodes         []string        `json:"error_codes,omitempty"`
+	ErrorTypes         []string        `json:"error_types,omitempty"`
+	StatusCodes        []int           `json:"status_codes,omitempty"`
+	MessageContainsAny []string        `json:"message_contains_any,omitempty"`
+}
+
+// ErrorFallbackRule defines a dedicated fallback chain for a matched provider
+// error. When a rule matches, its Fallbacks fully replace the ordinary
+// fallbacks for that request.
+type ErrorFallbackRule struct {
+	Name       string                   `json:"name,omitempty"`
+	Scenario   FailureCategory          `json:"scenario,omitempty"`
+	Supplement *ErrorFallbackSupplement `json:"supplement,omitempty"`
+	When       ErrorFallbackCondition   `json:"when,omitempty"`
+	Fallbacks  []Fallback               `json:"fallbacks,omitempty"`
+}
+
 // BifrostRequest is the request struct for all bifrost requests.
 // only ONE of the following fields should be set:
 // - ListModelsRequest
@@ -714,6 +784,40 @@ func (br *BifrostRequest) GetRequestFields() (provider ModelProvider, model stri
 	return "", "", nil
 }
 
+func (br *BifrostRequest) GetErrorFallbacks() []ErrorFallbackRule {
+	switch {
+	case br.TextCompletionRequest != nil:
+		return br.TextCompletionRequest.ErrorFallbacks
+	case br.ChatRequest != nil:
+		return br.ChatRequest.ErrorFallbacks
+	case br.ResponsesRequest != nil:
+		return br.ResponsesRequest.ErrorFallbacks
+	case br.CountTokensRequest != nil:
+		return br.CountTokensRequest.ErrorFallbacks
+	case br.CompactionRequest != nil:
+		return br.CompactionRequest.ErrorFallbacks
+	case br.EmbeddingRequest != nil:
+		return br.EmbeddingRequest.ErrorFallbacks
+	case br.RerankRequest != nil:
+		return br.RerankRequest.ErrorFallbacks
+	case br.OCRRequest != nil:
+		return br.OCRRequest.ErrorFallbacks
+	case br.SpeechRequest != nil:
+		return br.SpeechRequest.ErrorFallbacks
+	case br.TranscriptionRequest != nil:
+		return br.TranscriptionRequest.ErrorFallbacks
+	case br.ImageGenerationRequest != nil:
+		return br.ImageGenerationRequest.ErrorFallbacks
+	case br.ImageEditRequest != nil:
+		return br.ImageEditRequest.ErrorFallbacks
+	case br.ImageVariationRequest != nil:
+		return br.ImageVariationRequest.ErrorFallbacks
+	case br.VideoGenerationRequest != nil:
+		return br.VideoGenerationRequest.ErrorFallbacks
+	}
+	return nil
+}
+
 func (br *BifrostRequest) SetProvider(provider ModelProvider) {
 	switch {
 	case br.ListModelsRequest != nil:
@@ -862,6 +966,39 @@ func (br *BifrostRequest) SetFallbacks(fallbacks []Fallback) {
 		br.ImageVariationRequest.Fallbacks = fallbacks
 	case br.VideoGenerationRequest != nil:
 		br.VideoGenerationRequest.Fallbacks = fallbacks
+	}
+}
+
+func (br *BifrostRequest) SetErrorFallbacks(errorFallbacks []ErrorFallbackRule) {
+	switch {
+	case br.TextCompletionRequest != nil:
+		br.TextCompletionRequest.ErrorFallbacks = errorFallbacks
+	case br.ChatRequest != nil:
+		br.ChatRequest.ErrorFallbacks = errorFallbacks
+	case br.ResponsesRequest != nil:
+		br.ResponsesRequest.ErrorFallbacks = errorFallbacks
+	case br.CountTokensRequest != nil:
+		br.CountTokensRequest.ErrorFallbacks = errorFallbacks
+	case br.CompactionRequest != nil:
+		br.CompactionRequest.ErrorFallbacks = errorFallbacks
+	case br.EmbeddingRequest != nil:
+		br.EmbeddingRequest.ErrorFallbacks = errorFallbacks
+	case br.RerankRequest != nil:
+		br.RerankRequest.ErrorFallbacks = errorFallbacks
+	case br.OCRRequest != nil:
+		br.OCRRequest.ErrorFallbacks = errorFallbacks
+	case br.SpeechRequest != nil:
+		br.SpeechRequest.ErrorFallbacks = errorFallbacks
+	case br.TranscriptionRequest != nil:
+		br.TranscriptionRequest.ErrorFallbacks = errorFallbacks
+	case br.ImageGenerationRequest != nil:
+		br.ImageGenerationRequest.ErrorFallbacks = errorFallbacks
+	case br.ImageEditRequest != nil:
+		br.ImageEditRequest.ErrorFallbacks = errorFallbacks
+	case br.ImageVariationRequest != nil:
+		br.ImageVariationRequest.ErrorFallbacks = errorFallbacks
+	case br.VideoGenerationRequest != nil:
+		br.VideoGenerationRequest.ErrorFallbacks = errorFallbacks
 	}
 }
 
@@ -1995,6 +2132,12 @@ func (e *ErrorField) UnmarshalJSON(data []byte) error {
 // BifrostErrorExtraFields contains additional fields in an error response.
 type BifrostErrorExtraFields struct {
 	RoutingInfo RoutingInfo `json:"routing_info"`
+	// BaseProvider is the built-in provider family backing a custom provider.
+	// Internal-only: error recognition uses it for provider-specific matcher packs.
+	BaseProvider ModelProvider `json:"-"`
+	// FailureSignals is a bounded internal summary captured before client-facing
+	// raw fields are stripped. It is never serialized, persisted, or returned.
+	FailureSignals FailureRecognitionSignals `json:"-"`
 	// Deprecated: use RoutingInfo.Provider. Still populated for backward
 	// compatibility; new consumers should read from RoutingInfo.
 	Provider ModelProvider `json:"provider,omitempty"`
@@ -2007,28 +2150,28 @@ type BifrostErrorExtraFields struct {
 	// matched (i.e. RoutingInfo.ResolvedKeyAlias != nil), otherwise
 	// RoutingInfo.Model. Still populated for backward compatibility; new
 	// consumers should read from RoutingInfo.
-	ResolvedModelUsed         string                `json:"resolved_model_used,omitempty"`
-	RequestType               RequestType           `json:"request_type,omitempty"`
-	MCPRequestType            MCPRequestType        `json:"mcp_request_type,omitempty"`
-	RawRequest                interface{}           `json:"raw_request,omitempty"`
-	RawResponse               interface{}           `json:"raw_response,omitempty"`
-	ConvertedRequestType      RequestType           `json:"converted_request_type,omitempty"`
-	DroppedCompatPluginParams []string              `json:"dropped_compat_plugin_params,omitempty"`
-	Latency                   int64                 `json:"latency,omitempty"` // in milliseconds
-	TimeoutSource             TimeoutSource         `json:"timeout_source,omitempty"`
-	ConfiguredTimeoutSeconds  int                   `json:"configured_timeout_seconds,omitempty"`
-	ElapsedMS                 int64                 `json:"elapsed_ms,omitempty"`
-	UpstreamResponseReceived  *bool                 `json:"upstream_response_received,omitempty"`
+	ResolvedModelUsed         string         `json:"resolved_model_used,omitempty"`
+	RequestType               RequestType    `json:"request_type,omitempty"`
+	MCPRequestType            MCPRequestType `json:"mcp_request_type,omitempty"`
+	RawRequest                interface{}    `json:"raw_request,omitempty"`
+	RawResponse               interface{}    `json:"raw_response,omitempty"`
+	ConvertedRequestType      RequestType    `json:"converted_request_type,omitempty"`
+	DroppedCompatPluginParams []string       `json:"dropped_compat_plugin_params,omitempty"`
+	Latency                   int64          `json:"latency,omitempty"` // in milliseconds
+	TimeoutSource             TimeoutSource  `json:"timeout_source,omitempty"`
+	ConfiguredTimeoutSeconds  int            `json:"configured_timeout_seconds,omitempty"`
+	ElapsedMS                 int64          `json:"elapsed_ms,omitempty"`
+	UpstreamResponseReceived  *bool          `json:"upstream_response_received,omitempty"`
 	// UpstreamRequestID is a safe, provider-issued correlation ID captured from
 	// an allowlisted response header. It is persisted for operator support but
 	// removed from HTTP error responses before they reach API callers.
-	UpstreamRequestID         string                `json:"upstream_request_id,omitempty"`
+	UpstreamRequestID string `json:"upstream_request_id,omitempty"`
 	// UpstreamResponseHeaders contains a small allowlist of safe, operational
 	// response headers (request IDs, rate-limit state, and retry timing). It is
 	// persisted for internal troubleshooting and stripped from API error bodies.
-	UpstreamResponseHeaders   map[string]string     `json:"upstream_response_headers,omitempty"`
-	KeyStatuses               []KeyStatus           `json:"key_statuses,omitempty"`
-	MCPAuthRequired           *MCPAuthRequiredError `json:"mcp_auth_required,omitempty"` // Set when a per-user MCP tool requires the caller to complete an inline auth flow (OAuth or headers)
+	UpstreamResponseHeaders map[string]string     `json:"upstream_response_headers,omitempty"`
+	KeyStatuses             []KeyStatus           `json:"key_statuses,omitempty"`
+	MCPAuthRequired         *MCPAuthRequiredError `json:"mcp_auth_required,omitempty"` // Set when a per-user MCP tool requires the caller to complete an inline auth flow (OAuth or headers)
 	// BilledUsage carries provider-reported token usage that was consumed even
 	// though the request ultimately failed or was cancelled (e.g. a stream
 	// aborted mid-response, or a 5xx returned after input tokens were
@@ -2037,6 +2180,14 @@ type BifrostErrorExtraFields struct {
 	// the provider actually billed us for. Nil when the failure consumed no
 	// tokens (e.g. 401/403/429 before the model ran).
 	BilledUsage *BifrostLLMUsage `json:"billed_usage,omitempty"`
+}
+
+// FailureRecognitionSignals contains bounded provider-error metadata used only
+// for in-process fallback classification.
+type FailureRecognitionSignals struct {
+	ErrorCodes []string
+	ErrorTypes []string
+	Messages   []string
 }
 
 // TimeoutSource identifies which boundary reported a timeout without exposing

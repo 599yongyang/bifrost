@@ -289,6 +289,17 @@ type mockComplexityGovernanceManager struct {
 	reloadErr      error
 }
 
+type mockRoutingRuleGovernanceManager struct {
+	GovernanceManager
+	reloadIDs []string
+	reloadErr error
+}
+
+func (m *mockRoutingRuleGovernanceManager) ReloadRoutingRule(_ context.Context, id string) error {
+	m.reloadIDs = append(m.reloadIDs, id)
+	return m.reloadErr
+}
+
 func (m *mockComplexityGovernanceManager) ReloadComplexityAnalyzerConfig(_ context.Context, config *complexity.AnalyzerConfig) error {
 	m.reloadCalls++
 	m.reloadedConfig = config
@@ -438,6 +449,174 @@ func TestComplexityAnalyzerConfigResetPersistsDefaultsAndReloads(t *testing.T) {
 	if stored == nil || stored.TierBoundaries != complexity.DefaultTierBoundaries() {
 		t.Fatalf("expected stored defaults, got %+v", stored)
 	}
+}
+
+func TestCreateRoutingRulePersistsErrorFallbacks(t *testing.T) {
+	SetLogger(&mockLogger{})
+	store := setupPricingOverrideHandlerStore(t)
+	manager := &mockRoutingRuleGovernanceManager{}
+	handler := &GovernanceHandler{
+		configStore:       store,
+		governanceManager: manager,
+	}
+
+	reqCtx := newTestRequestCtx(`{
+		"name":"image-safe-fallback",
+		"cel_expression":"true",
+		"targets":[{"provider":"openai","model":"gpt-image-1","weight":1}],
+		"error_fallbacks":[
+			{
+				"name":"content policy",
+				"when":{"categories":["content_policy"],"message_contains":["unsafe"]},
+				"fallbacks":["azure/gpt-image-1"]
+			}
+		]
+	}`)
+	handler.createRoutingRule(reqCtx)
+
+	if reqCtx.Response.StatusCode() != fasthttp.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", reqCtx.Response.StatusCode(), reqCtx.Response.Body())
+	}
+
+	rules, err := store.GetRoutingRules(context.Background())
+	require.NoError(t, err)
+	require.Len(t, rules, 1)
+	require.Len(t, rules[0].ParsedErrorFallbacks, 1)
+	assert.Equal(t, "content policy", rules[0].ParsedErrorFallbacks[0].Name)
+	assert.Equal(t, []string{"content_policy"}, rules[0].ParsedErrorFallbacks[0].When.Categories)
+	assert.Equal(t, []string{"unsafe"}, rules[0].ParsedErrorFallbacks[0].When.MessageContains)
+	assert.Equal(t, []string{"azure/gpt-image-1"}, rules[0].ParsedErrorFallbacks[0].Fallbacks)
+	assert.Len(t, manager.reloadIDs, 1)
+}
+
+func TestCreateRoutingRulePersistsScenarioSupplement(t *testing.T) {
+	SetLogger(&mockLogger{})
+	store := setupPricingOverrideHandlerStore(t)
+	manager := &mockRoutingRuleGovernanceManager{}
+	handler := &GovernanceHandler{configStore: store, governanceManager: manager}
+
+	reqCtx := newTestRequestCtx(`{
+		"name":"scenario-safety-fallback",
+		"cel_expression":"true",
+		"targets":[{"provider":"openai","model":"gpt-image-1","weight":1}],
+		"error_fallbacks":[{
+			"scenario":"content_policy",
+			"supplement":{"providers":["custom-provider"],"message_contains_any":["请求被安全系统拒绝"]},
+			"fallbacks":["azure/gpt-image-1"]
+		}]
+	}`)
+	handler.createRoutingRule(reqCtx)
+
+	require.Equal(t, fasthttp.StatusOK, reqCtx.Response.StatusCode(), string(reqCtx.Response.Body()))
+	rules, err := store.GetRoutingRules(context.Background())
+	require.NoError(t, err)
+	require.Len(t, rules, 1)
+	require.Len(t, rules[0].ParsedErrorFallbacks, 1)
+	stored := rules[0].ParsedErrorFallbacks[0]
+	assert.Equal(t, "content_policy", stored.Scenario)
+	require.NotNil(t, stored.Supplement)
+	assert.Equal(t, []string{"custom-provider"}, stored.Supplement.Providers)
+	assert.Equal(t, []string{"请求被安全系统拒绝"}, stored.Supplement.MessageContainsAny)
+	assert.Empty(t, stored.When.Categories)
+}
+
+func TestCreateRoutingRuleRejectsMixedScenarioAndWhen(t *testing.T) {
+	SetLogger(&mockLogger{})
+	store := setupPricingOverrideHandlerStore(t)
+	handler := &GovernanceHandler{configStore: store, governanceManager: &mockRoutingRuleGovernanceManager{}}
+
+	reqCtx := newTestRequestCtx(`{
+		"name":"mixed-error-fallback",
+		"cel_expression":"true",
+		"targets":[{"provider":"openai","model":"gpt-image-1","weight":1}],
+		"error_fallbacks":[{
+			"scenario":"content_policy",
+			"when":{"categories":["content_policy"]},
+			"fallbacks":["azure/gpt-image-1"]
+		}]
+	}`)
+	handler.createRoutingRule(reqCtx)
+
+	require.Equal(t, fasthttp.StatusBadRequest, reqCtx.Response.StatusCode())
+	assert.Contains(t, string(reqCtx.Response.Body()), "cannot define both scenario and when")
+}
+
+func TestUpdateRoutingRuleRejectsErrorFallbackWithoutMatchers(t *testing.T) {
+	SetLogger(&mockLogger{})
+	store := setupPricingOverrideHandlerStore(t)
+	manager := &mockRoutingRuleGovernanceManager{}
+	handler := &GovernanceHandler{
+		configStore:       store,
+		governanceManager: manager,
+	}
+
+	enabled := true
+	rule := &configstoreTables.TableRoutingRule{
+		ID:            "routing-update-validation",
+		Name:          "Routing Validation",
+		Enabled:       &enabled,
+		CelExpression: "true",
+		Targets: []configstoreTables.TableRoutingTarget{
+			{Provider: schemas.Ptr("openai"), Model: schemas.Ptr("gpt-4o"), Weight: 1.0},
+		},
+		Scope: "global",
+	}
+	require.NoError(t, store.CreateRoutingRule(context.Background(), rule))
+
+	reqCtx := newTestRequestCtx(`{
+		"error_fallbacks":[
+			{
+				"fallbacks":["azure/gpt-image-1"],
+				"when":{}
+			}
+		]
+	}`)
+	reqCtx.SetUserValue("rule_id", rule.ID)
+	handler.updateRoutingRule(reqCtx)
+
+	if reqCtx.Response.StatusCode() != fasthttp.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d: %s", reqCtx.Response.StatusCode(), reqCtx.Response.Body())
+	}
+	assert.Contains(t, string(reqCtx.Response.Body()), "must define either scenario or when")
+
+	stored, err := store.GetRoutingRule(context.Background(), rule.ID)
+	require.NoError(t, err)
+	assert.Empty(t, stored.ParsedErrorFallbacks)
+	assert.Empty(t, manager.reloadIDs)
+}
+
+func TestCreateRoutingRuleRejectsDuplicateErrorFallbackTargets(t *testing.T) {
+	SetLogger(&mockLogger{})
+	store := setupPricingOverrideHandlerStore(t)
+	manager := &mockRoutingRuleGovernanceManager{}
+	handler := &GovernanceHandler{
+		configStore:       store,
+		governanceManager: manager,
+	}
+
+	reqCtx := newTestRequestCtx(`{
+		"name":"image-safe-fallback",
+		"cel_expression":"true",
+		"targets":[{"provider":"openai","model":"gpt-image-1","weight":1}],
+		"error_fallbacks":[
+			{
+				"name":"content policy",
+				"when":{"categories":["content_policy"]},
+				"fallbacks":["openai/GPT-IMAGE-1","openai/gpt-image-1"]
+			}
+		]
+	}`)
+	handler.createRoutingRule(reqCtx)
+
+	if reqCtx.Response.StatusCode() != fasthttp.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d: %s", reqCtx.Response.StatusCode(), reqCtx.Response.Body())
+	}
+	assert.Contains(t, string(reqCtx.Response.Body()), "duplicates an earlier fallback target")
+
+	rules, err := store.GetRoutingRules(context.Background())
+	require.NoError(t, err)
+	assert.Empty(t, rules)
+	assert.Empty(t, manager.reloadIDs)
 }
 
 func TestApplyVirtualKeyOwnershipUpdatePreservesOmittedAssociation(t *testing.T) {

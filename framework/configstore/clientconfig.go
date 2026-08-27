@@ -1398,6 +1398,17 @@ func GenerateRoutingRuleHash(r tables.TableRoutingRule) (string, error) {
 		hash.Write(data)
 	}
 
+	// Hash ErrorFallbacks: use DB string when set, else marshal ParsedErrorFallbacks (config-origin)
+	if r.ErrorFallbacks != nil {
+		hash.Write([]byte(*r.ErrorFallbacks))
+	} else if len(r.ParsedErrorFallbacks) > 0 {
+		data, err := sonic.Marshal(r.ParsedErrorFallbacks)
+		if err != nil {
+			return "", err
+		}
+		hash.Write(data)
+	}
+
 	// Hash Query: use raw string when set, else marshal ParsedQuery (config-origin)
 	// Use OrderedMap's deterministic marshalling to ensure consistent hashes across runs
 	if r.Query != nil {

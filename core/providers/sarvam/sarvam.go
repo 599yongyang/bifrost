@@ -338,6 +338,7 @@ func (provider *SarvamProvider) SpeechStream(ctx *schemas.BifrostContext, postHo
 			}
 			providerUtils.CloseStream(ctx, responseChan)
 		}()
+		defer providerUtils.RecoverGoroutinePanic(ctx, provider.logger, "sarvam stream")
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 
 		reader, releaseGzip := providerUtils.DecompressStreamBody(resp)

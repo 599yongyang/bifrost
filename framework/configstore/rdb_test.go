@@ -3630,3 +3630,61 @@ func TestRDBConfigStore_SyncRoutingRules(t *testing.T) {
 		})
 	}
 }
+
+func TestRDBConfigStore_RoutingRuleErrorFallbacksRoundTrip(t *testing.T) {
+	store := setupRDBTestStore(t)
+	ctx := context.Background()
+
+	rule := routingRuleFixture("rule-error-fallbacks", 0, "openai")
+	rule.ParsedErrorFallbacks = []tables.TableRoutingErrorFallback{
+		{
+			Name: "content policy",
+			When: tables.TableRoutingErrorFallbackCondition{
+				Categories:      []string{"content_policy"},
+				MessageContains: []string{"unsafe"},
+			},
+			Fallbacks: []string{"azure/gpt-image-1", "openai/gpt-image-1"},
+		},
+	}
+
+	require.NoError(t, store.CreateRoutingRule(ctx, rule))
+
+	got, err := store.GetRoutingRule(ctx, rule.ID)
+	require.NoError(t, err)
+	require.Len(t, got.ParsedErrorFallbacks, 1)
+	assert.Equal(t, "content policy", got.ParsedErrorFallbacks[0].Name)
+	assert.Equal(t, []string{"content_policy"}, got.ParsedErrorFallbacks[0].When.Categories)
+	assert.Equal(t, []string{"unsafe"}, got.ParsedErrorFallbacks[0].When.MessageContains)
+	assert.Equal(t, []string{"azure/gpt-image-1", "openai/gpt-image-1"}, got.ParsedErrorFallbacks[0].Fallbacks)
+	require.NotNil(t, got.ErrorFallbacks)
+	assert.Contains(t, *got.ErrorFallbacks, "\"content_policy\"")
+}
+
+func TestRDBConfigStore_RoutingRuleScenarioErrorFallbacksRoundTrip(t *testing.T) {
+	store := setupRDBTestStore(t)
+	ctx := context.Background()
+
+	rule := routingRuleFixture("rule-scenario-error-fallbacks", 0, "openai")
+	rule.ParsedErrorFallbacks = []tables.TableRoutingErrorFallback{
+		{
+			Name:     "content policy",
+			Scenario: "content_policy",
+			Supplement: &tables.TableRoutingErrorFallbackSupplement{
+				Providers:          []string{"openai"},
+				MessageContainsAny: []string{"unsafe"},
+			},
+			Fallbacks: []string{"azure/gpt-image-1"},
+		},
+	}
+
+	require.NoError(t, store.CreateRoutingRule(ctx, rule))
+
+	got, err := store.GetRoutingRule(ctx, rule.ID)
+	require.NoError(t, err)
+	require.Len(t, got.ParsedErrorFallbacks, 1)
+	assert.Equal(t, "content_policy", got.ParsedErrorFallbacks[0].Scenario)
+	require.NotNil(t, got.ParsedErrorFallbacks[0].Supplement)
+	assert.Equal(t, []string{"openai"}, got.ParsedErrorFallbacks[0].Supplement.Providers)
+	assert.Equal(t, []string{"unsafe"}, got.ParsedErrorFallbacks[0].Supplement.MessageContainsAny)
+	assert.Equal(t, []string{"azure/gpt-image-1"}, got.ParsedErrorFallbacks[0].Fallbacks)
+}

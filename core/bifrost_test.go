@@ -3,6 +3,7 @@ package bifrost
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync"
@@ -34,6 +35,42 @@ func createTestConfig(maxRetries int, initialBackoff, maxBackoff time.Duration) 
 			RetryBackoffInitial: initialBackoff,
 			RetryBackoffMax:     maxBackoff,
 		},
+	}
+}
+
+func TestCallProviderRequestSafelyConvertsPanicToFallbackError(t *testing.T) {
+	result, recovered := callProviderRequestSafely(
+		func(schemas.Key) (*schemas.BifrostResponse, *schemas.BifrostError) {
+			panic("provider secret detail")
+		},
+		schemas.Key{},
+		schemas.ChatCompletionRequest,
+		schemas.OpenAI,
+		"gpt-test",
+		NewNoOpLogger(),
+	)
+	if result != nil || recovered == nil || recovered.Error == nil {
+		t.Fatalf("result=%v error=%v", result, recovered)
+	}
+	if recovered.Error.Message != "provider request failed unexpectedly" || strings.Contains(recovered.Error.Message, "secret") {
+		t.Fatalf("unsafe recovered message: %q", recovered.Error.Message)
+	}
+	if recovered.Error.Type == nil || *recovered.Error.Type != providerPanicErrorType {
+		t.Fatalf("error type = %v, want %s", recovered.Error.Type, providerPanicErrorType)
+	}
+	if recovered.AllowFallbacks == nil || !*recovered.AllowFallbacks {
+		t.Fatal("provider panic must allow configured fallbacks")
+	}
+}
+
+func TestShouldContinueWithFallbacksHandlesStatusOnlyError(t *testing.T) {
+	client := &Bifrost{logger: NewNoOpLogger()}
+	statusCode := 503
+	if !client.shouldContinueWithFallbacks(schemas.Fallback{Provider: schemas.OpenAI, Model: "gpt-test"}, &schemas.BifrostError{StatusCode: &statusCode}) {
+		t.Fatal("status-only fallback error should continue to the next configured fallback")
+	}
+	if client.shouldContinueWithFallbacks(schemas.Fallback{}, nil) {
+		t.Fatal("nil fallback error must not continue")
 	}
 }
 
@@ -2806,13 +2843,28 @@ func TestFilterKeysByID(t *testing.T) {
 // non-reserved BifrostContextKeyRoutingPinnedAPIKeyID, mirroring what the governance routing
 // engine does. It exists to exercise the commit step in PluginPipeline.RunPreRequestHooks.
 type fakeRoutingPlugin struct {
-	name     string
-	pinKeyID string // written to BifrostContextKeyRoutingPinnedAPIKeyID when non-empty
+	name         string
+	pinKeyID     string // written to BifrostContextKeyRoutingPinnedAPIKeyID when non-empty
+	panicHook    string
+	panicGetName bool
+	recoverPost  bool
 }
 
-func (f *fakeRoutingPlugin) GetName() string { return f.name }
-func (f *fakeRoutingPlugin) Cleanup() error  { return nil }
+func (f *fakeRoutingPlugin) GetName() string {
+	if f.panicGetName {
+		panic("get-name secret")
+	}
+	return f.name
+}
+func (f *fakeRoutingPlugin) Cleanup() error { return nil }
 func (f *fakeRoutingPlugin) PreRequestHook(ctx *schemas.BifrostContext, req *schemas.BifrostRequest) error {
+	if f.panicHook == "pre-request" {
+		req.SetProvider(schemas.Anthropic)
+		req.SetModel("partially-mutated")
+		req.SetFallbacks([]schemas.Fallback{{Provider: schemas.Anthropic, Model: "partial"}})
+		ctx.SetValue(schemas.BifrostContextKeyRoutingPinnedAPIKeyID, "partially-mutated-pin")
+		panic("pre-request secret")
+	}
 	if f.pinKeyID != "" {
 		// A direct write to the reserved BifrostContextKeyAPIKeyID here would be dropped by the
 		// restricted-write block; routing must use the non-reserved key.
@@ -2821,9 +2873,20 @@ func (f *fakeRoutingPlugin) PreRequestHook(ctx *schemas.BifrostContext, req *sch
 	return nil
 }
 func (f *fakeRoutingPlugin) PreLLMHook(ctx *schemas.BifrostContext, req *schemas.BifrostRequest) (*schemas.BifrostRequest, *schemas.LLMPluginShortCircuit, error) {
+	if f.panicHook == "pre-llm" {
+		req.SetProvider(schemas.Anthropic)
+		req.SetModel("partially-mutated")
+		panic("pre-llm secret")
+	}
 	return req, nil, nil
 }
 func (f *fakeRoutingPlugin) PostLLMHook(ctx *schemas.BifrostContext, resp *schemas.BifrostResponse, bifrostErr *schemas.BifrostError) (*schemas.BifrostResponse, *schemas.BifrostError, error) {
+	if f.panicHook == "post-llm" {
+		panic("post-llm secret")
+	}
+	if f.recoverPost {
+		return &schemas.BifrostResponse{}, nil, nil
+	}
 	return resp, bifrostErr, nil
 }
 
@@ -2832,6 +2895,73 @@ func newRoutingCommitPipeline(plugins ...schemas.LLMPlugin) *PluginPipeline {
 		logger:     NewDefaultLogger(schemas.LogLevelError),
 		tracer:     &schemas.NoOpTracer{},
 		llmPlugins: plugins,
+	}
+}
+
+func TestPluginPipelineContainsLLMHookPanics(t *testing.T) {
+	ctx := schemas.NewBifrostContext(context.Background(), schemas.NoDeadline)
+	originalFallbacks := []schemas.Fallback{{Provider: schemas.Gemini, Model: "fallback"}}
+	req := &schemas.BifrostRequest{ChatRequest: &schemas.BifrostChatRequest{
+		Provider:  schemas.OpenAI,
+		Model:     "original",
+		Fallbacks: originalFallbacks,
+	}}
+
+	preRequest := newRoutingCommitPipeline(&fakeRoutingPlugin{name: "panic-pre-request", panicHook: "pre-request"})
+	preRequestErr := preRequest.RunPreRequestHooks(ctx, req)
+	if len(preRequest.preHookErrors) != 1 {
+		t.Fatalf("pre-request errors = %d, want 1", len(preRequest.preHookErrors))
+	}
+	if preRequestErr == nil || preRequestErr.AllowFallbacks == nil || *preRequestErr.AllowFallbacks {
+		t.Fatalf("pre-request panic did not fail closed: %+v", preRequestErr)
+	}
+	provider, model, fallbacks := req.GetRequestFields()
+	if provider != schemas.OpenAI || model != "original" || !reflect.DeepEqual(fallbacks, originalFallbacks) {
+		t.Fatalf("pre-request panic leaked routing mutation: provider=%q model=%q fallbacks=%v", provider, model, fallbacks)
+	}
+	if pin := ctx.Value(schemas.BifrostContextKeyRoutingPinnedAPIKeyID); pin != nil {
+		t.Fatalf("pre-request panic leaked routing pin: %v", pin)
+	}
+
+	preLLM := newRoutingCommitPipeline(&fakeRoutingPlugin{name: "panic-pre-llm", panicHook: "pre-llm"})
+	gotReq, shortCircuit, executed := preLLM.RunLLMPreHooks(ctx, req)
+	if gotReq != req || shortCircuit == nil || shortCircuit.Error == nil || executed != 0 || len(preLLM.preHookErrors) != 1 {
+		t.Fatalf("pre-LLM result req=%p short=%v executed=%d errors=%d", gotReq, shortCircuit, executed, len(preLLM.preHookErrors))
+	}
+	provider, model, _ = req.GetRequestFields()
+	if provider != schemas.OpenAI || model != "original" || shortCircuit.Error.AllowFallbacks == nil || *shortCircuit.Error.AllowFallbacks {
+		t.Fatalf("pre-LLM panic was not contained: provider=%q model=%q error=%+v", provider, model, shortCircuit.Error)
+	}
+
+	postLLM := newRoutingCommitPipeline(&fakeRoutingPlugin{name: "panic-post-llm", panicHook: "post-llm"})
+	resp := &schemas.BifrostResponse{}
+	gotResp, gotErr := postLLM.RunPostLLMHooks(ctx, resp, nil, 1)
+	if gotResp != nil || gotErr == nil || len(postLLM.postHookErrors) != 1 {
+		t.Fatalf("post-LLM result resp=%p err=%v errors=%d", gotResp, gotErr, len(postLLM.postHookErrors))
+	}
+}
+
+func TestPluginPanicErrorCannotBeRecoveredIntoSuccess(t *testing.T) {
+	ctx := schemas.NewBifrostContext(context.Background(), schemas.NoDeadline)
+	pipeline := newRoutingCommitPipeline(&fakeRoutingPlugin{name: "recovering", recoverPost: true})
+	resp, bifrostErr := pipeline.RunPostLLMHooks(ctx, nil, pluginPanicBifrostError(), 1)
+	if resp != nil || !isPluginPanicBifrostError(bifrostErr) {
+		t.Fatalf("plugin panic was recovered into success: resp=%v err=%+v", resp, bifrostErr)
+	}
+}
+
+func TestPreRequestPipelineContainsGetNamePanicAndUnblocksContext(t *testing.T) {
+	ctx := schemas.NewBifrostContext(context.Background(), schemas.NoDeadline)
+	req := &schemas.BifrostRequest{ChatRequest: &schemas.BifrostChatRequest{Provider: schemas.OpenAI, Model: "original"}}
+	pipeline := newRoutingCommitPipeline(&fakeRoutingPlugin{panicGetName: true})
+
+	bifrostErr := pipeline.RunPreRequestHooks(ctx, req)
+	if !isPluginPanicBifrostError(bifrostErr) {
+		t.Fatalf("GetName panic was not converted to a safe plugin error: %+v", bifrostErr)
+	}
+	ctx.SetValue(schemas.BifrostContextKeyAPIKeyID, "after-panic")
+	if got := ctx.Value(schemas.BifrostContextKeyAPIKeyID); got != "after-panic" {
+		t.Fatalf("restricted writes remained blocked after panic: %v", got)
 	}
 }
 

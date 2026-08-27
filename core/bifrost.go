@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"slices"
 	"sort"
 	"strconv"
@@ -4581,16 +4582,23 @@ type RealtimeTurnHooks struct {
 	Cleanup        func()
 }
 
-// RunPreRequestHooks acquires a plugin pipeline and runs PreRequestHook on each LLM plugin
+// RunPreRequestHooks preserves the original no-result API for SDK callers. Gateway paths that
+// need to fail the current request closed on a contained plugin panic use
+// RunPreRequestHooksWithError.
+func (bifrost *Bifrost) RunPreRequestHooks(ctx *schemas.BifrostContext, req *schemas.BifrostRequest) {
+	_ = bifrost.RunPreRequestHooksWithError(ctx, req)
+}
+
+// RunPreRequestHooksWithError acquires a plugin pipeline and runs PreRequestHook on each LLM plugin
 // for callers that do not flow through handleRequest/handleStreamRequest — primarily realtime
 // WebSocket upgrades, where the upgrade itself is the routing decision (once per WS connection)
 // but the per-turn pipeline handles PreLLMHook/PostLLMHook separately.
 //
-// Mutations to req.Provider/req.Model/req.Fallbacks made by PreRequestHook plugins are committed
-// to the shared *BifrostRequest. Plugin errors are non-blocking — they are logged as warnings
-// and the pipeline continues to the next plugin (same semantics as RunLLMPreHooks). Callers
-// should validate req.Provider after this returns if a provider is required.
-func (bifrost *Bifrost) RunPreRequestHooks(ctx *schemas.BifrostContext, req *schemas.BifrostRequest) {
+// Mutations to req.Provider/req.Model/req.Fallbacks made by successful PreRequestHook plugins are
+// committed to the shared *BifrostRequest. Ordinary plugin errors remain non-blocking. A panic is
+// contained, its routing mutations are rolled back, and a safe error is returned so callers do
+// not execute a request with partially mutated state.
+func (bifrost *Bifrost) RunPreRequestHooksWithError(ctx *schemas.BifrostContext, req *schemas.BifrostRequest) *schemas.BifrostError {
 	if ctx == nil {
 		ctx = bifrost.ctx
 	}
@@ -4602,11 +4610,12 @@ func (bifrost *Bifrost) RunPreRequestHooks(ctx *schemas.BifrostContext, req *sch
 
 	pipeline := bifrost.getPluginPipeline()
 	defer bifrost.releasePluginPipeline(pipeline)
-	pipeline.RunPreRequestHooks(ctx, req)
+	bifrostErr := pipeline.RunPreRequestHooks(ctx, req)
 	// This path has no downstream post-hook cleanup, so drain any plugin logs
 	// emitted by PreRequestHook here to avoid them bleeding into a later request
 	// on a reused/long-lived context (e.g. realtime WS connections).
 	flushPluginLogs(ctx)
+	return bifrostErr
 }
 
 // RunStreamPreHooks acquires a plugin pipeline, sets up tracing context, runs PreLLMHooks,
@@ -4900,8 +4909,10 @@ func (bifrost *Bifrost) getProviderByKey(providerKey schemas.ModelProvider) sche
 
 // CORE INTERNAL LOGIC
 
-// shouldTryFallbacks handles the primary error and returns true if we should proceed with fallbacks, false if we should return immediately
-func (bifrost *Bifrost) shouldTryFallbacks(req *schemas.BifrostRequest, primaryErr *schemas.BifrostError) bool {
+// shouldTryFallbacks handles the primary error and the selected fallback chain,
+// and returns true if we should proceed with fallbacks, false if we should
+// return immediately.
+func (bifrost *Bifrost) shouldTryFallbacks(selectedFallbacks []schemas.Fallback, primaryErr *schemas.BifrostError) bool {
 	// If no primary error, we succeeded
 	if primaryErr == nil {
 		bifrost.logger.Debug("no primary error, we should not try fallbacks")
@@ -4921,15 +4932,115 @@ func (bifrost *Bifrost) shouldTryFallbacks(req *schemas.BifrostRequest, primaryE
 		return false
 	}
 
-	// If no fallbacks configured, return primary error
-	_, _, fallbacks := req.GetRequestFields()
-	if len(fallbacks) == 0 {
+	// If no fallbacks configured for the selected chain, return the primary error.
+	if len(selectedFallbacks) == 0 {
 		bifrost.logger.Debug("no fallbacks configured, we should not try fallbacks")
 		return false
 	}
 
 	// Should proceed with fallbacks
 	return true
+}
+
+func (bifrost *Bifrost) resolveFallbackChain(req *schemas.BifrostRequest, primaryErr *schemas.BifrostError) ([]schemas.Fallback, []schemas.Fallback, *schemas.ErrorFallbackRule, classifiedFailure) {
+	primaryProvider, primaryModel, ordinaryFallbacks := req.GetRequestFields()
+	attempted := map[string]struct{}{}
+	if primaryKey := fallbackTargetKey(primaryProvider, primaryModel); primaryKey != "" {
+		attempted[primaryKey] = struct{}{}
+	}
+	ordinaryFallbacks = sanitizeFallbackChain(ordinaryFallbacks, attempted)
+	rule, failure := firstMatchingErrorFallbackRule(req, primaryErr, req.GetErrorFallbacks())
+	if rule != nil {
+		return sanitizeFallbackChain(rule.Fallbacks, attempted), ordinaryFallbacks, rule, failure
+	}
+	return ordinaryFallbacks, ordinaryFallbacks, nil, failure
+}
+
+func attemptedFallbackTargets(provider schemas.ModelProvider, model string) map[string]struct{} {
+	attempted := make(map[string]struct{})
+	if key := fallbackTargetKey(provider, model); key != "" {
+		attempted[key] = struct{}{}
+	}
+	return attempted
+}
+
+func markFallbackTargetAttempted(attempted map[string]struct{}, fallback schemas.Fallback) {
+	if key := fallbackTargetKey(fallback.Provider, fallback.Model); key != "" {
+		attempted[key] = struct{}{}
+	}
+}
+
+func errorFallbackRuleLabel(rule *schemas.ErrorFallbackRule) string {
+	if rule == nil {
+		return ""
+	}
+	if strings.TrimSpace(rule.Name) != "" {
+		return rule.Name
+	}
+	return "unnamed"
+}
+
+func recordErrorFallbackDecision(ctx *schemas.BifrostContext, rule *schemas.ErrorFallbackRule, failure classifiedFailure) {
+	if ctx == nil || rule == nil {
+		return
+	}
+	ctx.SetValue(schemas.BifrostContextKeyErrorFallbackRuleName, errorFallbackRuleLabel(rule))
+	ctx.SetValue(schemas.BifrostContextKeyErrorFallbackCategory, string(failure.Category))
+	if failure.MatchSource != "" {
+		ctx.SetValue(schemas.BifrostContextKeyErrorFallbackMatchSource, failure.MatchSource)
+	}
+	if failure.MatchDetail != "" {
+		ctx.SetValue(schemas.BifrostContextKeyErrorFallbackMatchDetail, failure.MatchDetail)
+	}
+	if failure.RuleMatch.MatchedBy != "" {
+		ctx.SetValue(schemas.BifrostContextKeyErrorFallbackMatchedBy, failure.RuleMatch.MatchedBy)
+	}
+	if failure.RuleMatch.Pack != "" {
+		ctx.SetValue(schemas.BifrostContextKeyErrorFallbackPack, failure.RuleMatch.Pack)
+	}
+	if failure.RuleMatch.PatternID != "" {
+		ctx.SetValue(schemas.BifrostContextKeyErrorFallbackPatternID, failure.RuleMatch.PatternID)
+	}
+}
+
+func clearErrorFallbackDecision(ctx *schemas.BifrostContext) {
+	if ctx == nil {
+		return
+	}
+	ctx.ClearValue(schemas.BifrostContextKeyErrorFallbackRuleName)
+	ctx.ClearValue(schemas.BifrostContextKeyErrorFallbackCategory)
+	ctx.ClearValue(schemas.BifrostContextKeyErrorFallbackMatchSource)
+	ctx.ClearValue(schemas.BifrostContextKeyErrorFallbackMatchDetail)
+	ctx.ClearValue(schemas.BifrostContextKeyErrorFallbackMatchedBy)
+	ctx.ClearValue(schemas.BifrostContextKeyErrorFallbackPack)
+	ctx.ClearValue(schemas.BifrostContextKeyErrorFallbackPatternID)
+}
+
+func setErrorFallbackSpanAttributes(tracer schemas.Tracer, handle schemas.SpanHandle, ctx *schemas.BifrostContext) {
+	if tracer == nil || ctx == nil {
+		return
+	}
+	if ruleName, ok := ctx.Value(schemas.BifrostContextKeyErrorFallbackRuleName).(string); ok && ruleName != "" {
+		tracer.SetAttribute(handle, schemas.AttrBifrostErrorFallbackRule, ruleName)
+	}
+	if category, ok := ctx.Value(schemas.BifrostContextKeyErrorFallbackCategory).(string); ok && category != "" {
+		tracer.SetAttribute(handle, schemas.AttrBifrostErrorFallbackCategory, category)
+	}
+	if source, ok := ctx.Value(schemas.BifrostContextKeyErrorFallbackMatchSource).(string); ok && source != "" {
+		tracer.SetAttribute(handle, schemas.AttrBifrostErrorFallbackMatchSource, source)
+	}
+	if detail, ok := ctx.Value(schemas.BifrostContextKeyErrorFallbackMatchDetail).(string); ok && detail != "" {
+		tracer.SetAttribute(handle, schemas.AttrBifrostErrorFallbackMatchDetail, detail)
+	}
+	if matchedBy, ok := ctx.Value(schemas.BifrostContextKeyErrorFallbackMatchedBy).(string); ok && matchedBy != "" {
+		tracer.SetAttribute(handle, schemas.AttrBifrostErrorFallbackMatchedBy, matchedBy)
+	}
+	if pack, ok := ctx.Value(schemas.BifrostContextKeyErrorFallbackPack).(string); ok && pack != "" {
+		tracer.SetAttribute(handle, schemas.AttrBifrostErrorFallbackPack, pack)
+	}
+	if patternID, ok := ctx.Value(schemas.BifrostContextKeyErrorFallbackPatternID).(string); ok && patternID != "" {
+		tracer.SetAttribute(handle, schemas.AttrBifrostErrorFallbackPatternID, patternID)
+	}
 }
 
 // prepareFallbackRequest creates a fallback request and validates the provider config
@@ -5042,7 +5153,10 @@ func (bifrost *Bifrost) prepareFallbackRequest(req *schemas.BifrostRequest, fall
 // shouldContinueWithFallbacks processes errors from fallback attempts
 // Returns true if we should continue with more fallbacks, false if we should stop
 func (bifrost *Bifrost) shouldContinueWithFallbacks(fallback schemas.Fallback, fallbackErr *schemas.BifrostError) bool {
-	if fallbackErr.Error.Type != nil && *fallbackErr.Error.Type == schemas.RequestCancelled {
+	if fallbackErr == nil {
+		return false
+	}
+	if fallbackErr.Error != nil && fallbackErr.Error.Type != nil && *fallbackErr.Error.Type == schemas.RequestCancelled {
 		return false
 	}
 
@@ -5051,7 +5165,7 @@ func (bifrost *Bifrost) shouldContinueWithFallbacks(fallback schemas.Fallback, f
 		return false
 	}
 
-	bifrost.logger.Debug(fmt.Sprintf("Fallback provider %s failed: %s", fallback.Provider, fallbackErr.Error.Message))
+	bifrost.logger.Debug(fmt.Sprintf("Fallback provider %s failed: %s", fallback.Provider, fallbackErr.GetErrorString()))
 	return true
 }
 
@@ -5061,7 +5175,7 @@ func (bifrost *Bifrost) shouldContinueWithFallbacks(fallback schemas.Fallback, f
 // It is the wrapper for all non-streaming public API methods.
 func (bifrost *Bifrost) handleRequest(ctx *schemas.BifrostContext, req *schemas.BifrostRequest) (resp *schemas.BifrostResponse, bifrostErr *schemas.BifrostError) {
 	defer bifrost.releaseBifrostRequest(req)
-	provider, model, fallbacks := req.GetRequestFields()
+	provider, model, _ := req.GetRequestFields()
 
 	// Handle nil context early to prevent blocking
 	if ctx == nil {
@@ -5078,6 +5192,7 @@ func (bifrost *Bifrost) handleRequest(ctx *schemas.BifrostContext, req *schemas.
 
 	// Try the primary provider first
 	ctx.SetValue(schemas.BifrostContextKeyFallbackIndex, 0)
+	clearErrorFallbackDecision(ctx)
 	// Ensure request ID is set in context before PreHooks
 	if _, ok := ctx.Value(schemas.BifrostContextKeyRequestID).(string); !ok {
 		requestID := uuid.New().String()
@@ -5091,10 +5206,15 @@ func (bifrost *Bifrost) handleRequest(ctx *schemas.BifrostContext, req *schemas.
 	// (and may mutate other request fields). Mutations commit to req and are observed by
 	// all downstream phases and fallbacks. Plugin errors are non-blocking (logged + skipped).
 	preReqPipeline := bifrost.getPluginPipeline()
-	preReqPipeline.RunPreRequestHooks(ctx, req)
+	preRequestErr := preReqPipeline.RunPreRequestHooks(ctx, req)
 	bifrost.releasePluginPipeline(preReqPipeline)
+	if preRequestErr != nil {
+		flushPluginLogs(ctx)
+		preRequestErr.PopulateExtraFields(req.RequestType, provider, model, model)
+		return nil, preRequestErr
+	}
 	// Re-read after PreRequestHook — provider/model/fallbacks may have changed.
-	provider, model, fallbacks = req.GetRequestFields()
+	provider, model, _ = req.GetRequestFields()
 	// Empty provider/model after PreRequestHook means no plugin
 	// could pick a provider for this model — the caller's input is unresolvable.
 	if err := validateRequestAfterPreRequestHooks(req); err != nil {
@@ -5105,7 +5225,8 @@ func (bifrost *Bifrost) handleRequest(ctx *schemas.BifrostContext, req *schemas.
 		return nil, err
 	}
 
-	bifrost.logger.Debug(fmt.Sprintf("primary provider %s with model %s and %d fallbacks", provider, model, len(fallbacks)))
+	_, ordinaryFallbacks, _, _ := bifrost.resolveFallbackChain(req, nil)
+	bifrost.logger.Debug(fmt.Sprintf("primary provider %s with model %s and %d fallbacks", provider, model, len(ordinaryFallbacks)))
 
 	primaryResult, primaryErr := bifrost.tryRequest(ctx, req)
 	if primaryErr != nil {
@@ -5114,14 +5235,20 @@ func (bifrost *Bifrost) handleRequest(ctx *schemas.BifrostContext, req *schemas.
 		} else {
 			bifrost.logger.Debug(fmt.Sprintf("primary provider %s with model %s returned error: %v", provider, model, primaryErr))
 		}
-		if len(fallbacks) > 0 {
-			bifrost.logger.Debug(fmt.Sprintf("check if we should try %d fallbacks", len(fallbacks)))
+		if len(ordinaryFallbacks) > 0 {
+			bifrost.logger.Debug(fmt.Sprintf("check if we should try %d fallbacks", len(ordinaryFallbacks)))
 		}
 	}
 
+	selectedFallbacks, ordinaryFallbacks, matchedErrorFallbackRule, matchedFailure := bifrost.resolveFallbackChain(req, primaryErr)
+	recordErrorFallbackDecision(ctx, matchedErrorFallbackRule, matchedFailure)
+
 	// Check if we should proceed with fallbacks
-	shouldTryFallbacks := bifrost.shouldTryFallbacks(req, primaryErr)
+	shouldTryFallbacks := bifrost.shouldTryFallbacks(selectedFallbacks, primaryErr)
 	if !shouldTryFallbacks {
+		if matchedErrorFallbackRule != nil && len(selectedFallbacks) == 0 {
+			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelWarn, fmt.Sprintf("Primary %s/%s matched error_fallbacks rule %q (category=%s), but the dedicated fallback chain is empty; returning the primary error", provider, model, errorFallbackRuleLabel(matchedErrorFallbackRule), matchedFailure.Category))
+		}
 		return primaryResult, primaryErr
 	}
 
@@ -5129,18 +5256,26 @@ func (bifrost *Bifrost) handleRequest(ctx *schemas.BifrostContext, req *schemas.
 	// — record it on the request's used-engines list so the audit trail closes
 	// the loop on whatever plugin-level engine selected the primary upstream.
 	schemas.AppendToContextList(ctx, schemas.BifrostContextKeyRoutingEnginesUsed, schemas.RoutingEngineCore)
-	ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Primary %s/%s failed (%s); evaluating %d configured fallback(s)", provider, model, routingErrorSummary(primaryErr), len(fallbacks)))
+	if matchedErrorFallbackRule != nil {
+		ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Primary %s/%s failed (%s); matched error_fallbacks rule %q (category=%s) and will use %d dedicated fallback(s) instead of %d ordinary fallback(s)", provider, model, routingErrorSummary(primaryErr), errorFallbackRuleLabel(matchedErrorFallbackRule), matchedFailure.Category, len(selectedFallbacks), len(ordinaryFallbacks)))
+	} else {
+		ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Primary %s/%s failed (%s); evaluating %d configured fallback(s)", provider, model, routingErrorSummary(primaryErr), len(selectedFallbacks)))
+	}
 
 	// Tracks the most recent failure so each fallback transition log carries
 	// the error that triggered it (primary error for the first iteration, the
 	// prior fallback's error for subsequent iterations).
 	lastErr := primaryErr
+	attemptedTargets := attemptedFallbackTargets(provider, model)
+	dedicatedChainActivated := matchedErrorFallbackRule != nil
 
 	// Try fallbacks in order
-	for i, fallback := range fallbacks {
+	for i := 0; i < len(selectedFallbacks); i++ {
+		fallback := selectedFallbacks[i]
+		markFallbackTargetAttempted(attemptedTargets, fallback)
 		ctx.SetValue(schemas.BifrostContextKeyFallbackIndex, i+1)
 		bifrost.logger.Debug(fmt.Sprintf("trying fallback provider %s with model %s", fallback.Provider, fallback.Model))
-		ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Trying fallback %d/%d: %s/%s (previous attempt failed: %s)", i+1, len(fallbacks), fallback.Provider, fallback.Model, routingErrorSummary(lastErr)))
+		ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Trying fallback %d/%d: %s/%s (previous attempt failed: %s)", i+1, len(selectedFallbacks), fallback.Provider, fallback.Model, routingErrorSummary(lastErr)))
 		ctx.SetValue(schemas.BifrostContextKeyFallbackRequestID, uuid.New().String())
 		clearCtxForFallback(ctx)
 
@@ -5151,6 +5286,7 @@ func (bifrost *Bifrost) handleRequest(ctx *schemas.BifrostContext, req *schemas.
 		tracer.SetAttribute(handle, schemas.AttrBifrostProviderName, string(fallback.Provider)) // raw Bifrost short name, mirrors canonical gen_ai.provider.name
 		tracer.SetAttribute(handle, schemas.AttrRequestModel, fallback.Model)
 		tracer.SetAttribute(handle, "fallback.index", i+1)
+		setErrorFallbackSpanAttributes(tracer, handle, ctx)
 		ctx.SetValue(schemas.BifrostContextKeySpanID, spanCtx.Value(schemas.BifrostContextKeySpanID))
 
 		fallbackReq := bifrost.prepareFallbackRequest(req, fallback)
@@ -5171,28 +5307,46 @@ func (bifrost *Bifrost) handleRequest(ctx *schemas.BifrostContext, req *schemas.
 		fallbackErr.SetFallbackRoutingInfo(provider, model)
 		if fallbackErr == nil {
 			bifrost.logger.Debug(fmt.Sprintf("successfully used fallback provider %s with model %s", fallback.Provider, fallback.Model))
-			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Request served by fallback %s/%s (attempt %d/%d)", fallback.Provider, fallback.Model, i+1, len(fallbacks)))
+			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Request served by fallback %s/%s (attempt %d/%d)", fallback.Provider, fallback.Model, i+1, len(selectedFallbacks)))
 			tracer.EndSpan(handle, schemas.SpanStatusOk, "")
 			return result, nil
 		}
 
-		// End span with error status
+		// Record the failed attempt before deciding whether the remaining ordinary
+		// chain should be replaced by a dedicated error chain.
 		if fallbackErr.Error != nil {
 			tracer.SetAttribute(handle, "error", fallbackErr.Error.Message)
 		}
-		tracer.EndSpan(handle, schemas.SpanStatusError, "fallback failed")
 
 		// Check if we should continue with more fallbacks
 		if !bifrost.shouldContinueWithFallbacks(fallback, fallbackErr) {
+			tracer.EndSpan(handle, schemas.SpanStatusError, "fallback failed")
 			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelError, fmt.Sprintf("Fallback %s/%s failed (%s); halting further fallbacks", fallback.Provider, fallback.Model, routingErrorSummary(fallbackErr)))
 			return nil, fallbackErr
 		}
 
+		if !dedicatedChainActivated {
+			if rule, failure := firstMatchingErrorFallbackRule(fallbackReq, fallbackErr, req.GetErrorFallbacks()); rule != nil {
+				dedicatedChainActivated = true
+				replacement := sanitizeFallbackChain(rule.Fallbacks, attemptedTargets)
+				remainingOrdinary := len(selectedFallbacks) - i - 1
+				selectedFallbacks = append(selectedFallbacks[:i+1], replacement...)
+				recordErrorFallbackDecision(ctx, rule, failure)
+				setErrorFallbackSpanAttributes(tracer, handle, ctx)
+				if len(replacement) == 0 {
+					ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelWarn, fmt.Sprintf("Fallback %s/%s failed (%s) and matched error_fallbacks rule %q (category=%s), but all %d dedicated target(s) were already attempted, duplicated, or invalid; discarding %d remaining ordinary fallback(s)", fallback.Provider, fallback.Model, routingErrorSummary(fallbackErr), errorFallbackRuleLabel(rule), failure.Category, len(rule.Fallbacks), remainingOrdinary))
+				} else {
+					ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Fallback %s/%s failed (%s) and matched error_fallbacks rule %q (category=%s); replacing %d remaining ordinary fallback(s) with %d dedicated fallback(s)", fallback.Provider, fallback.Model, routingErrorSummary(fallbackErr), errorFallbackRuleLabel(rule), failure.Category, remainingOrdinary, len(replacement)))
+				}
+			}
+		}
+
+		tracer.EndSpan(handle, schemas.SpanStatusError, "fallback failed")
+
 		lastErr = fallbackErr
 	}
 
-	ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelError, fmt.Sprintf("All %d fallback(s) exhausted; returning primary error (%s)", len(fallbacks), routingErrorSummary(primaryErr)))
-	// All providers failed, return the original error
+	ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelError, fmt.Sprintf("All %d fallback(s) exhausted; returning primary error (%s)", len(selectedFallbacks), routingErrorSummary(primaryErr)))
 	return nil, primaryErr
 }
 
@@ -5202,7 +5356,7 @@ func (bifrost *Bifrost) handleRequest(ctx *schemas.BifrostContext, req *schemas.
 // It is the wrapper for all streaming public API methods.
 func (bifrost *Bifrost) handleStreamRequest(ctx *schemas.BifrostContext, req *schemas.BifrostRequest) (chan *schemas.BifrostStreamChunk, *schemas.BifrostError) {
 	defer bifrost.releaseBifrostRequest(req)
-	provider, model, fallbacks := req.GetRequestFields()
+	provider, model, _ := req.GetRequestFields()
 
 	// Handle nil context early to prevent blocking
 	if ctx == nil {
@@ -5213,6 +5367,7 @@ func (bifrost *Bifrost) handleStreamRequest(ctx *schemas.BifrostContext, req *sc
 
 	// Try the primary provider first
 	ctx.SetValue(schemas.BifrostContextKeyFallbackIndex, 0)
+	clearErrorFallbackDecision(ctx)
 	// Ensure request ID is set in context before PreHooks
 	if _, ok := ctx.Value(schemas.BifrostContextKeyRequestID).(string); !ok {
 		requestID := uuid.New().String()
@@ -5224,10 +5379,15 @@ func (bifrost *Bifrost) handleStreamRequest(ctx *schemas.BifrostContext, req *sc
 
 	// PreRequestHook: once-per-request phase. See handleRequest for semantics.
 	preReqPipeline := bifrost.getPluginPipeline()
-	preReqPipeline.RunPreRequestHooks(ctx, req)
+	preRequestErr := preReqPipeline.RunPreRequestHooks(ctx, req)
 	bifrost.releasePluginPipeline(preReqPipeline)
+	if preRequestErr != nil {
+		flushPluginLogs(ctx)
+		preRequestErr.PopulateExtraFields(req.RequestType, provider, model, model)
+		return nil, preRequestErr
+	}
 	// Re-read after PreRequestHook — provider/model/fallbacks may have changed.
-	provider, model, fallbacks = req.GetRequestFields()
+	provider, model, _ = req.GetRequestFields()
 	// Empty provider after PreRequestHook means no plugin
 	// could pick a provider for this model — the caller's input is unresolvable.
 	if err := validateRequestAfterPreRequestHooks(req); err != nil {
@@ -5238,7 +5398,8 @@ func (bifrost *Bifrost) handleStreamRequest(ctx *schemas.BifrostContext, req *sc
 		return nil, err
 	}
 
-	bifrost.logger.Debug(fmt.Sprintf("primary provider %s with model %s and %d fallbacks", provider, model, len(fallbacks)))
+	_, ordinaryFallbacks, _, _ := bifrost.resolveFallbackChain(req, nil)
+	bifrost.logger.Debug(fmt.Sprintf("primary provider %s with model %s and %d fallbacks", provider, model, len(ordinaryFallbacks)))
 
 	primaryResult, primaryErr := bifrost.tryStreamRequest(ctx, req)
 	if primaryErr != nil {
@@ -5247,14 +5408,20 @@ func (bifrost *Bifrost) handleStreamRequest(ctx *schemas.BifrostContext, req *sc
 		} else {
 			bifrost.logger.Debug(fmt.Sprintf("primary provider %s with model %s returned error: %v", provider, model, primaryErr))
 		}
-		if len(fallbacks) > 0 {
-			bifrost.logger.Debug(fmt.Sprintf("check if we should try %d fallbacks", len(fallbacks)))
+		if len(ordinaryFallbacks) > 0 {
+			bifrost.logger.Debug(fmt.Sprintf("check if we should try %d fallbacks", len(ordinaryFallbacks)))
 		}
 	}
 
+	selectedFallbacks, ordinaryFallbacks, matchedErrorFallbackRule, matchedFailure := bifrost.resolveFallbackChain(req, primaryErr)
+	recordErrorFallbackDecision(ctx, matchedErrorFallbackRule, matchedFailure)
+
 	// Check if we should proceed with fallbacks
-	shouldTryFallbacks := bifrost.shouldTryFallbacks(req, primaryErr)
+	shouldTryFallbacks := bifrost.shouldTryFallbacks(selectedFallbacks, primaryErr)
 	if !shouldTryFallbacks {
+		if matchedErrorFallbackRule != nil && len(selectedFallbacks) == 0 {
+			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelWarn, fmt.Sprintf("Primary %s/%s matched error_fallbacks rule %q (category=%s), but the dedicated fallback chain is empty; returning the primary error", provider, model, errorFallbackRuleLabel(matchedErrorFallbackRule), matchedFailure.Category))
+		}
 		return primaryResult, primaryErr
 	}
 
@@ -5262,14 +5429,22 @@ func (bifrost *Bifrost) handleStreamRequest(ctx *schemas.BifrostContext, req *sc
 	// the primary-failure entry to the routing engine log trail before
 	// iterating fallbacks. See handleRequest for the rationale.
 	schemas.AppendToContextList(ctx, schemas.BifrostContextKeyRoutingEnginesUsed, schemas.RoutingEngineCore)
-	ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Primary %s/%s failed (%s); evaluating %d configured fallback(s)", provider, model, routingErrorSummary(primaryErr), len(fallbacks)))
+	if matchedErrorFallbackRule != nil {
+		ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Primary %s/%s failed (%s); matched error_fallbacks rule %q (category=%s) and will use %d dedicated fallback(s) instead of %d ordinary fallback(s)", provider, model, routingErrorSummary(primaryErr), errorFallbackRuleLabel(matchedErrorFallbackRule), matchedFailure.Category, len(selectedFallbacks), len(ordinaryFallbacks)))
+	} else {
+		ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Primary %s/%s failed (%s); evaluating %d configured fallback(s)", provider, model, routingErrorSummary(primaryErr), len(selectedFallbacks)))
+	}
 
 	lastErr := primaryErr
+	attemptedTargets := attemptedFallbackTargets(provider, model)
+	dedicatedChainActivated := matchedErrorFallbackRule != nil
 
 	// Try fallbacks in order
-	for i, fallback := range fallbacks {
+	for i := 0; i < len(selectedFallbacks); i++ {
+		fallback := selectedFallbacks[i]
+		markFallbackTargetAttempted(attemptedTargets, fallback)
 		ctx.SetValue(schemas.BifrostContextKeyFallbackIndex, i+1)
-		ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Trying fallback %d/%d: %s/%s (previous attempt failed: %s)", i+1, len(fallbacks), fallback.Provider, fallback.Model, routingErrorSummary(lastErr)))
+		ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Trying fallback %d/%d: %s/%s (previous attempt failed: %s)", i+1, len(selectedFallbacks), fallback.Provider, fallback.Model, routingErrorSummary(lastErr)))
 		ctx.SetValue(schemas.BifrostContextKeyFallbackRequestID, uuid.New().String())
 		clearCtxForFallback(ctx)
 
@@ -5280,6 +5455,7 @@ func (bifrost *Bifrost) handleStreamRequest(ctx *schemas.BifrostContext, req *sc
 		tracer.SetAttribute(handle, schemas.AttrBifrostProviderName, string(fallback.Provider)) // raw Bifrost short name, mirrors canonical gen_ai.provider.name
 		tracer.SetAttribute(handle, schemas.AttrRequestModel, fallback.Model)
 		tracer.SetAttribute(handle, "fallback.index", i+1)
+		setErrorFallbackSpanAttributes(tracer, handle, ctx)
 		ctx.SetValue(schemas.BifrostContextKeySpanID, spanCtx.Value(schemas.BifrostContextKeySpanID))
 
 		fallbackReq := bifrost.prepareFallbackRequest(req, fallback)
@@ -5315,28 +5491,46 @@ func (bifrost *Bifrost) handleStreamRequest(ctx *schemas.BifrostContext, req *sc
 				ctx.SetRoutingInfoSnapshot(ri)
 			}
 			bifrost.logger.Debug(fmt.Sprintf("successfully used fallback provider %s with model %s", fallback.Provider, fallback.Model))
-			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Request served by fallback %s/%s (attempt %d/%d)", fallback.Provider, fallback.Model, i+1, len(fallbacks)))
+			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Request served by fallback %s/%s (attempt %d/%d)", fallback.Provider, fallback.Model, i+1, len(selectedFallbacks)))
 			tracer.EndSpan(handle, schemas.SpanStatusOk, "")
 			return result, nil
 		}
 
-		// End span with error status
+		// Immediate stream setup errors happen before any chunk is visible, so they
+		// can still replace the remaining ordinary chain safely.
 		if fallbackErr.Error != nil {
 			tracer.SetAttribute(handle, "error", fallbackErr.Error.Message)
 		}
-		tracer.EndSpan(handle, schemas.SpanStatusError, "fallback failed")
 
 		// Check if we should continue with more fallbacks
 		if !bifrost.shouldContinueWithFallbacks(fallback, fallbackErr) {
+			tracer.EndSpan(handle, schemas.SpanStatusError, "fallback failed")
 			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelError, fmt.Sprintf("Fallback %s/%s failed (%s); halting further fallbacks", fallback.Provider, fallback.Model, routingErrorSummary(fallbackErr)))
 			return nil, fallbackErr
 		}
 
+		if !dedicatedChainActivated {
+			if rule, failure := firstMatchingErrorFallbackRule(fallbackReq, fallbackErr, req.GetErrorFallbacks()); rule != nil {
+				dedicatedChainActivated = true
+				replacement := sanitizeFallbackChain(rule.Fallbacks, attemptedTargets)
+				remainingOrdinary := len(selectedFallbacks) - i - 1
+				selectedFallbacks = append(selectedFallbacks[:i+1], replacement...)
+				recordErrorFallbackDecision(ctx, rule, failure)
+				setErrorFallbackSpanAttributes(tracer, handle, ctx)
+				if len(replacement) == 0 {
+					ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelWarn, fmt.Sprintf("Fallback %s/%s failed (%s) and matched error_fallbacks rule %q (category=%s), but all %d dedicated target(s) were already attempted, duplicated, or invalid; discarding %d remaining ordinary fallback(s)", fallback.Provider, fallback.Model, routingErrorSummary(fallbackErr), errorFallbackRuleLabel(rule), failure.Category, len(rule.Fallbacks), remainingOrdinary))
+				} else {
+					ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Fallback %s/%s failed (%s) and matched error_fallbacks rule %q (category=%s); replacing %d remaining ordinary fallback(s) with %d dedicated fallback(s)", fallback.Provider, fallback.Model, routingErrorSummary(fallbackErr), errorFallbackRuleLabel(rule), failure.Category, remainingOrdinary, len(replacement)))
+				}
+			}
+		}
+
+		tracer.EndSpan(handle, schemas.SpanStatusError, "fallback failed")
+
 		lastErr = fallbackErr
 	}
 
-	ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelError, fmt.Sprintf("All %d fallback(s) exhausted; returning primary error (%s)", len(fallbacks), routingErrorSummary(primaryErr)))
-	// All providers failed, return the original error
+	ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelError, fmt.Sprintf("All %d fallback(s) exhausted; returning primary error (%s)", len(selectedFallbacks), routingErrorSummary(primaryErr)))
 	return nil, primaryErr
 }
 
@@ -5606,7 +5800,10 @@ func (bifrost *Bifrost) tryRequest(ctx *schemas.BifrostContext, req *schemas.Bif
 	pluginCount := len(*bifrost.llmPlugins.Load())
 	select {
 	case result = <-msg.Response:
-		providerResultErr := validateImageResponse(req.RequestType, result)
+		providerResultErr := successfulContentPolicyError(req, result)
+		if providerResultErr == nil {
+			providerResultErr = validateImageResponse(req.RequestType, result)
+		}
 		attachUpstreamRequestID(msg.Context, providerResultErr)
 		postHookResult := result
 		if providerResultErr != nil {
@@ -5614,6 +5811,10 @@ func (bifrost *Bifrost) tryRequest(ctx *schemas.BifrostContext, req *schemas.Bif
 		}
 		resp, bifrostErr := pipeline.RunPostLLMHooks(msg.Context, postHookResult, providerResultErr, pluginCount)
 		if bifrostErr != nil {
+			if bifrostErr.ExtraFields.BaseProvider == "" {
+				bifrostErr.ExtraFields.BaseProvider = schemas.ResolveBaseProvider(msg.Context, provider)
+			}
+			captureFailureRecognitionSignals(bifrostErr)
 			attachUpstreamRequestID(msg.Context, bifrostErr)
 			bifrostErr.PopulateExtraFields(req.RequestType, provider, model, model)
 		} else if resp != nil {
@@ -5642,9 +5843,21 @@ func (bifrost *Bifrost) tryRequest(ctx *schemas.BifrostContext, req *schemas.Bif
 		return resp, nil
 	case bifrostErrVal := <-msg.Err:
 		bifrostErrPtr := &bifrostErrVal
+		providerErr := bifrostErrPtr
+		baseProvider := bifrostErrPtr.ExtraFields.BaseProvider
+		failureSignals := bifrostErrPtr.ExtraFields.FailureSignals
 		attachUpstreamRequestID(msg.Context, bifrostErrPtr)
 		resp, bifrostErrPtr = pipeline.RunPostLLMHooks(msg.Context, nil, bifrostErrPtr, pluginCount)
 		if bifrostErrPtr != nil {
+			if bifrostErrPtr.ExtraFields.BaseProvider == "" {
+				bifrostErrPtr.ExtraFields.BaseProvider = baseProvider
+				if bifrostErrPtr.ExtraFields.BaseProvider == "" {
+					bifrostErrPtr.ExtraFields.BaseProvider = schemas.ResolveBaseProvider(msg.Context, provider)
+				}
+			}
+			if bifrostErrPtr == providerErr {
+				bifrostErrPtr.ExtraFields.FailureSignals = mergeRawFailureSignals(failureSignals, bifrostErrPtr.ExtraFields.FailureSignals)
+			}
 			attachUpstreamRequestID(msg.Context, bifrostErrPtr)
 			bifrostErrPtr.PopulateExtraFields(req.RequestType, provider, model, model)
 		} else if resp != nil {
@@ -5652,6 +5865,7 @@ func (bifrost *Bifrost) tryRequest(ctx *schemas.BifrostContext, req *schemas.Bif
 		}
 		drainAndAttachPluginLogs(msg.Context)
 		bifrost.releaseChannelMessage(msg)
+		captureFailureRecognitionSignals(bifrostErrPtr)
 		// Strip raw fields on error path too.
 		dropReq, _ := ctx.Value(schemas.BifrostContextKeyDropRawRequestFromClient).(bool)
 		dropResp, _ := ctx.Value(schemas.BifrostContextKeyDropRawResponseFromClient).(bool)
@@ -6392,7 +6606,8 @@ func executeRequestWithRetries[T any](
 		}
 
 		// Attempt the request
-		result, bifrostError = requestHandler(currentKey)
+		ctx.SetStreamPanicState(false)
+		result, bifrostError = callProviderRequestSafely(requestHandler, currentKey, requestType, providerKey, model, logger)
 
 		// For streaming requests that returned success, check if the first chunk
 		// is actually an error (e.g., rate limits sent as SSE events in HTTP 200).
@@ -6412,20 +6627,27 @@ func executeRequestWithRetries[T any](
 					ctx.ClearValue(schemas.BifrostContextKeyConnectionClosed)
 					bifrostError = firstChunkErr
 				} else if checkedStream == nil {
-					// Empty stream (zero chunks before close — includes the large-payload
-					// passthrough placeholder). Substitute a closed, non-nil channel:
-					// this result becomes the public *StreamRequest return value, and a
-					// nil channel with a nil error makes callers that range/receive on
-					// it block forever (a nil-channel receive never returns). A closed
-					// channel preserves zero-chunk semantics (range exits immediately,
-					// receive yields (nil, false)). The span is still completed
-					// synchronously below (emptyStream keeps isStreamChan false): the
-					// provider goroutine has already exited, so nothing is left to
-					// complete a deferred span.
-					emptyStream = true
-					closedCh := make(chan *schemas.BifrostStreamChunk)
-					close(closedCh)
-					result = any(closedCh).(T)
+					if panicked, _ := ctx.Value(schemas.BifrostContextKeyStreamPanicked).(bool); panicked {
+						// A provider panic before the first byte is still safe to retry or
+						// fall back because nothing has reached the caller yet.
+						ctx.ClearValue(schemas.BifrostContextKeyConnectionClosed)
+						bifrostError = newProviderPanicError(requestType, providerKey, model)
+					} else {
+						// Empty stream (zero chunks before close — includes the large-payload
+						// passthrough placeholder). Substitute a closed, non-nil channel:
+						// this result becomes the public *StreamRequest return value, and a
+						// nil channel with a nil error makes callers that range/receive on
+						// it block forever (a nil-channel receive never returns). A closed
+						// channel preserves zero-chunk semantics (range exits immediately,
+						// receive yields (nil, false)). The span is still completed
+						// synchronously below (emptyStream keeps isStreamChan false): the
+						// provider goroutine has already exited, so nothing is left to
+						// complete a deferred span.
+						emptyStream = true
+						closedCh := make(chan *schemas.BifrostStreamChunk)
+						close(closedCh)
+						result = any(closedCh).(T)
+					}
 				} else {
 					result = any(checkedStream).(T)
 				}
@@ -6514,6 +6736,7 @@ func executeRequestWithRetries[T any](
 		// Check if successful or if we should retry
 		if bifrostError == nil ||
 			bifrostError.IsBifrostError ||
+			(bifrostError.Error != nil && bifrostError.Error.Type != nil && *bifrostError.Error.Type == providerPanicErrorType) ||
 			(bifrostError.Error != nil && bifrostError.Error.Type != nil && *bifrostError.Error.Type == schemas.RequestCancelled) {
 			break
 		}
@@ -6524,12 +6747,12 @@ func executeRequestWithRetries[T any](
 		//   rate-limit error surfaced via message text instead of a 429 status). The same key
 		//   won't help — try a different one.
 		// retryable 5xx / network errors: transient server issues — retry with the same key.
+		failureClass := classifyBifrostFailure(bifrostError, providerKey, requestType)
 		shouldRetry := false
-		isPerKeyFailure := (bifrostError.StatusCode != nil && perKeyFailureStatusCodes[*bifrostError.StatusCode]) ||
-			(bifrostError.Error != nil &&
-				(IsRateLimitErrorMessage(bifrostError.Error.Message) ||
-					(bifrostError.Error.Type != nil && IsRateLimitErrorMessage(*bifrostError.Error.Type)) ||
-					(bifrostError.Error.Code != nil && IsRateLimitErrorMessage(*bifrostError.Error.Code))))
+		isPerKeyFailure := failureClass.Category == schemas.FailureCategoryRateLimit ||
+			failureClass.Category == schemas.FailureCategoryAuthentication ||
+			failureClass.Category == schemas.FailureCategoryBilling ||
+			failureClass.Category == schemas.FailureCategoryPermission
 
 		errMessage := bifrostError.GetErrorString()
 
@@ -6552,12 +6775,16 @@ func executeRequestWithRetries[T any](
 		if trail, ok := ctx.Value(schemas.BifrostContextKeyAttemptTrail).([]schemas.KeyAttemptRecord); ok && len(trail) > 0 {
 			reason := "unknown"
 			switch {
-			case bifrostError.StatusCode != nil && *bifrostError.StatusCode == 429:
+			case failureClass.Category == schemas.FailureCategoryContentPolicy:
+				reason = string(schemas.FailureCategoryContentPolicy)
+			case failureClass.Category == schemas.FailureCategoryRateLimit:
 				reason = "rate_limit_error"
-			case bifrostError.StatusCode != nil && (*bifrostError.StatusCode == 401 || *bifrostError.StatusCode == 403):
+			case failureClass.Category == schemas.FailureCategoryAuthentication:
 				reason = "authentication_error"
-			case bifrostError.StatusCode != nil && *bifrostError.StatusCode == 402:
+			case failureClass.Category == schemas.FailureCategoryBilling:
 				reason = "billing_error"
+			case failureClass.Category == schemas.FailureCategoryPermission:
+				reason = "permission_error"
 			case bifrostError.Error != nil && bifrostError.Error.Type != nil && *bifrostError.Error.Type != "":
 				reason = *bifrostError.Error.Type
 			}
@@ -6648,6 +6875,47 @@ func executeRequestWithRetries[T any](
 	}
 
 	return result, bifrostError
+}
+
+const providerPanicErrorType = "provider_panic"
+
+func newProviderPanicError(requestType schemas.RequestType, provider schemas.ModelProvider, model string) *schemas.BifrostError {
+	allowFallbacks := true
+	statusCode := 500
+	return &schemas.BifrostError{
+		IsBifrostError: false,
+		StatusCode:     &statusCode,
+		AllowFallbacks: &allowFallbacks,
+		Error: &schemas.ErrorField{
+			Type:    schemas.Ptr(providerPanicErrorType),
+			Message: "provider request failed unexpectedly",
+		},
+		ExtraFields: schemas.BifrostErrorExtraFields{
+			Provider:               provider,
+			RequestType:            requestType,
+			OriginalModelRequested: model,
+			ResolvedModelUsed:      model,
+		},
+	}
+}
+
+func callProviderRequestSafely[T any](
+	requestHandler func(key schemas.Key) (T, *schemas.BifrostError),
+	key schemas.Key,
+	requestType schemas.RequestType,
+	provider schemas.ModelProvider,
+	model string,
+	logger schemas.Logger,
+) (result T, bifrostErr *schemas.BifrostError) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			if logger != nil {
+				logger.Error("recovered provider callback panic: provider=%s request_type=%s panic_type=%T\n%s", provider, requestType, recovered, debug.Stack())
+			}
+			bifrostErr = newProviderPanicError(requestType, provider, model)
+		}
+	}()
+	return requestHandler(key)
 }
 
 // clearAnthropicPassthroughForNonNativeProvider disables Anthropic raw-body passthrough when a
@@ -7132,6 +7400,8 @@ func (bifrost *Bifrost) requestWorker(provider schemas.Provider, config *schemas
 		}
 
 		if bifrostError != nil {
+			bifrostError.ExtraFields.BaseProvider = baseProvider
+			captureFailureRecognitionSignals(bifrostError)
 			bifrostError.PopulateExtraFields(req.RequestType, provider.GetProviderKey(), originalModelRequested, resolvedModel)
 			bifrostError.PopulateRoutingInfo(attemptRoutingInfo)
 
@@ -7655,6 +7925,80 @@ func (bifrost *Bifrost) handleProviderStreamRequest(provider schemas.Provider, r
 
 // PLUGIN MANAGEMENT
 
+type pluginPanicError struct {
+	plugin string
+	hook   string
+}
+
+func (e *pluginPanicError) Error() string {
+	return fmt.Sprintf("plugin %s %s panicked", e.plugin, e.hook)
+}
+
+func isPluginPanicError(err error) bool {
+	var panicErr *pluginPanicError
+	return errors.As(err, &panicErr)
+}
+
+func pluginPanicBifrostError() *schemas.BifrostError {
+	allowFallbacks := false
+	statusCode := 500
+	return &schemas.BifrostError{
+		IsBifrostError: true,
+		StatusCode:     &statusCode,
+		AllowFallbacks: &allowFallbacks,
+		Error: &schemas.ErrorField{
+			Type:    schemas.Ptr("plugin_panic"),
+			Message: "plugin execution failed unexpectedly",
+		},
+	}
+}
+
+func isPluginPanicBifrostError(err *schemas.BifrostError) bool {
+	return err != nil && err.Error != nil && err.Error.Type != nil && *err.Error.Type == "plugin_panic"
+}
+
+type requestRoutingSnapshot struct {
+	provider       schemas.ModelProvider
+	model          string
+	fallbacks      []schemas.Fallback
+	errorFallbacks []schemas.ErrorFallbackRule
+}
+
+func captureRequestRoutingSnapshot(req *schemas.BifrostRequest) requestRoutingSnapshot {
+	if req == nil {
+		return requestRoutingSnapshot{}
+	}
+	provider, model, fallbacks := req.GetRequestFields()
+	return requestRoutingSnapshot{
+		provider:       provider,
+		model:          model,
+		fallbacks:      slices.Clone(fallbacks),
+		errorFallbacks: slices.Clone(req.GetErrorFallbacks()),
+	}
+}
+
+func (snapshot requestRoutingSnapshot) restore(req *schemas.BifrostRequest) {
+	if req == nil {
+		return
+	}
+	req.SetProvider(snapshot.provider)
+	req.SetModel(snapshot.model)
+	req.SetFallbacks(slices.Clone(snapshot.fallbacks))
+	req.SetErrorFallbacks(slices.Clone(snapshot.errorFallbacks))
+}
+
+func (p *PluginPipeline) runPluginCall(pluginName, hook string, call func() error) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			if p != nil && p.logger != nil {
+				p.logger.Error("recovered plugin panic: plugin=%s hook=%s panic_type=%T\n%s", pluginName, hook, recovered, debug.Stack())
+			}
+			err = &pluginPanicError{plugin: pluginName, hook: hook}
+		}
+	}()
+	return call()
+}
+
 // RunLLMPreHooks executes PreHooks in order, tracks how many ran, and returns the final request, any short-circuit decision, and the count.
 func (p *PluginPipeline) RunLLMPreHooks(ctx *schemas.BifrostContext, req *schemas.BifrostRequest) (*schemas.BifrostRequest, *schemas.LLMPluginShortCircuit, int) {
 	// If the skip plugin pipeline flag is set, skip the plugin pipeline
@@ -7678,8 +8022,16 @@ func (p *PluginPipeline) RunLLMPreHooks(ctx *schemas.BifrostContext, req *schema
 		}
 
 		pluginCtx := ctx.WithPluginScope(&pluginName)
-		req, shortCircuit, err = plugin.PreLLMHook(pluginCtx, req)
-		pluginCtx.ReleasePluginScope()
+		routingSnapshot := captureRequestRoutingSnapshot(req)
+		err = p.runPluginCall(pluginName, "PreLLMHook", func() (hookErr error) {
+			defer pluginCtx.ReleasePluginScope()
+			req, shortCircuit, hookErr = plugin.PreLLMHook(pluginCtx, req)
+			return hookErr
+		})
+		if isPluginPanicError(err) {
+			routingSnapshot.restore(req)
+			shortCircuit = &schemas.LLMPluginShortCircuit{Error: pluginPanicBifrostError()}
+		}
 
 		// End span with appropriate status
 		if err != nil {
@@ -7695,6 +8047,12 @@ func (p *PluginPipeline) RunLLMPreHooks(ctx *schemas.BifrostContext, req *schema
 		}
 
 		p.executedPreHooks = i + 1
+		if isPluginPanicError(err) {
+			// The panicking hook did not complete and must not receive its paired
+			// post-hook. Earlier successful hooks still unwind normally.
+			p.executedPreHooks = i
+			return req, shortCircuit, p.executedPreHooks
+		}
 		if shortCircuit != nil {
 			return req, shortCircuit, p.executedPreHooks // short-circuit: only plugins up to and including i ran
 		}
@@ -7706,20 +8064,45 @@ func (p *PluginPipeline) RunLLMPreHooks(ctx *schemas.BifrostContext, req *schema
 // top-level request. Plugins mutate req.Provider, req.Model, req.Fallbacks (and any other field
 // they choose); mutations are committed to the shared *BifrostRequest and observed by every
 // subsequent plugin, the provider call, and every fallback attempt. There is no short-circuit
-// and errors are non-blocking — same semantics as RunLLMPreHooks: errors are logged as warnings
-// and accumulated in p.preHookErrors, then the pipeline continues to the next plugin. The empty-
+// and ordinary errors are non-blocking — same semantics as RunLLMPreHooks: errors are logged as
+// warnings and accumulated in p.preHookErrors, then the pipeline continues to the next plugin.
+// Panics fail the current request closed after rolling back routing state. The empty-
 // provider validation in handleRequest/handleStreamRequest catches the case where no plugin
 // successfully resolved a provider.
 //
 // Per-request semantics: unlike PreLLMHook (which runs again on every fallback), PreRequestHook
 // runs exactly once at the top of handleRequest/handleStreamRequest, before any fan-out.
-func (p *PluginPipeline) RunPreRequestHooks(ctx *schemas.BifrostContext, req *schemas.BifrostRequest) {
+func (p *PluginPipeline) RunPreRequestHooks(ctx *schemas.BifrostContext, req *schemas.BifrostRequest) (panicErr *schemas.BifrostError) {
 	// If the skip plugin pipeline flag is set, skip the plugin pipeline
 	if skipPluginPipeline, ok := ctx.Value(schemas.BifrostContextKeySkipPluginPipeline).(bool); ok && skipPluginPipeline {
-		return
+		return nil
 	}
 	ctx.BlockRestrictedWrites()
+	defer ctx.UnblockRestrictedWrites()
+	var (
+		activeSnapshot              = captureRequestRoutingSnapshot(req)
+		previousPin, hadPreviousPin = ctx.Value(schemas.BifrostContextKeyRoutingPinnedAPIKeyID).(string)
+	)
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			activeSnapshot.restore(req)
+			if hadPreviousPin {
+				ctx.SetValue(schemas.BifrostContextKeyRoutingPinnedAPIKeyID, previousPin)
+			} else {
+				ctx.ClearValue(schemas.BifrostContextKeyRoutingPinnedAPIKeyID)
+			}
+			if p != nil && p.logger != nil {
+				func() {
+					defer func() { _ = recover() }()
+					p.logger.Error("recovered pre-request plugin pipeline panic: panic_type=%T\n%s", recovered, debug.Stack())
+				}()
+			}
+			panicErr = pluginPanicBifrostError()
+		}
+	}()
 	for _, plugin := range p.llmPlugins {
+		activeSnapshot = captureRequestRoutingSnapshot(req)
+		previousPin, hadPreviousPin = ctx.Value(schemas.BifrostContextKeyRoutingPinnedAPIKeyID).(string)
 		pluginName := plugin.GetName()
 		p.logger.Debug("running pre-request hook for plugin %s", pluginName)
 		spanCtx, handle := p.tracer.StartSpan(ctx, fmt.Sprintf("plugin.%s.prerequesthook", sanitizeSpanName(pluginName)), schemas.SpanKindPlugin)
@@ -7730,14 +8113,26 @@ func (p *PluginPipeline) RunPreRequestHooks(ctx *schemas.BifrostContext, req *sc
 		}
 
 		pluginCtx := ctx.WithPluginScope(&pluginName)
-		err := plugin.PreRequestHook(pluginCtx, req)
-		pluginCtx.ReleasePluginScope()
+		err := p.runPluginCall(pluginName, "PreRequestHook", func() error {
+			defer pluginCtx.ReleasePluginScope()
+			return plugin.PreRequestHook(pluginCtx, req)
+		})
 
 		if err != nil {
 			p.tracer.SetAttribute(handle, "error", err.Error())
 			p.tracer.EndSpan(handle, schemas.SpanStatusError, err.Error())
 			p.preHookErrors = append(p.preHookErrors, err)
 			p.logger.Warn("error in PreRequestHook for plugin %s: %s", pluginName, err.Error())
+			if isPluginPanicError(err) {
+				activeSnapshot.restore(req)
+				if hadPreviousPin {
+					ctx.SetValue(schemas.BifrostContextKeyRoutingPinnedAPIKeyID, previousPin)
+				} else {
+					ctx.ClearValue(schemas.BifrostContextKeyRoutingPinnedAPIKeyID)
+				}
+				panicErr = pluginPanicBifrostError()
+				break
+			}
 			continue
 		}
 		p.tracer.EndSpan(handle, schemas.SpanStatusOk, "")
@@ -7756,6 +8151,7 @@ func (p *PluginPipeline) RunPreRequestHooks(ctx *schemas.BifrostContext, req *sc
 			ctx.SetValue(schemas.BifrostContextKeyAPIKeyID, pin)
 		}
 	}
+	return panicErr
 }
 
 // RunPostLLMHooks executes PostHooks in reverse order for the plugins whose PreLLMHook ran.
@@ -7775,6 +8171,7 @@ func (p *PluginPipeline) RunPostLLMHooks(ctx *schemas.BifrostContext, resp *sche
 	if runFrom > len(p.llmPlugins) {
 		runFrom = len(p.llmPlugins)
 	}
+	nonRecoverablePluginPanic := isPluginPanicBifrostError(bifrostErr)
 	requestType, _, _, _ := GetResponseFields(resp, bifrostErr)
 	// Realtime turns carry StreamStartTime for plugin latency/final-chunk context,
 	// but they are finalized as one completed turn, not chunk-by-chunk stream output.
@@ -7798,13 +8195,21 @@ func (p *PluginPipeline) RunPostLLMHooks(ctx *schemas.BifrostContext, resp *sche
 			}
 			pluginCtx := p.streamScopedCtxs[pluginName]
 			start := time.Now()
-			resp, bifrostErr, err = plugin.PostLLMHook(pluginCtx, resp, bifrostErr)
+			err = p.runPluginCall(pluginName, "PostLLMHook", func() (hookErr error) {
+				resp, bifrostErr, hookErr = plugin.PostLLMHook(pluginCtx, resp, bifrostErr)
+				return hookErr
+			})
 			duration := time.Since(start)
 
 			p.accumulatePluginTiming(pluginName, duration, err != nil)
 			if err != nil {
 				p.postHookErrors = append(p.postHookErrors, err)
 				p.logger.Warn("error in PostLLMHook for plugin %s: %v", pluginName, err)
+				if isPluginPanicError(err) {
+					resp = nil
+					bifrostErr = pluginPanicBifrostError()
+					break
+				}
 			}
 		} else {
 			// For non-streaming: create span per plugin (existing behavior)
@@ -7816,14 +8221,22 @@ func (p *PluginPipeline) RunPostLLMHooks(ctx *schemas.BifrostContext, resp *sche
 				}
 			}
 			pluginCtx := ctx.WithPluginScope(&pluginName)
-			resp, bifrostErr, err = plugin.PostLLMHook(pluginCtx, resp, bifrostErr)
-			pluginCtx.ReleasePluginScope()
+			err = p.runPluginCall(pluginName, "PostLLMHook", func() (hookErr error) {
+				defer pluginCtx.ReleasePluginScope()
+				resp, bifrostErr, hookErr = plugin.PostLLMHook(pluginCtx, resp, bifrostErr)
+				return hookErr
+			})
 			// End span with appropriate status
 			if err != nil {
 				p.tracer.SetAttribute(handle, "error", err.Error())
 				p.tracer.EndSpan(handle, schemas.SpanStatusError, err.Error())
 				p.postHookErrors = append(p.postHookErrors, err)
 				p.logger.Warn("error in PostLLMHook for plugin %s: %v", pluginName, err)
+				if isPluginPanicError(err) {
+					resp = nil
+					bifrostErr = pluginPanicBifrostError()
+					break
+				}
 			} else {
 				p.tracer.EndSpan(handle, schemas.SpanStatusOk, "")
 			}
@@ -7836,6 +8249,9 @@ func (p *PluginPipeline) RunPostLLMHooks(ctx *schemas.BifrostContext, resp *sche
 		p.streamingMu.Lock()
 		p.chunkCount++
 		p.streamingMu.Unlock()
+	}
+	if nonRecoverablePluginPanic {
+		return nil, pluginPanicBifrostError()
 	}
 	// Final logic: if both are set, error takes precedence, unless error is nil
 	if bifrostErr != nil {
@@ -7875,8 +8291,14 @@ func (p *PluginPipeline) RunMCPPreHooks(ctx *schemas.BifrostContext, req *schema
 		}
 
 		pluginCtx := ctx.WithPluginScope(&pluginName)
-		req, shortCircuit, err = plugin.PreMCPHook(pluginCtx, req)
-		pluginCtx.ReleasePluginScope()
+		err = p.runPluginCall(pluginName, "PreMCPHook", func() (hookErr error) {
+			defer pluginCtx.ReleasePluginScope()
+			req, shortCircuit, hookErr = plugin.PreMCPHook(pluginCtx, req)
+			return hookErr
+		})
+		if isPluginPanicError(err) {
+			shortCircuit = &schemas.MCPPluginShortCircuit{Error: pluginPanicBifrostError()}
+		}
 
 		// End span with appropriate status
 		if err != nil {
@@ -7892,6 +8314,10 @@ func (p *PluginPipeline) RunMCPPreHooks(ctx *schemas.BifrostContext, req *schema
 		}
 
 		p.executedPreHooks = i + 1
+		if isPluginPanicError(err) {
+			p.executedPreHooks = i
+			return req, shortCircuit, p.executedPreHooks
+		}
 		if shortCircuit != nil {
 			return req, shortCircuit, p.executedPreHooks // short-circuit: only plugins up to and including i ran
 		}
@@ -7914,6 +8340,7 @@ func (p *PluginPipeline) RunMCPPostHooks(ctx *schemas.BifrostContext, mcpResp *s
 	if runFrom > len(p.mcpPlugins) {
 		runFrom = len(p.mcpPlugins)
 	}
+	nonRecoverablePluginPanic := isPluginPanicBifrostError(bifrostErr)
 	ctx.BlockRestrictedWrites()
 	defer ctx.UnblockRestrictedWrites()
 	var err error
@@ -7931,8 +8358,11 @@ func (p *PluginPipeline) RunMCPPostHooks(ctx *schemas.BifrostContext, mcpResp *s
 		}
 
 		pluginCtx := ctx.WithPluginScope(&pluginName)
-		mcpResp, bifrostErr, err = plugin.PostMCPHook(pluginCtx, mcpResp, bifrostErr)
-		pluginCtx.ReleasePluginScope()
+		err = p.runPluginCall(pluginName, "PostMCPHook", func() (hookErr error) {
+			defer pluginCtx.ReleasePluginScope()
+			mcpResp, bifrostErr, hookErr = plugin.PostMCPHook(pluginCtx, mcpResp, bifrostErr)
+			return hookErr
+		})
 
 		// End span with appropriate status
 		if err != nil {
@@ -7940,11 +8370,19 @@ func (p *PluginPipeline) RunMCPPostHooks(ctx *schemas.BifrostContext, mcpResp *s
 			p.tracer.EndSpan(handle, schemas.SpanStatusError, err.Error())
 			p.postHookErrors = append(p.postHookErrors, err)
 			p.logger.Warn("error in PostMCPHook for plugin %s: %v", pluginName, err)
+			if isPluginPanicError(err) {
+				mcpResp = nil
+				bifrostErr = pluginPanicBifrostError()
+				break
+			}
 		} else {
 			p.tracer.EndSpan(handle, schemas.SpanStatusOk, "")
 		}
 		// If a plugin recovers from an error (sets bifrostErr to nil and sets mcpResp), allow that
 		// If a plugin invalidates a response (sets mcpResp to nil and sets bifrostErr), allow that
+	}
+	if nonRecoverablePluginPanic {
+		return nil, pluginPanicBifrostError()
 	}
 	// Final logic: if both are set, error takes precedence, unless error is nil
 	if bifrostErr != nil {
@@ -7988,7 +8426,14 @@ func (p *PluginPipeline) RunMCPPreConnectionHooks(ctx *schemas.BifrostContext, r
 		err = nil
 
 		if cp, ok := plugin.(schemas.MCPConnectionPlugin); ok {
-			req, shortCircuit, err = cp.PreMCPConnectionHook(pluginCtx, req)
+			err = p.runPluginCall(pluginName, "PreMCPConnectionHook", func() (hookErr error) {
+				defer pluginCtx.ReleasePluginScope()
+				req, shortCircuit, hookErr = cp.PreMCPConnectionHook(pluginCtx, req)
+				return hookErr
+			})
+			if isPluginPanicError(err) {
+				shortCircuit = &schemas.MCPConnectionShortCircuit{Error: pluginPanicBifrostError()}
+			}
 		} else {
 			// Plugin only implements MCPPlugin — Connect is invisible to it.
 			pluginCtx.ReleasePluginScope()
@@ -7996,8 +8441,6 @@ func (p *PluginPipeline) RunMCPPreConnectionHooks(ctx *schemas.BifrostContext, r
 			p.executedPreHooks = i + 1
 			continue
 		}
-
-		pluginCtx.ReleasePluginScope()
 
 		if err != nil {
 			p.tracer.SetAttribute(handle, "error", err.Error())
@@ -8012,6 +8455,10 @@ func (p *PluginPipeline) RunMCPPreConnectionHooks(ctx *schemas.BifrostContext, r
 		}
 
 		p.executedPreHooks = i + 1
+		if isPluginPanicError(err) {
+			p.executedPreHooks = i
+			return req, shortCircuit, p.executedPreHooks
+		}
 		if shortCircuit != nil {
 			return req, shortCircuit, p.executedPreHooks
 		}
@@ -8032,6 +8479,7 @@ func (p *PluginPipeline) RunMCPPostConnectionHooks(ctx *schemas.BifrostContext, 
 	if runFrom > len(p.mcpPlugins) {
 		runFrom = len(p.mcpPlugins)
 	}
+	nonRecoverablePluginPanic := isPluginPanicBifrostError(bifrostErr)
 	ctx.BlockRestrictedWrites()
 	defer ctx.UnblockRestrictedWrites()
 	var err error
@@ -8055,17 +8503,28 @@ func (p *PluginPipeline) RunMCPPostConnectionHooks(ctx *schemas.BifrostContext, 
 			p.tracer.EndSpan(handle, schemas.SpanStatusOk, "skipped (not MCPConnectionPlugin)")
 			continue
 		}
-		resp, bifrostErr, err = cp.PostMCPConnectionHook(pluginCtx, resp, bifrostErr)
-		pluginCtx.ReleasePluginScope()
+		err = p.runPluginCall(pluginName, "PostMCPConnectionHook", func() (hookErr error) {
+			defer pluginCtx.ReleasePluginScope()
+			resp, bifrostErr, hookErr = cp.PostMCPConnectionHook(pluginCtx, resp, bifrostErr)
+			return hookErr
+		})
 
 		if err != nil {
 			p.tracer.SetAttribute(handle, "error", err.Error())
 			p.tracer.EndSpan(handle, schemas.SpanStatusError, err.Error())
 			p.postHookErrors = append(p.postHookErrors, err)
 			p.logger.Warn("error in PostMCPConnectionHook for plugin %s: %v", pluginName, err)
+			if isPluginPanicError(err) {
+				resp = nil
+				bifrostErr = pluginPanicBifrostError()
+				break
+			}
 		} else {
 			p.tracer.EndSpan(handle, schemas.SpanStatusOk, "")
 		}
+	}
+	if nonRecoverablePluginPanic {
+		return nil, pluginPanicBifrostError()
 	}
 	if bifrostErr != nil {
 		if resp != nil && bifrostErr.StatusCode == nil && bifrostErr.Error != nil && bifrostErr.Error.Type == nil &&

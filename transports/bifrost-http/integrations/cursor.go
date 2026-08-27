@@ -422,10 +422,11 @@ func cursorRequestParser(ctx *fasthttp.RequestCtx, req interface{}) error {
 		Tools json.RawMessage `json:"tools,omitempty"` // shadow to absorb without parsing
 	}
 	var base struct {
-		Model     string                             `json:"model"`
-		Input     openai.OpenAIResponsesRequestInput `json:"input"`
-		Stream    *bool                              `json:"stream,omitempty"`
-		Fallbacks []string                           `json:"fallbacks,omitempty"`
+		Model          string                             `json:"model"`
+		Input          openai.OpenAIResponsesRequestInput `json:"input"`
+		Stream         *bool                              `json:"stream,omitempty"`
+		Fallbacks      []string                           `json:"fallbacks,omitempty"`
+		ErrorFallbacks json.RawMessage                    `json:"error_fallbacks,omitempty"`
 		responsesParamsNoTools
 	}
 	if err := sonic.Unmarshal(data, &base); err != nil {
@@ -437,6 +438,9 @@ func cursorRequestParser(ctx *fasthttp.RequestCtx, req interface{}) error {
 	cursorReq.Stream = base.Stream
 	cursorReq.Fallbacks = base.Fallbacks
 	cursorReq.ResponsesParameters = base.ResponsesParameters
+	if err := setErrorFallbacksOnValue(cursorReq, base.ErrorFallbacks); err != nil {
+		return err
+	}
 
 	// If input is empty, Cursor may have sent "messages" instead of "input"
 	if len(cursorReq.Input.OpenAIResponsesRequestInputArray) == 0 && cursorReq.Input.OpenAIResponsesRequestInputStr == nil {

@@ -137,6 +137,7 @@ func Init(ctx context.Context, config *Config, configStore configstore.ConfigSto
 		var pricingErr, paramsErr error
 		wg.Add(2)
 		go func() {
+			defer schemas.RecoverGoroutinePanic(mc.logger, "model catalog background task")
 			defer wg.Done()
 			if err := mc.datasheet.LoadFromDB(ctx); err != nil {
 				pricingErr = fmt.Errorf("failed to load initial pricing data: %w", err)
@@ -146,6 +147,7 @@ func Init(ctx context.Context, config *Config, configStore configstore.ConfigSto
 				logger.Info("existing pricing data found in database, syncing from URL in background")
 				mc.wg.Add(1)
 				go func() {
+					defer schemas.RecoverGoroutinePanic(mc.logger, "model catalog startup sync")
 					defer mc.wg.Done()
 					if err := mc.withDistributedLock(mc.syncCtx, "model_catalog_pricing_startup_sync", 10, func() error {
 						return mc.runPricingSync(mc.syncCtx)
@@ -164,6 +166,7 @@ func Init(ctx context.Context, config *Config, configStore configstore.ConfigSto
 			}
 		}()
 		go func() {
+			defer schemas.RecoverGoroutinePanic(mc.logger, "model catalog background task")
 			defer wg.Done()
 			n, err := mc.datasheet.LoadModelParamsFromDB(ctx)
 			if err != nil {
@@ -174,6 +177,7 @@ func Init(ctx context.Context, config *Config, configStore configstore.ConfigSto
 				logger.Info("existing model parameters found in database (%d records), syncing from URL in background", n)
 				mc.wg.Add(1)
 				go func() {
+					defer schemas.RecoverGoroutinePanic(mc.logger, "model catalog startup sync")
 					defer mc.wg.Done()
 					if err := mc.withDistributedLock(mc.syncCtx, "model_catalog_params_startup_sync", 10, func() error {
 						return mc.runParamsSync(mc.syncCtx)
@@ -211,6 +215,7 @@ func Init(ctx context.Context, config *Config, configStore configstore.ConfigSto
 			logger.Info("existing MCP library data found in database, syncing from URL in background")
 			mc.wg.Add(1)
 			go func() {
+				defer schemas.RecoverGoroutinePanic(mc.logger, "model catalog startup sync")
 				defer mc.wg.Done()
 				if err := mc.withDistributedLock(mc.syncCtx, "model_catalog_mcp_library_startup_sync", 10, func() error {
 					return mc.syncMCPLibrary(mc.syncCtx)
@@ -351,6 +356,7 @@ func (mc *ModelCatalog) ForceReloadPricing(ctx context.Context) error {
 	var pricingErr, paramsErr error
 	wg.Add(2)
 	go func() {
+		defer schemas.RecoverGoroutinePanic(mc.logger, "model catalog background task")
 		defer wg.Done()
 		if err := mc.runPricingSync(ctx); err != nil {
 			pricingErr = fmt.Errorf("failed to sync pricing data: %w", err)
@@ -361,6 +367,7 @@ func (mc *ModelCatalog) ForceReloadPricing(ctx context.Context) error {
 		}
 	}()
 	go func() {
+		defer schemas.RecoverGoroutinePanic(mc.logger, "model catalog background task")
 		defer wg.Done()
 		if err := mc.runParamsSync(ctx); err != nil {
 			paramsErr = fmt.Errorf("failed to sync model parameters: %w", err)
@@ -414,6 +421,7 @@ func (mc *ModelCatalog) startSyncWorker(ctx context.Context) {
 }
 
 func (mc *ModelCatalog) syncWorker(ctx context.Context) {
+	defer schemas.RecoverGoroutinePanic(mc.logger, "model catalog sync worker")
 	// Capture the ticker once so the select loop doesn't race with
 	// UpdateSyncConfig overwriting mc.syncTicker while this goroutine
 	// is still draining after mc.syncCancel().
@@ -446,12 +454,14 @@ func (mc *ModelCatalog) syncTick(ctx context.Context) {
 	if pricingDue {
 		outerWg.Add(1)
 		go func() {
+			defer schemas.RecoverGoroutinePanic(mc.logger, "model catalog scheduled sync")
 			defer outerWg.Done()
 			if err := mc.withDistributedLock(ctx, "model_catalog_pricing_sync", 10, func() error {
 				var wg sync.WaitGroup
 				var pricingErr, paramsErr error
 				wg.Add(2)
 				go func() {
+					defer schemas.RecoverGoroutinePanic(mc.logger, "model catalog background task")
 					defer wg.Done()
 					if err := mc.runPricingSync(ctx); err != nil {
 						mc.logger.Error("background pricing sync failed: %v", err)
@@ -459,6 +469,7 @@ func (mc *ModelCatalog) syncTick(ctx context.Context) {
 					}
 				}()
 				go func() {
+					defer schemas.RecoverGoroutinePanic(mc.logger, "model catalog background task")
 					defer wg.Done()
 					if err := mc.runParamsSync(ctx); err != nil {
 						mc.logger.Error("background model parameters sync failed: %v", err)
@@ -484,6 +495,7 @@ func (mc *ModelCatalog) syncTick(ctx context.Context) {
 	if mcpLibraryDue {
 		outerWg.Add(1)
 		go func() {
+			defer schemas.RecoverGoroutinePanic(mc.logger, "model catalog scheduled sync")
 			defer outerWg.Done()
 			if err := mc.withDistributedLock(ctx, "model_catalog_mcp_library_sync", 10, func() error {
 				if err := mc.syncMCPLibrary(ctx); err != nil {

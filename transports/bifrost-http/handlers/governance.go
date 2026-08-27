@@ -350,32 +350,34 @@ type RoutingTarget struct {
 
 // CreateRoutingRuleRequest represents the request body for creating a routing rule
 type CreateRoutingRuleRequest struct {
-	Name          string          `json:"name" validate:"required"`
-	Description   string          `json:"description,omitempty"`
-	Enabled       *bool           `json:"enabled,omitempty"`    // nil = use DB default (true)
-	ChainRule     *bool           `json:"chain_rule,omitempty"` // nil = use DB default (false)
-	CelExpression string          `json:"cel_expression"`
-	Targets       []RoutingTarget `json:"targets"` // Required; weights must sum to 1
-	Fallbacks     []string        `json:"fallbacks,omitempty"`
-	Scope         string          `json:"scope,omitempty"` // Defaults to "global" if not provided
-	ScopeID       *string         `json:"scope_id,omitempty"`
-	Query         map[string]any  `json:"query,omitempty"`
-	Priority      int             `json:"priority,omitempty"` // Defaults to 0 if not provided
+	Name           string                                        `json:"name" validate:"required"`
+	Description    string                                        `json:"description,omitempty"`
+	Enabled        *bool                                         `json:"enabled,omitempty"`    // nil = use DB default (true)
+	ChainRule      *bool                                         `json:"chain_rule,omitempty"` // nil = use DB default (false)
+	CelExpression  string                                        `json:"cel_expression"`
+	Targets        []RoutingTarget                               `json:"targets"` // Required; weights must sum to 1
+	Fallbacks      []string                                      `json:"fallbacks,omitempty"`
+	ErrorFallbacks []configstoreTables.TableRoutingErrorFallback `json:"error_fallbacks,omitempty"`
+	Scope          string                                        `json:"scope,omitempty"` // Defaults to "global" if not provided
+	ScopeID        *string                                       `json:"scope_id,omitempty"`
+	Query          map[string]any                                `json:"query,omitempty"`
+	Priority       int                                           `json:"priority,omitempty"` // Defaults to 0 if not provided
 }
 
 // UpdateRoutingRuleRequest represents the request body for updating a routing rule
 type UpdateRoutingRuleRequest struct {
-	Name          *string         `json:"name,omitempty"`
-	Description   *string         `json:"description,omitempty"`
-	Enabled       *bool           `json:"enabled,omitempty"`
-	ChainRule     *bool           `json:"chain_rule,omitempty"`
-	CelExpression *string         `json:"cel_expression,omitempty"`
-	Targets       []RoutingTarget `json:"targets,omitempty"` // If provided, replaces all existing targets; weights must sum to 1
-	Fallbacks     []string        `json:"fallbacks,omitempty"`
-	Query         map[string]any  `json:"query,omitempty"`
-	Priority      *int            `json:"priority,omitempty"`
-	Scope         *string         `json:"scope,omitempty"`
-	ScopeID       *string         `json:"scope_id,omitempty"`
+	Name           *string                                       `json:"name,omitempty"`
+	Description    *string                                       `json:"description,omitempty"`
+	Enabled        *bool                                         `json:"enabled,omitempty"`
+	ChainRule      *bool                                         `json:"chain_rule,omitempty"`
+	CelExpression  *string                                       `json:"cel_expression,omitempty"`
+	Targets        []RoutingTarget                               `json:"targets,omitempty"` // If provided, replaces all existing targets; weights must sum to 1
+	Fallbacks      []string                                      `json:"fallbacks,omitempty"`
+	ErrorFallbacks []configstoreTables.TableRoutingErrorFallback `json:"error_fallbacks,omitempty"`
+	Query          map[string]any                                `json:"query,omitempty"`
+	Priority       *int                                          `json:"priority,omitempty"`
+	Scope          *string                                       `json:"scope,omitempty"`
+	ScopeID        *string                                       `json:"scope_id,omitempty"`
 }
 
 // CreateRateLimitRequest represents the request body for creating a rate limit using flexible approach
@@ -1436,6 +1438,20 @@ func (h *GovernanceHandler) getComplexityAnalyzerConfig(ctx *fasthttp.RequestCtx
 	SendJSON(ctx, cfg)
 }
 
+var errMultipleJSONValues = errors.New("multiple JSON values")
+
+func decodeStrictJSONBody(body []byte, dst any) error {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(dst); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return errMultipleJSONValues
+	}
+	return nil
+}
+
 func (h *GovernanceHandler) updateComplexityAnalyzerConfig(ctx *fasthttp.RequestCtx) {
 	if h.configStore == nil {
 		SendError(ctx, fasthttp.StatusServiceUnavailable, "config store not available")
@@ -1443,14 +1459,12 @@ func (h *GovernanceHandler) updateComplexityAnalyzerConfig(ctx *fasthttp.Request
 	}
 
 	var payload complexity.AnalyzerConfig
-	decoder := json.NewDecoder(bytes.NewReader(ctx.PostBody()))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&payload); err != nil {
+	if err := decodeStrictJSONBody(ctx.PostBody(), &payload); err != nil {
+		if errors.Is(err, errMultipleJSONValues) {
+			SendError(ctx, fasthttp.StatusBadRequest, "invalid request format: multiple JSON values")
+			return
+		}
 		SendError(ctx, fasthttp.StatusBadRequest, "Invalid request payload")
-		return
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		SendError(ctx, fasthttp.StatusBadRequest, "invalid request format: multiple JSON values")
 		return
 	}
 
@@ -4545,7 +4559,11 @@ func (h *GovernanceHandler) getRoutingRule(ctx *fasthttp.RequestCtx) {
 func (h *GovernanceHandler) createRoutingRule(ctx *fasthttp.RequestCtx) {
 	// Parse request body
 	var req CreateRoutingRuleRequest
-	if err := sonic.Unmarshal(ctx.PostBody(), &req); err != nil {
+	if err := decodeStrictJSONBody(ctx.PostBody(), &req); err != nil {
+		if errors.Is(err, errMultipleJSONValues) {
+			SendError(ctx, 400, "invalid request format: multiple JSON values")
+			return
+		}
 		SendError(ctx, 400, "Invalid JSON")
 		return
 	}
@@ -4566,6 +4584,11 @@ func (h *GovernanceHandler) createRoutingRule(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	if err := validateRoutingFallbacks(req.Fallbacks); err != nil {
+		SendError(ctx, 400, err.Error())
+		return
+	}
+	normalizedErrorFallbacks, err := validateAndNormalizeRoutingErrorFallbacks(req.ErrorFallbacks)
+	if err != nil {
 		SendError(ctx, 400, err.Error())
 		return
 	}
@@ -4621,18 +4644,19 @@ func (h *GovernanceHandler) createRoutingRule(ctx *fasthttp.RequestCtx) {
 		chainRule = *req.ChainRule
 	}
 	rule := &configstoreTables.TableRoutingRule{
-		ID:              ruleID,
-		Name:            req.Name,
-		Description:     req.Description,
-		Enabled:         enabled,
-		ChainRule:       chainRule,
-		CelExpression:   req.CelExpression,
-		Targets:         targets,
-		Scope:           scope,
-		ScopeID:         req.ScopeID,
-		Priority:        req.Priority,
-		ParsedFallbacks: req.Fallbacks,
-		ParsedQuery:     req.Query,
+		ID:                   ruleID,
+		Name:                 req.Name,
+		Description:          req.Description,
+		Enabled:              enabled,
+		ChainRule:            chainRule,
+		CelExpression:        req.CelExpression,
+		Targets:              targets,
+		Scope:                scope,
+		ScopeID:              req.ScopeID,
+		Priority:             req.Priority,
+		ParsedFallbacks:      req.Fallbacks,
+		ParsedErrorFallbacks: normalizedErrorFallbacks,
+		ParsedQuery:          req.Query,
 	}
 
 	// Create in database
@@ -4659,7 +4683,11 @@ func (h *GovernanceHandler) updateRoutingRule(ctx *fasthttp.RequestCtx) {
 
 	// Parse request body
 	var req UpdateRoutingRuleRequest
-	if err := sonic.Unmarshal(ctx.PostBody(), &req); err != nil {
+	if err := decodeStrictJSONBody(ctx.PostBody(), &req); err != nil {
+		if errors.Is(err, errMultipleJSONValues) {
+			SendError(ctx, 400, "invalid request format: multiple JSON values")
+			return
+		}
 		SendError(ctx, 400, "Invalid JSON")
 		return
 	}
@@ -4729,6 +4757,14 @@ func (h *GovernanceHandler) updateRoutingRule(ctx *fasthttp.RequestCtx) {
 			return
 		}
 		rule.ParsedFallbacks = req.Fallbacks
+	}
+	if req.ErrorFallbacks != nil {
+		normalizedErrorFallbacks, err := validateAndNormalizeRoutingErrorFallbacks(req.ErrorFallbacks)
+		if err != nil {
+			SendError(ctx, 400, err.Error())
+			return
+		}
+		rule.ParsedErrorFallbacks = normalizedErrorFallbacks
 	}
 	if req.Scope != nil && *req.Scope != "" {
 		// Validate scope value before updating
@@ -5193,6 +5229,21 @@ var validRoutingScopes = map[string]bool{
 	"user":        true,
 }
 
+var validRoutingErrorFallbackCategories = map[string]bool{
+	"content_policy":        true,
+	"unsupported_operation": true,
+	"rate_limit":            true,
+	"authentication":        true,
+	"billing":               true,
+	"permission":            true,
+	"timeout":               true,
+	"provider_unavailable":  true,
+	"network":               true,
+	"invalid_request":       true,
+	"internal":              true,
+	"unknown":               true,
+}
+
 // errRoutingScopeIDNotFound marks a validateRoutingScopeID failure as a genuine
 // "entity doesn't exist" rejection, as opposed to a store error (DB down, timeout,
 // context cancellation). Callers use errors.Is to tell the two apart: the former
@@ -5301,16 +5352,218 @@ func validateRoutingTargets(targets []RoutingTarget) error {
 // validateRoutingFallbacks ensures each fallback parses to a non-empty known provider via
 // schemas.ParseModelString (e.g. "openai/gpt-4o", or "azure/" to use the incoming model).
 func validateRoutingFallbacks(fallbacks []string) error {
+	seen := make(map[string]struct{}, len(fallbacks))
 	for i, fb := range fallbacks {
-		if strings.TrimSpace(fb) == "" {
-			return fmt.Errorf("fallbacks[%d] must not be empty", i)
-		}
-		provider, _ := schemas.ParseModelString(fb, "")
-		if provider == "" {
+		canonicalKey, err := canonicalRoutingFallbackKey(fb)
+		if err != nil {
+			if strings.TrimSpace(fb) == "" {
+				return fmt.Errorf("fallbacks[%d] must not be empty", i)
+			}
 			return fmt.Errorf("fallbacks[%d] %q is invalid: must use a known provider prefix (e.g. \"openai/gpt-4o\" or \"azure/\" for the incoming model)", i, fb)
 		}
+		if _, exists := seen[canonicalKey]; exists {
+			return fmt.Errorf("fallbacks[%d] %q duplicates an earlier fallback target", i, fb)
+		}
+		seen[canonicalKey] = struct{}{}
 	}
 	return nil
+}
+
+func canonicalRoutingFallbackKey(fallback string) (string, error) {
+	trimmed := strings.TrimSpace(fallback)
+	if trimmed == "" {
+		return "", fmt.Errorf("fallback must not be empty")
+	}
+	provider, model := schemas.ParseModelString(trimmed, "")
+	if provider == "" {
+		return "", fmt.Errorf("fallback must use known provider prefix")
+	}
+	canonicalProvider := strings.ToLower(strings.TrimSpace(string(provider)))
+	canonicalModel := strings.ToLower(strings.TrimSpace(model))
+	return canonicalProvider + "|" + canonicalModel, nil
+}
+
+func validateAndNormalizeRoutingErrorFallbacks(rules []configstoreTables.TableRoutingErrorFallback) ([]configstoreTables.TableRoutingErrorFallback, error) {
+	if rules == nil {
+		return nil, nil
+	}
+
+	normalized := make([]configstoreTables.TableRoutingErrorFallback, 0, len(rules))
+	for i, rule := range rules {
+		entryName := strings.TrimSpace(rule.Name)
+		fallbacks := make([]string, 0, len(rule.Fallbacks))
+		for _, fb := range rule.Fallbacks {
+			fallbacks = append(fallbacks, strings.TrimSpace(fb))
+		}
+		if len(fallbacks) == 0 {
+			return nil, fmt.Errorf("error_fallbacks[%d].fallbacks must contain at least one fallback target", i)
+		}
+		if err := validateRoutingFallbacks(fallbacks); err != nil {
+			return nil, fmt.Errorf("error_fallbacks[%d].%w", i, err)
+		}
+
+		scenario := strings.ToLower(strings.TrimSpace(rule.Scenario))
+		hasLegacyWhen := !routingErrorFallbackConditionEmpty(rule.When)
+		if scenario != "" && hasLegacyWhen {
+			return nil, fmt.Errorf("error_fallbacks[%d] cannot define both scenario and when", i)
+		}
+		if scenario == "" && !hasLegacyWhen {
+			return nil, fmt.Errorf("error_fallbacks[%d] must define either scenario or when", i)
+		}
+		if scenario != "" {
+			if !validRoutingErrorFallbackCategories[scenario] {
+				return nil, fmt.Errorf("error_fallbacks[%d].scenario %q is invalid", i, rule.Scenario)
+			}
+			supplement, err := normalizeRoutingErrorFallbackSupplement(rule.Supplement)
+			if err != nil {
+				return nil, fmt.Errorf("error_fallbacks[%d].supplement %w", i, err)
+			}
+			normalized = append(normalized, configstoreTables.TableRoutingErrorFallback{
+				Name:       entryName,
+				Scenario:   scenario,
+				Supplement: supplement,
+				Fallbacks:  fallbacks,
+			})
+			continue
+		}
+		if rule.Supplement != nil {
+			return nil, fmt.Errorf("error_fallbacks[%d].supplement requires scenario", i)
+		}
+		when, err := normalizeRoutingErrorFallbackCondition(rule.When)
+		if err != nil {
+			return nil, fmt.Errorf("error_fallbacks[%d].when %w", i, err)
+		}
+
+		normalized = append(normalized, configstoreTables.TableRoutingErrorFallback{
+			Name:      entryName,
+			When:      when,
+			Fallbacks: fallbacks,
+		})
+	}
+	return normalized, nil
+}
+
+func normalizeRoutingErrorFallbackCondition(in configstoreTables.TableRoutingErrorFallbackCondition) (configstoreTables.TableRoutingErrorFallbackCondition, error) {
+	out := configstoreTables.TableRoutingErrorFallbackCondition{
+		Categories:      make([]string, 0, len(in.Categories)),
+		ErrorCodes:      make([]string, 0, len(in.ErrorCodes)),
+		ErrorTypes:      make([]string, 0, len(in.ErrorTypes)),
+		StatusCodes:     make([]int, 0, len(in.StatusCodes)),
+		MessageContains: make([]string, 0, len(in.MessageContains)),
+	}
+
+	for i, category := range in.Categories {
+		trimmed := strings.ToLower(strings.TrimSpace(category))
+		if trimmed == "" {
+			return out, fmt.Errorf("categories[%d] must not be empty", i)
+		}
+		if !validRoutingErrorFallbackCategories[trimmed] {
+			return out, fmt.Errorf("categories[%d] %q is invalid", i, category)
+		}
+		out.Categories = append(out.Categories, trimmed)
+	}
+
+	for i, code := range in.ErrorCodes {
+		trimmed := strings.TrimSpace(code)
+		if trimmed == "" {
+			return out, fmt.Errorf("error_codes[%d] must not be empty", i)
+		}
+		out.ErrorCodes = append(out.ErrorCodes, trimmed)
+	}
+
+	for i, errorType := range in.ErrorTypes {
+		trimmed := strings.TrimSpace(errorType)
+		if trimmed == "" {
+			return out, fmt.Errorf("error_types[%d] must not be empty", i)
+		}
+		out.ErrorTypes = append(out.ErrorTypes, trimmed)
+	}
+
+	for i, statusCode := range in.StatusCodes {
+		if statusCode < 100 || statusCode > 599 {
+			return out, fmt.Errorf("status_codes[%d] must be a valid HTTP status code", i)
+		}
+		out.StatusCodes = append(out.StatusCodes, statusCode)
+	}
+
+	for i, token := range in.MessageContains {
+		trimmed := strings.TrimSpace(token)
+		if trimmed == "" {
+			return out, fmt.Errorf("message_contains[%d] must not be empty", i)
+		}
+		out.MessageContains = append(out.MessageContains, trimmed)
+	}
+
+	return out, nil
+}
+
+func normalizeRoutingErrorFallbackSupplement(in *configstoreTables.TableRoutingErrorFallbackSupplement) (*configstoreTables.TableRoutingErrorFallbackSupplement, error) {
+	if in == nil {
+		return nil, nil
+	}
+
+	out := &configstoreTables.TableRoutingErrorFallbackSupplement{
+		Providers:          make([]string, 0, len(in.Providers)),
+		ErrorCodes:         make([]string, 0, len(in.ErrorCodes)),
+		ErrorTypes:         make([]string, 0, len(in.ErrorTypes)),
+		StatusCodes:        make([]int, 0, len(in.StatusCodes)),
+		MessageContainsAny: make([]string, 0, len(in.MessageContainsAny)),
+	}
+
+	for i, provider := range in.Providers {
+		trimmed := strings.ToLower(strings.TrimSpace(provider))
+		if trimmed == "" {
+			return nil, fmt.Errorf("providers[%d] must not be empty", i)
+		}
+		out.Providers = append(out.Providers, trimmed)
+	}
+
+	for i, code := range in.ErrorCodes {
+		trimmed := strings.TrimSpace(code)
+		if trimmed == "" {
+			return nil, fmt.Errorf("error_codes[%d] must not be empty", i)
+		}
+		out.ErrorCodes = append(out.ErrorCodes, trimmed)
+	}
+
+	for i, errorType := range in.ErrorTypes {
+		trimmed := strings.TrimSpace(errorType)
+		if trimmed == "" {
+			return nil, fmt.Errorf("error_types[%d] must not be empty", i)
+		}
+		out.ErrorTypes = append(out.ErrorTypes, trimmed)
+	}
+
+	for i, statusCode := range in.StatusCodes {
+		if statusCode < 100 || statusCode > 599 {
+			return nil, fmt.Errorf("status_codes[%d] must be a valid HTTP status code", i)
+		}
+		out.StatusCodes = append(out.StatusCodes, statusCode)
+	}
+
+	for i, token := range in.MessageContainsAny {
+		trimmed := strings.TrimSpace(token)
+		if trimmed == "" {
+			return nil, fmt.Errorf("message_contains_any[%d] must not be empty", i)
+		}
+		out.MessageContainsAny = append(out.MessageContainsAny, trimmed)
+	}
+
+	if len(out.ErrorCodes) == 0 && len(out.ErrorTypes) == 0 && len(out.StatusCodes) == 0 && len(out.MessageContainsAny) == 0 {
+		return nil, fmt.Errorf("must define at least one non-provider matcher")
+	}
+	if len(out.Providers) == 0 && len(out.ErrorCodes) == 0 && len(out.ErrorTypes) == 0 && len(out.StatusCodes) == 0 && len(out.MessageContainsAny) == 0 {
+		return nil, nil
+	}
+	return out, nil
+}
+
+func routingErrorFallbackConditionEmpty(cond configstoreTables.TableRoutingErrorFallbackCondition) bool {
+	return len(cond.Categories) == 0 &&
+		len(cond.ErrorCodes) == 0 &&
+		len(cond.ErrorTypes) == 0 &&
+		len(cond.StatusCodes) == 0 &&
+		len(cond.MessageContains) == 0
 }
 
 // quotaModelUsage is one entry in the quota endpoint's per-model breakdown: the budgets

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -42,9 +43,10 @@ type ManualExportRepository interface {
 }
 
 type manualExportJob struct {
-	logID    string
-	attempts map[string]int
-	repo     ManualExportRepository
+	logID     string
+	attempts  map[string]int
+	repo      ManualExportRepository
+	completed map[string]struct{}
 }
 
 type manualMediaStore struct {
@@ -82,6 +84,9 @@ func (s *manualMediaStore) Delete(_ string) {
 }
 
 func (p *OtelPlugin) manualTargets() []*otelTarget {
+	if p == nil {
+		return nil
+	}
 	targets := make([]*otelTarget, 0, len(p.targets))
 	for _, target := range p.targets {
 		if target != nil && target.client != nil && target.mediaUploader != nil && !target.disableContentLogging {
@@ -156,11 +161,41 @@ func (p *OtelPlugin) startManualExportWorkers(count int) {
 				case <-p.ctx.Done():
 					return
 				case job := <-p.manualQueue:
-					p.runManualExport(job)
+					p.runManualExportSafely(job)
 				}
 			}
 		}()
 	}
+}
+
+func (p *OtelPlugin) runManualExportSafely(job manualExportJob) {
+	if job.completed == nil {
+		job.completed = make(map[string]struct{}, len(job.attempts))
+	}
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			if logger != nil {
+				logger.Error("recovered manual OTEL export panic: log_id=%s panic_type=%T\n%s", job.logID, recovered, debug.Stack())
+			}
+			// The job was persisted as pending before it entered the worker. Make a
+			// best-effort terminal update so a contained panic cannot leave the UI
+			// showing an export that will never finish.
+			func() {
+				defer func() {
+					if stateRecovered := recover(); stateRecovered != nil && logger != nil {
+						logger.Error("recovered manual OTEL panic-state update panic: log_id=%s panic_type=%T\n%s", job.logID, stateRecovered, debug.Stack())
+					}
+				}()
+				if p == nil {
+					return
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				p.failPendingManualTargets(ctx, job, logstore.ObservationExportStatusFailed, "worker_panic", errors.New("manual export worker failed unexpectedly"))
+			}()
+		}
+	}()
+	p.runManualExport(job)
 }
 
 func (p *OtelPlugin) runManualExport(job manualExportJob) {
@@ -179,9 +214,22 @@ func (p *OtelPlugin) runManualExport(job manualExportJob) {
 	for _, target := range p.manualTargets() {
 		status, reason, exportErr := p.emitManualTrace(ctx, target, trace)
 		p.upsertManualState(ctx, job.repo, job.logID, target, status, reason, trace.TraceID, job.attempts[target.id])
+		job.completed[target.id] = struct{}{}
 		if exportErr != nil && logger != nil {
 			logger.Error("manual Langfuse export failed log_id=%s target_id=%s reason=%s: %v", job.logID, target.id, reason, exportErr)
 		}
+	}
+}
+
+func (p *OtelPlugin) failPendingManualTargets(ctx context.Context, job manualExportJob, status, reason string, err error) {
+	for _, target := range p.manualTargets() {
+		if _, completed := job.completed[target.id]; completed {
+			continue
+		}
+		p.upsertManualState(ctx, job.repo, job.logID, target, status, reason, "", job.attempts[target.id])
+	}
+	if err != nil && logger != nil {
+		logger.Error("manual Langfuse export worker failed log_id=%s reason=%s: %v", job.logID, reason, err)
 	}
 }
 

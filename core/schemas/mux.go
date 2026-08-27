@@ -1081,9 +1081,10 @@ func (cr *BifrostChatRequest) ToResponsesRequest() *BifrostResponsesRequest {
 	}
 
 	brr := &BifrostResponsesRequest{
-		Provider:  cr.Provider,
-		Model:     cr.Model,
-		Fallbacks: cr.Fallbacks, // Copy fallbacks as-is
+		Provider:       cr.Provider,
+		Model:          cr.Model,
+		Fallbacks:      cr.Fallbacks, // Copy fallbacks as-is
+		ErrorFallbacks: cr.ErrorFallbacks,
 	}
 
 	// Convert Input messages using existing ChatMessage.ToResponsesMessages()
@@ -1201,9 +1202,10 @@ func (brr *BifrostResponsesRequest) ToChatRequest() *BifrostChatRequest {
 	}
 
 	bcr := &BifrostChatRequest{
-		Provider:  brr.Provider,
-		Model:     brr.Model,
-		Fallbacks: brr.Fallbacks, // Copy fallbacks as-is
+		Provider:       brr.Provider,
+		Model:          brr.Model,
+		Fallbacks:      brr.Fallbacks, // Copy fallbacks as-is
+		ErrorFallbacks: brr.ErrorFallbacks,
 	}
 
 	// Convert Input messages using existing ToChatMessages()

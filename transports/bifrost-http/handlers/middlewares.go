@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -28,22 +29,45 @@ import (
 var loggingSkipPaths = []string{"/health", "/_next", "/api/dev"}
 var realtimeTransportPaths = buildRealtimeTransportPathSet()
 
+// PanicRecoveryMiddleware keeps a single faulty request handler from
+// terminating the entire fasthttp process. It logs only method/path and stack
+// metadata; request bodies and credentials are deliberately excluded.
+func PanicRecoveryMiddleware(next fasthttp.RequestHandler) fasthttp.RequestHandler {
+	return func(ctx *fasthttp.RequestCtx) {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				if logger != nil {
+					logger.Error("recovered HTTP handler panic: method=%s path=%s panic_type=%T\n%s", ctx.Method(), ctx.Path(), recovered, debug.Stack())
+				}
+				ctx.Response.Reset()
+				setSecurityHeaders(ctx)
+				SendError(ctx, fasthttp.StatusInternalServerError, "internal server error")
+			}
+		}()
+		next(ctx)
+	}
+}
+
 // SecurityHeadersMiddleware sets security-related HTTP headers on every response.
 // This should wrap the outermost handler so all responses (API, UI, errors) include these headers.
 func SecurityHeadersMiddleware() schemas.BifrostHTTPMiddleware {
 	return func(next fasthttp.RequestHandler) fasthttp.RequestHandler {
 		return func(ctx *fasthttp.RequestCtx) {
-			ctx.Response.Header.Set("X-Frame-Options", "DENY")
-			ctx.Response.Header.Set("X-Content-Type-Options", "nosniff")
-			ctx.Response.Header.Set("Referrer-Policy", "strict-origin-when-cross-origin")
-			ctx.Response.Header.Set("Content-Security-Policy", "frame-ancestors 'none'")
-			ctx.Response.Header.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-			// Only set HSTS when serving over HTTPS (detected via reverse proxy header or direct TLS)
-			if string(ctx.Request.Header.Peek("X-Forwarded-Proto")) == "https" || ctx.IsTLS() {
-				ctx.Response.Header.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
-			}
+			setSecurityHeaders(ctx)
 			next(ctx)
 		}
+	}
+}
+
+func setSecurityHeaders(ctx *fasthttp.RequestCtx) {
+	ctx.Response.Header.Set("X-Frame-Options", "DENY")
+	ctx.Response.Header.Set("X-Content-Type-Options", "nosniff")
+	ctx.Response.Header.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+	ctx.Response.Header.Set("Content-Security-Policy", "frame-ancestors 'none'")
+	ctx.Response.Header.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+	// Only set HSTS when serving over HTTPS (detected via reverse proxy header or direct TLS)
+	if string(ctx.Request.Header.Peek("X-Forwarded-Proto")) == "https" || ctx.IsTLS() {
+		ctx.Response.Header.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 	}
 }
 
@@ -1361,6 +1385,9 @@ func GetObservabilityPlugins(plugins []schemas.BasePlugin) []schemas.Observabili
 	obsPlugins := make([]schemas.ObservabilityPlugin, 0)
 	for _, plugin := range plugins {
 		if obsPlugin, ok := plugin.(schemas.ObservabilityPlugin); ok {
+			if schemas.IsNilInterface(obsPlugin) {
+				continue
+			}
 			obsPlugins = append(obsPlugins, obsPlugin)
 		}
 	}

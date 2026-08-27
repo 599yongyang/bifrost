@@ -289,6 +289,7 @@ func (provider *HuggingFaceProvider) listModelsByKey(ctx *schemas.BifrostContext
 	for _, infProvider := range INFERENCE_PROVIDERS {
 		wg.Add(1)
 		go func(inferProvider inferenceProvider) {
+			defer providerUtils.RecoverGoroutinePanic(nil, provider.logger, "huggingface model discovery")
 			defer wg.Done()
 
 			req := fasthttp.AcquireRequest()
@@ -1108,6 +1109,7 @@ func (provider *HuggingFaceProvider) ImageGenerationStream(ctx *schemas.BifrostC
 		defer providerUtils.EnsureStreamFinalizerCalled(ctx, postHookSpanFinalizer)
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		defer close(responseChan)
+		defer providerUtils.RecoverGoroutinePanic(ctx, provider.logger, "huggingface stream")
 
 		if resp.BodyStream() == nil {
 			bifrostErr := providerUtils.NewBifrostOperationError(
@@ -1492,6 +1494,7 @@ func (provider *HuggingFaceProvider) ImageEditStream(ctx *schemas.BifrostContext
 		defer providerUtils.EnsureStreamFinalizerCalled(ctx, postHookSpanFinalizer)
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		defer close(responseChan)
+		defer providerUtils.RecoverGoroutinePanic(ctx, provider.logger, "huggingface stream")
 
 		if resp.BodyStream() == nil {
 			bifrostErr := providerUtils.NewBifrostOperationError(

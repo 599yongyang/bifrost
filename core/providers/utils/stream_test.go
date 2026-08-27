@@ -156,6 +156,36 @@ func TestCheckFirstStreamChunk_ErrorInSecondChunk(t *testing.T) {
 	}
 }
 
+func TestCheckFirstStreamChunk_ContentFilterAfterVisibleChunkIsForwarded(t *testing.T) {
+	visible := "visible output"
+	finishReason := "content_filter"
+	stream := make(chan *schemas.BifrostStreamChunk, 2)
+	stream <- &schemas.BifrostStreamChunk{BifrostChatResponse: &schemas.BifrostChatResponse{
+		Choices: []schemas.BifrostResponseChoice{{
+			ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{Delta: &schemas.ChatStreamResponseChoiceDelta{Content: &visible}},
+		}},
+	}}
+	stream <- &schemas.BifrostStreamChunk{BifrostChatResponse: &schemas.BifrostChatResponse{
+		Choices: []schemas.BifrostResponseChoice{{FinishReason: &finishReason}},
+	}}
+	close(stream)
+
+	wrapped, _, err := CheckFirstStreamChunkForError(context.Background(), stream)
+	if err != nil {
+		t.Fatalf("a stream committed with visible output must not be converted into a retryable error: %v", err)
+	}
+	first := <-wrapped
+	if first.BifrostChatResponse == nil || first.BifrostChatResponse.Choices[0].Delta == nil ||
+		first.BifrostChatResponse.Choices[0].Delta.Content == nil || *first.BifrostChatResponse.Choices[0].Delta.Content != visible {
+		t.Fatalf("unexpected first visible chunk: %+v", first)
+	}
+	second := <-wrapped
+	if second.BifrostChatResponse == nil || second.BifrostChatResponse.Choices[0].FinishReason == nil ||
+		*second.BifrostChatResponse.Choices[0].FinishReason != finishReason {
+		t.Fatalf("terminal content-filter chunk should be forwarded after commit: %+v", second)
+	}
+}
+
 func TestCheckFirstStreamChunk_ErrorDrainsSource(t *testing.T) {
 	stream := make(chan *schemas.BifrostStreamChunk, 5)
 	stream <- &schemas.BifrostStreamChunk{

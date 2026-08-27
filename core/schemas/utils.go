@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"math/rand"
 	"net/url"
+	"reflect"
 	"regexp"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,6 +19,29 @@ import (
 // This is a helper function for creating pointers to values.
 func Ptr[T any](v T) *T {
 	return &v
+}
+
+// IsNilInterface reports whether value is nil, including an interface that
+// contains a typed nil pointer/map/slice/channel/function/interface.
+func IsNilInterface(value any) bool {
+	if value == nil {
+		return true
+	}
+	rv := reflect.ValueOf(value)
+	switch rv.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Ptr, reflect.Slice:
+		return rv.IsNil()
+	default:
+		return false
+	}
+}
+
+// RecoverGoroutinePanic logs and contains a panic at a detached goroutine
+// boundary. It must be registered with defer at the top of the goroutine.
+func RecoverGoroutinePanic(logger Logger, component string) {
+	if recovered := recover(); recovered != nil && logger != nil {
+		logger.Error("recovered detached goroutine panic: component=%s panic_type=%T\n%s", component, recovered, debug.Stack())
+	}
 }
 
 // GetRandomString generates a random alphanumeric string of the given length.

@@ -291,6 +291,65 @@ func (s *manualExporterStub) EnqueueManualExport(_ context.Context, id string) (
 func (s *manualExporterStub) ObservationTargetIDs() []string { return []string{"otel-test"} }
 func (s *manualExporterStub) ManualExportAvailable() bool    { return true }
 
+type nilUnsafeManualExporter struct{ targets []string }
+
+func (s *nilUnsafeManualExporter) EnqueueManualExport(_ context.Context, _ string) (string, string, error) {
+	return logstore.ObservationExportStatusPending, "queued", nil
+}
+func (s *nilUnsafeManualExporter) ObservationTargetIDs() []string { return s.targets }
+func (s *nilUnsafeManualExporter) ManualExportAvailable() bool    { return len(s.targets) > 0 }
+
+func typedNilManualExporter() ManualObservationExporter {
+	var exporter *nilUnsafeManualExporter
+	return exporter
+}
+
+type panickingManualExporter struct{ manualExporterStub }
+
+func (*panickingManualExporter) ObservationTargetIDs() []string { panic("exporter secret") }
+
+func TestAttachObservationExportStatusesFailsOpenOnExporterPanic(t *testing.T) {
+	h := &LoggingHandler{manualExporterProvider: func() ManualObservationExporter { return &panickingManualExporter{} }}
+	logs := []*logstore.Log{{ID: "log-1"}}
+	h.attachObservationExportStatuses(context.Background(), logs)
+	if len(logs) != 1 || logs[0].ID != "log-1" {
+		t.Fatalf("optional exporter panic changed log results: %+v", logs)
+	}
+}
+
+func TestAttachObservationExportStatusesIgnoresTypedNilExporter(t *testing.T) {
+	h := &LoggingHandler{manualExporterProvider: typedNilManualExporter}
+	logs := []*logstore.Log{{ID: "log-1"}}
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			t.Fatalf("typed-nil exporter caused panic: %v", recovered)
+		}
+	}()
+	h.attachObservationExportStatuses(context.Background(), logs)
+	if logs[0].ObservationExportConfigured || logs[0].ObservationManualExportConfigured {
+		t.Fatal("OTEL-disabled log must not report observation export availability")
+	}
+}
+
+func TestExportLogsToObservabilityRejectsTypedNilExporter(t *testing.T) {
+	h := &LoggingHandler{manualExporterProvider: typedNilManualExporter}
+	var req fasthttp.Request
+	req.Header.SetMethod(fasthttp.MethodPost)
+	req.SetRequestURI("/api/logs/observability/export")
+	req.SetBodyString(`{"ids":["log-1"]}`)
+	ctx := &fasthttp.RequestCtx{}
+	ctx.Init(&req, &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 12345}, nil)
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			t.Fatalf("typed-nil exporter caused panic: %v", recovered)
+		}
+	}()
+	h.exportLogsToObservability(ctx)
+	if got := ctx.Response.StatusCode(); got != fasthttp.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503; body=%s", got, ctx.Response.Body())
+	}
+}
+
 func TestExportLogsToObservabilityQueuesAuthorizedLogs(t *testing.T) {
 	exporter := &manualExporterStub{}
 	h := &LoggingHandler{
