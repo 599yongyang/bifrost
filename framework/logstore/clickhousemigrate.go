@@ -326,6 +326,30 @@ func migrationClickHouseAlertHistoryTable(ctx context.Context, db *gorm.DB, clus
 	return clickhouseReconcileColumns(ctx, db, &AlertHistory{}, "enterprise_alert_history", cluster, logger)
 }
 
+func migrationClickHouseDailyReportRunsTable(ctx context.Context, db *gorm.DB, cluster string, retentionDays int, logger schemas.Logger) error {
+	logger.Info("[logstore] clickhouse: creating table daily_report_runs")
+	if err := clickhouseCreateTable(ctx, db, &DailyReportRun{}, chTableOpts{
+		table:   "daily_report_runs",
+		orderBy: "(business_date, timezone, id)",
+		ttl:     chLogsTTL(retentionDays),
+	}, cluster); err != nil {
+		return fmt.Errorf("clickhouse: create daily_report_runs table: %w", err)
+	}
+	return clickhouseReconcileColumns(ctx, db, &DailyReportRun{}, "daily_report_runs", cluster, logger)
+}
+
+func migrationClickHouseDailyReportDeliveriesTable(ctx context.Context, db *gorm.DB, cluster string, retentionDays int, logger schemas.Logger) error {
+	logger.Info("[logstore] clickhouse: creating table daily_report_deliveries")
+	if err := clickhouseCreateTable(ctx, db, &DailyReportDelivery{}, chTableOpts{
+		table:   "daily_report_deliveries",
+		orderBy: "(run_id, created_at, id)",
+		ttl:     chLogsTTL(retentionDays),
+	}, cluster); err != nil {
+		return fmt.Errorf("clickhouse: create daily_report_deliveries table: %w", err)
+	}
+	return clickhouseReconcileColumns(ctx, db, &DailyReportDelivery{}, "daily_report_deliveries", cluster, logger)
+}
+
 // clickhouseMigrationSteps lists the per-table migrations in execution order,
 // mirroring logstoreMigrationSteps for the SQL stores.
 var clickhouseMigrationSteps = []clickhouseMigrationStep{
@@ -334,6 +358,8 @@ var clickhouseMigrationSteps = []clickhouseMigrationStep{
 	migrationClickHouseAsyncJobsTable,
 	migrationClickHouseWebhookDeliveriesTable,
 	migrationClickHouseAlertHistoryTable,
+	migrationClickHouseDailyReportRunsTable,
+	migrationClickHouseDailyReportDeliveriesTable,
 }
 
 // triggerClickHouseMigrations runs all registered ClickHouse table migrations

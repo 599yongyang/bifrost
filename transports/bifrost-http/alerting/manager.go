@@ -1,14 +1,11 @@
 package alerting
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"net/http"
 	"net/url"
@@ -79,6 +76,7 @@ type Config struct {
 	WebhookNetwork            NetworkConfig     `json:"webhook_network,omitempty"`
 	Channels                  []ChannelSpec     `json:"channels,omitempty"`
 	Rules                     []RuleSpec        `json:"rules,omitempty"`
+	DailyReport               *DailyReportSpec  `json:"daily_report,omitempty"`
 	ProviderExists            func(string) bool `json:"-"`
 }
 
@@ -110,6 +108,18 @@ type RuleSpec struct {
 	NotifyOncePerResetCycle bool           `json:"notify_once_per_reset_cycle,omitempty"`
 }
 
+type DailyReportSpec struct {
+	Enabled            *bool    `json:"enabled,omitempty"`
+	Timezone           string   `json:"timezone,omitempty"`
+	GenerateTime       string   `json:"generate_time,omitempty"`
+	SendTime           string   `json:"send_time,omitempty"`
+	SlowThresholdMs    *int64   `json:"slow_threshold_ms,omitempty"`
+	InternalEnabled    *bool    `json:"internal_enabled,omitempty"`
+	InternalChannelIDs []string `json:"internal_channel_ids,omitempty"`
+	ExternalEnabled    *bool    `json:"external_enabled,omitempty"`
+	ExternalChannelIDs []string `json:"external_channel_ids,omitempty"`
+}
+
 type GovernanceSnapshot func(context.Context) *governance.GovernanceData
 
 type MetricsStore interface {
@@ -123,6 +133,17 @@ type HistoryStore interface {
 	ListLatestAlertRuleSends(context.Context) ([]logstore.AlertHistory, error)
 }
 
+type DailyReportRunStore interface {
+	BuildDailyReportSnapshot(context.Context, logstore.DailyReportMetricsQuery) (*logstore.DailyReportSnapshot, error)
+	CreateDailyReportRun(context.Context, *logstore.DailyReportRun) error
+	UpdateDailyReportRun(context.Context, string, map[string]interface{}) error
+	FindDailyReportRun(context.Context, string) (*logstore.DailyReportRun, error)
+	FindDailyReportRunByBusinessDate(context.Context, string, string) (*logstore.DailyReportRun, error)
+	ListDailyReportRuns(context.Context, logstore.DailyReportHistoryQuery) ([]logstore.DailyReportRun, int64, error)
+	CreateDailyReportDelivery(context.Context, *logstore.DailyReportDelivery) error
+	ListDailyReportDeliveries(context.Context, string) ([]logstore.DailyReportDelivery, error)
+}
+
 type Manager struct {
 	store           configstore.AlertStore
 	leaderStore     leaderLockStore
@@ -130,6 +151,7 @@ type Manager struct {
 	governance      GovernanceSnapshot
 	metrics         MetricsStore
 	history         HistoryStore
+	dailyReports    DailyReportRunStore
 	logger          schemas.Logger
 	network         NetworkConfig
 	env             *cel.Env
@@ -143,6 +165,9 @@ type Manager struct {
 	cooldownsMu     sync.Mutex
 	ruleSent        map[string]time.Time
 	suppressionSeen map[string]time.Time
+	reportRuns      sync.Map
+	reportQueryMu   sync.Mutex
+	now             func() time.Time
 	cancel          context.CancelFunc
 	done            chan struct{}
 	sweepInterval   time.Duration
@@ -197,6 +222,7 @@ func NewManager(store configstore.AlertStore, snapshot GovernanceSnapshot, metri
 		done:            make(chan struct{}),
 		sweepInterval:   DefaultSweepInterval,
 		retentionDays:   365,
+		now:             time.Now,
 	}
 	manager.leaderStore, _ = store.(leaderLockStore)
 	if cfg != nil {
@@ -212,6 +238,7 @@ func NewManager(store configstore.AlertStore, snapshot GovernanceSnapshot, metri
 		}
 		manager.providerExists = cfg.ProviderExists
 	}
+	manager.dailyReports, _ = history.(DailyReportRunStore)
 	manager.client = newHTTPClient(false)
 	manager.privateClient = newHTTPClient(true)
 	if err := manager.restoreCooldowns(context.Background()); err != nil && logger != nil {
@@ -261,7 +288,7 @@ func (m *Manager) Start(parent context.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if err := m.EvaluateNow(ctx); err != nil && m.logger != nil {
+				if err := m.runScheduledSweep(ctx); err != nil && m.logger != nil {
 					m.logger.Error("alerting sweep failed: %v", err)
 				}
 			}
@@ -550,6 +577,20 @@ func (m *Manager) program(rule *tables.TableAlertRule) (cel.Program, error) {
 }
 
 func (m *Manager) EvaluateNow(ctx context.Context) error {
+	return m.evaluateRules(ctx)
+}
+
+// runScheduledSweep keeps the operator-triggered "evaluate now" action scoped
+// to alert rules while allowing the background sweep to also dispatch a due
+// daily report.
+func (m *Manager) runScheduledSweep(ctx context.Context) error {
+	if err := m.evaluateRules(ctx); err != nil {
+		return err
+	}
+	return m.maybeDispatchScheduledDailyReport(ctx)
+}
+
+func (m *Manager) evaluateRules(ctx context.Context) error {
 	m.evaluationMu.Lock()
 	defer m.evaluationMu.Unlock()
 	leader, err := m.ensureLeadership(ctx)
@@ -869,6 +910,10 @@ func (m *Manager) leaderLeaseDuration() time.Duration {
 	return duration
 }
 
+func (m *Manager) IsLeader(ctx context.Context) (bool, error) {
+	return m.ensureLeadership(ctx)
+}
+
 func (m *Manager) withLeadershipHeartbeat(parent context.Context) (context.Context, func()) {
 	if m.leaderStore == nil {
 		return parent, func() {}
@@ -1094,124 +1139,55 @@ func alertCooldownKey(kind string, parts ...string) string {
 // TestChannel sends a synthetic notification through a persisted channel
 // without evaluating a rule or writing to alert history.
 func (m *Manager) TestChannel(ctx context.Context, channel *tables.TableAlertChannel) error {
-	if err := m.ValidateChannel(channel); err != nil {
-		return err
-	}
-	rule := &tables.TableAlertRule{
-		ID:            "test-notification",
-		Name:          "Bifrost 通知渠道测试",
-		ScopeType:     "system",
-		ScopeID:       "bifrost",
-		CELExpression: "true",
-	}
-	input := map[string]any{
-		"target_type":       "channel",
-		"target_id":         channel.ID,
-		"channel_name":      channel.Name,
-		"channel_type":      channel.Type,
-		"test_notification": true,
-	}
-	return m.deliver(ctx, rule, channel, input, time.Now().UTC())
+	now := time.Now().UTC()
+	return m.SendNotification(ctx, channel, ChannelNotification{
+		Title:     "Bifrost 通知渠道测试",
+		Text:      fmt.Sprintf("Bifrost notification channel test\nChannel: %s\nType: %s\nStatus: connection successful\nTest time: %s", channel.Name, channel.Type, now.Format(time.RFC3339)),
+		Markdown:  truncateUTF8Bytes(strings.Join([]string{"## Bifrost 通知渠道测试", fmt.Sprintf("> 渠道：**%s**", markdownInline(channel.Name)), fmt.Sprintf("> 类型：%s", markdownInline(channel.Type)), "> 状态：<font color=\"info\">连接正常</font>", fmt.Sprintf("> 测试时间：%s", formatWeComTime(now)), "收到此消息表示 Bifrost 已成功连接该通知渠道。"}, "\n"), maxWeComMarkdownBytes),
+		Event:     "alert.test",
+		Details:   map[string]any{"channel_id": channel.ID, "channel_name": channel.Name, "channel_type": channel.Type, "test_notification": true},
+		Payload:   map[string]any{"event": "alert.test", "timestamp": now, "channel": map[string]any{"id": channel.ID, "name": channel.Name, "type": channel.Type}, "message": "Bifrost notification channel test"},
+		Severity:  "info",
+		Source:    "Bifrost Alerting",
+		Timestamp: now,
+		Test:      true,
+	})
 }
 
 func (m *Manager) deliver(ctx context.Context, rule *tables.TableAlertRule, channel *tables.TableAlertChannel, input map[string]any, now time.Time) error {
 	message := alertMessage(rule, input, now)
-	var endpoint string
-	var payload any
-	switch channel.Type {
-	case tables.AlertChannelSlack:
-		endpoint = stringConfig(channel.Config, "webhook_url", "url")
-		payload = map[string]any{"blocks": []any{
-			map[string]any{"type": "header", "text": map[string]any{"type": "plain_text", "text": rule.Name}},
-			map[string]any{"type": "section", "text": map[string]any{"type": "mrkdwn", "text": "```" + message + "```"}},
-		}}
-	case tables.AlertChannelMicrosoftTeams:
-		endpoint = stringConfig(channel.Config, "webhook_url", "url")
-		payload = map[string]any{"type": "message", "attachments": []any{map[string]any{
-			"contentType": "application/vnd.microsoft.card.adaptive", "content": map[string]any{
-				"$schema": "http://adaptivecards.io/schemas/adaptive-card.json", "type": "AdaptiveCard", "version": "1.4",
-				"body": []any{map[string]any{"type": "TextBlock", "weight": "Bolder", "text": rule.Name}, map[string]any{"type": "TextBlock", "wrap": true, "text": message}},
-			},
-		}}}
-	case tables.AlertChannelWeCom:
-		endpoint = stringConfig(channel.Config, "webhook_url", "url")
-		payload = map[string]any{
-			"msgtype":  "markdown",
-			"markdown": map[string]any{"content": weComAlertMarkdown(rule, input, now)},
-		}
-	case tables.AlertChannelPagerDuty:
-		endpoint = "https://events.pagerduty.com/v2/enqueue"
-		payload = map[string]any{
-			"routing_key": stringConfig(channel.Config, "routing_key", "integration_key"), "event_action": "trigger",
-			"dedup_key": dedupKey(rule, input), "payload": map[string]any{"summary": message, "source": "Bifrost Alerting", "severity": alertSeverity(input), "custom_details": input},
-		}
-	case tables.AlertChannelWebhook:
-		endpoint = stringConfig(channel.Config, "url", "webhook_url")
-		if isTestNotification(input) {
-			payload = map[string]any{
-				"event": "alert.test", "timestamp": now,
-				"channel": map[string]any{"id": channel.ID, "name": channel.Name, "type": channel.Type}, "message": message,
-			}
-		} else {
-			payload = map[string]any{
-				"event": "alert.triggered", "timestamp": now, "rule": map[string]any{"id": rule.ID, "name": rule.Name},
-				"scope": map[string]any{"type": rule.ScopeType, "id": rule.ScopeID}, "cel_expression": rule.CELExpression, "input": input, "message": message,
-			}
-		}
-	default:
-		return fmt.Errorf("unsupported alert channel type: %s", channel.Type)
-	}
-	if err := m.validateURL(endpoint); err != nil {
-		return err
-	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-	if channel.Type == tables.AlertChannelMicrosoftTeams && len(body) > 28*1024 {
-		return fmt.Errorf("microsoft teams payload exceeds 28 KB")
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if channel.Type == tables.AlertChannelWebhook {
-		for key, value := range stringMapConfig(channel.Config, "headers") {
-			if !blockedHeader(key) {
-				req.Header.Set(key, value)
-			}
+	return m.SendNotification(ctx, channel, ChannelNotification{
+		Title:     rule.Name,
+		Text:      message,
+		Markdown:  weComAlertMarkdown(rule, input, now),
+		Event:     dedupKey(rule, input),
+		Details:   input,
+		Payload:   alertWebhookPayload(rule, channel, input, message, now),
+		Severity:  alertSeverity(input),
+		Source:    "Bifrost Alerting",
+		Timestamp: now,
+		Test:      isTestNotification(input),
+	})
+}
+
+func alertWebhookPayload(rule *tables.TableAlertRule, channel *tables.TableAlertChannel, input map[string]any, message string, now time.Time) map[string]any {
+	if isTestNotification(input) {
+		return map[string]any{
+			"event":     "alert.test",
+			"timestamp": now,
+			"channel":   map[string]any{"id": channel.ID, "name": channel.Name, "type": channel.Type},
+			"message":   message,
 		}
 	}
-	client := m.client
-	if m.network.AllowPrivateNetwork {
-		client = m.privateClient
+	return map[string]any{
+		"event":          "alert.triggered",
+		"timestamp":      now,
+		"rule":           map[string]any{"id": rule.ID, "name": rule.Name},
+		"scope":          map[string]any{"type": rule.ScopeType, "id": rule.ScopeID},
+		"cel_expression": rule.CELExpression,
+		"input":          input,
+		"message":        message,
 	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("delivery failed: %w", err)
-	}
-	defer resp.Body.Close()
-	responseBody, readErr := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
-	if readErr != nil {
-		return fmt.Errorf("read delivery response: %w", readErr)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("delivery failed with HTTP %d", resp.StatusCode)
-	}
-	if channel.Type == tables.AlertChannelWeCom {
-		var result struct {
-			ErrorCode int    `json:"errcode"`
-			ErrorText string `json:"errmsg"`
-		}
-		if err := json.Unmarshal(responseBody, &result); err != nil {
-			return fmt.Errorf("invalid WeCom webhook response: %w", err)
-		}
-		if result.ErrorCode != 0 {
-			return fmt.Errorf("WeCom webhook rejected the message (errcode %d: %s)", result.ErrorCode, result.ErrorText)
-		}
-	}
-	return nil
 }
 
 func isTestNotification(input map[string]any) bool {
@@ -1487,6 +1463,9 @@ func (m *Manager) restoreCooldowns(ctx context.Context) error {
 
 // SyncConfig reconciles declarative config.json entries by stable ID.
 func (m *Manager) SyncConfig(ctx context.Context, cfg *Config) error {
+	if cfg == nil {
+		return nil
+	}
 	declaredChannelIDs := make(map[string]struct{}, len(cfg.Channels))
 	for _, spec := range cfg.Channels {
 		enabled := true
@@ -1590,6 +1569,11 @@ func (m *Manager) SyncConfig(ctx context.Context, cfg *Config) error {
 			if err := m.store.DeleteAlertChannel(ctx, channel.ID); err != nil {
 				return fmt.Errorf("delete stale config-managed alert channel %s: %w", channel.ID, err)
 			}
+		}
+	}
+	if cfg.DailyReport != nil {
+		if err := m.syncDailyReportConfig(ctx, cfg.DailyReport); err != nil {
+			return err
 		}
 	}
 	return nil

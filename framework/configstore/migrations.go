@@ -457,6 +457,8 @@ var configstoreMigrationSteps = []migrationStep{
 	{IDs: []string{"add_alert_cooldowns_table"}, run: migrationAddAlertCooldownsTable},
 	{IDs: []string{"add_alert_notify_once_field"}, run: migrationAddAlertNotifyOnceField},
 	{IDs: []string{"add_alert_config_managed_fields"}, run: migrationAddAlertConfigManagedFields},
+	{IDs: []string{"add_daily_report_settings_table"}, run: migrationAddDailyReportSettingsTable},
+	{IDs: []string{"add_daily_report_generate_time"}, run: migrationAddDailyReportGenerateTime},
 	{IDs: []string{"add_webhook_config_client_column"}, run: migrationAddWebhookConfigClientColumn},
 	{IDs: []string{"add_oauth_config_resource_column"}, run: migrationAddOauthConfigResourceColumn},
 	{IDs: []string{"add_use_anthropic_endpoints_column"}, run: migrationAddUseAnthropicEndpointsColumn},
@@ -11283,6 +11285,44 @@ func migrationAddAlertConfigManagedFields(ctx context.Context, db *gorm.DB, logg
 		},
 		Rollback: func(*gorm.DB) error {
 			return fmt.Errorf("%s is non-rollbackable: dropping ownership fields can resurrect stale declarative alerts", migrationName)
+		},
+	}})
+	if err := m.Migrate(); err != nil {
+		return fmt.Errorf("error running %s migration: %w", migrationName, err)
+	}
+	return nil
+}
+
+func migrationAddDailyReportSettingsTable(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	migrationName := "add_daily_report_settings_table"
+	logger.Info("[configstore] starting migration %s", migrationName)
+	defer logger.Info("[configstore] finished migration %s", migrationName)
+	m := migrator.New(db, migrator.DefaultOptions, []*migrator.Migration{{
+		ID: migrationName,
+		Migrate: func(tx *gorm.DB) error {
+			return tx.WithContext(ctx).AutoMigrate(&tables.TableDailyReportSettings{})
+		},
+		Rollback: func(tx *gorm.DB) error {
+			return tx.WithContext(ctx).Migrator().DropTable(&tables.TableDailyReportSettings{})
+		},
+	}})
+	if err := m.Migrate(); err != nil {
+		return fmt.Errorf("error running %s migration: %w", migrationName, err)
+	}
+	return nil
+}
+
+func migrationAddDailyReportGenerateTime(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	migrationName := "add_daily_report_generate_time"
+	logger.Info("[configstore] starting migration %s", migrationName)
+	defer logger.Info("[configstore] finished migration %s", migrationName)
+	m := migrator.New(db, migrator.DefaultOptions, []*migrator.Migration{{
+		ID: migrationName,
+		Migrate: func(tx *gorm.DB) error {
+			return tx.WithContext(ctx).AutoMigrate(&tables.TableDailyReportSettings{})
+		},
+		Rollback: func(*gorm.DB) error {
+			return fmt.Errorf("%s is non-rollbackable: removing generate_time would collapse the two-stage schedule", migrationName)
 		},
 	}})
 	if err := m.Migrate(); err != nil {

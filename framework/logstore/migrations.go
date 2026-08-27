@@ -276,6 +276,8 @@ var logstoreMigrationSteps = []migrationStep{
 	{IDs: []string{"logs_add_redaction_mapping_column"}, run: migrationAddRedactionMappingColumn},
 	{IDs: []string{"webhook_deliveries_init"}, run: migrationCreateWebhookDeliveriesTable},
 	{IDs: []string{"enterprise_alert_history_init"}, run: migrationCreateAlertHistoryTable},
+	{IDs: []string{"daily_report_runs_init"}, run: migrationCreateDailyReportRunsTable},
+	{IDs: []string{"daily_report_deliveries_init"}, run: migrationCreateDailyReportDeliveriesTable},
 	{IDs: []string{"async_jobs_add_webhook_endpoint_id_column"}, run: migrationAddWebhookEndpointIDColumn},
 	{IDs: []string{"async_jobs_add_request_id_column"}, run: migrationAddAsyncJobRequestIDColumn},
 	{IDs: []string{"webhook_deliveries_add_request_id_column"}, run: migrationAddWebhookDeliveryRequestIDColumn},
@@ -1629,6 +1631,44 @@ func migrationCreateAlertHistoryTable(ctx context.Context, db *gorm.DB, logger s
 	}})
 	if err := m.Migrate(); err != nil {
 		return fmt.Errorf("error creating alert history table: %w", err)
+	}
+	return nil
+}
+
+func migrationCreateDailyReportRunsTable(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	migrationName := "daily_report_runs_init"
+	logger.Info("[logstore] starting migration %s", migrationName)
+	defer logger.Info("[logstore] finished migration %s", migrationName)
+	m := migrator.New(db, migrator.DefaultOptions, []*migrator.Migration{{
+		ID: migrationName,
+		Migrate: func(tx *gorm.DB) error {
+			return tx.WithContext(ctx).AutoMigrate(&DailyReportRun{})
+		},
+		Rollback: func(tx *gorm.DB) error {
+			return tx.WithContext(ctx).Migrator().DropTable(&DailyReportRun{})
+		},
+	}})
+	if err := m.Migrate(); err != nil {
+		return fmt.Errorf("error creating daily report runs table: %w", err)
+	}
+	return nil
+}
+
+func migrationCreateDailyReportDeliveriesTable(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	migrationName := "daily_report_deliveries_init"
+	logger.Info("[logstore] starting migration %s", migrationName)
+	defer logger.Info("[logstore] finished migration %s", migrationName)
+	m := migrator.New(db, migrator.DefaultOptions, []*migrator.Migration{{
+		ID: migrationName,
+		Migrate: func(tx *gorm.DB) error {
+			return tx.WithContext(ctx).AutoMigrate(&DailyReportDelivery{})
+		},
+		Rollback: func(tx *gorm.DB) error {
+			return tx.WithContext(ctx).Migrator().DropTable(&DailyReportDelivery{})
+		},
+	}})
+	if err := m.Migrate(); err != nil {
+		return fmt.Errorf("error creating daily report deliveries table: %w", err)
 	}
 	return nil
 }

@@ -6,6 +6,13 @@ import {
 	AlertRule,
 	AlertRuleEvaluationResult,
 	AlertRuleRequest,
+	DailyReportAudience,
+	DailyReportDelivery,
+	DailyReportPreview,
+	DailyReportHistoryParams,
+	DailyReportRunDetail,
+	DailyReportSettings,
+	DailyReportSettingsRequest,
 } from "@/lib/types/alerting";
 import { baseApi } from "./baseApi";
 
@@ -80,6 +87,59 @@ export const alertingApi = baseApi.injectEndpoints({
 			}),
 			providesTags: ["AlertHistory"],
 		}),
+
+		getDailyReportSettings: builder.query<{ settings: DailyReportSettings }, void>({
+			query: () => "/alerting/reports/settings",
+			providesTags: ["DailyReports"],
+		}),
+		updateDailyReportSettings: builder.mutation<DailyReportSettings, DailyReportSettingsRequest>({
+			query: (body) => ({ url: "/alerting/reports/settings", method: "PUT", body }),
+			transformResponse: (response: { settings: DailyReportSettings }) => response.settings,
+			invalidatesTags: ["DailyReports"],
+		}),
+		previewDailyReport: builder.mutation<
+			DailyReportPreview,
+			{ business_date?: string; settings?: Partial<DailyReportSettingsRequest> }
+		>({
+			query: (body) => ({ url: "/alerting/reports/preview", method: "POST", body }),
+			transformResponse: (response: { preview: DailyReportPreview }) => response.preview,
+		}),
+		sendDailyReportNow: builder.mutation<DailyReportRunDetail, { business_date?: string }>({
+			query: (body) => ({ url: "/alerting/reports/generate", method: "POST", body }),
+			transformResponse: (response: { result: DailyReportRunDetail }) => response.result,
+			invalidatesTags: ["DailyReports"],
+		}),
+		getDailyReportHistory: builder.query<
+			{ runs: DailyReportRunDetail[]; total: number; limit: number; offset: number },
+			DailyReportHistoryParams | void
+		>({
+			query: (params) => ({
+				url: "/alerting/reports/runs",
+				params: {
+					limit: params?.limit,
+					offset: params?.offset,
+					audience: params?.audience?.join(","),
+				},
+			}),
+			providesTags: ["DailyReports"],
+		}),
+		getDailyReportRun: builder.query<DailyReportRunDetail, string>({
+			query: (id) => `/alerting/reports/runs/${id}`,
+			transformResponse: (response: { run: DailyReportRunDetail }) => response.run,
+			providesTags: ["DailyReports"],
+		}),
+		deliverDailyReportRun: builder.mutation<
+			DailyReportRunDetail,
+			{ id: string; audience: DailyReportAudience[] }
+		>({
+			query: ({ id, audience }) => ({
+				url: `/alerting/reports/runs/${id}/deliver`,
+				method: "POST",
+				body: { audience },
+			}),
+			transformResponse: (response: { run: DailyReportRunDetail }) => response.run,
+			invalidatesTags: ["DailyReports"],
+		}),
 	}),
 });
 
@@ -96,4 +156,11 @@ export const {
 	useGetAlertRuleEvaluationStatusQuery,
 	useEvaluateAlertRuleMutation,
 	useGetAlertHistoryQuery,
+	useGetDailyReportSettingsQuery,
+	useUpdateDailyReportSettingsMutation,
+	usePreviewDailyReportMutation,
+	useSendDailyReportNowMutation,
+	useGetDailyReportHistoryQuery,
+	useGetDailyReportRunQuery,
+	useDeliverDailyReportRunMutation,
 } = alertingApi;

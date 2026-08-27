@@ -29,6 +29,9 @@ type AlertStore interface {
 	ListAlertCooldowns(context.Context) ([]tables.TableAlertCooldown, error)
 	UpsertAlertCooldown(context.Context, string, time.Time) error
 	DeleteAlertSuppressionsBefore(context.Context, time.Time) (int64, error)
+
+	GetDailyReportSettings(context.Context) (*tables.TableDailyReportSettings, error)
+	UpsertDailyReportSettings(context.Context, *tables.TableDailyReportSettings) error
 }
 
 func (s *RDBConfigStore) ListAlertCooldowns(ctx context.Context) ([]tables.TableAlertCooldown, error) {
@@ -50,6 +53,41 @@ func (s *RDBConfigStore) DeleteAlertSuppressionsBefore(ctx context.Context, cuto
 		Where("updated_at < ? AND (key LIKE ? OR key LIKE ?)", cutoff.UTC(), "suppression:%", "cycle-suppression:%").
 		Delete(&tables.TableAlertCooldown{})
 	return result.RowsAffected, result.Error
+}
+
+func (s *RDBConfigStore) GetDailyReportSettings(ctx context.Context) (*tables.TableDailyReportSettings, error) {
+	var settings tables.TableDailyReportSettings
+	if err := s.ScopedDB(ctx).First(&settings, "id = ?", tables.DefaultDailyReportSettingsID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &settings, nil
+}
+
+func (s *RDBConfigStore) UpsertDailyReportSettings(ctx context.Context, settings *tables.TableDailyReportSettings) error {
+	if settings == nil {
+		return errors.New("daily report settings is nil")
+	}
+	if settings.ID == "" {
+		settings.ID = tables.DefaultDailyReportSettingsID
+	}
+	return s.DB().WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "id"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"enabled",
+			"timezone",
+			"generate_time",
+			"send_time",
+			"slow_threshold_ms",
+			"internal_enabled",
+			"internal_channel_ids_json",
+			"external_enabled",
+			"external_channel_ids_json",
+			"updated_at",
+		}),
+	}).Create(settings).Error
 }
 
 func (s *RDBConfigStore) ListAlertChannels(ctx context.Context) ([]tables.TableAlertChannel, error) {
@@ -110,6 +148,27 @@ func (s *RDBConfigStore) DeleteAlertChannel(ctx context.Context, id string) erro
 				}
 			}
 		}
+		var settings tables.TableDailyReportSettings
+		if err := tx.First(&settings, "id = ?", tables.DefaultDailyReportSettingsID).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		if settings.ID != "" {
+			internalIDs := filterOutString(settings.InternalChannelIDs, id)
+			externalIDs := filterOutString(settings.ExternalChannelIDs, id)
+			if len(internalIDs) != len(settings.InternalChannelIDs) || len(externalIDs) != len(settings.ExternalChannelIDs) {
+				settings.InternalChannelIDs = internalIDs
+				settings.ExternalChannelIDs = externalIDs
+				if len(settings.InternalChannelIDs) == 0 {
+					settings.InternalEnabled = false
+				}
+				if len(settings.ExternalChannelIDs) == 0 {
+					settings.ExternalEnabled = false
+				}
+				if err := tx.Save(&settings).Error; err != nil {
+					return err
+				}
+			}
+		}
 		result := tx.Delete(&tables.TableAlertChannel{}, "id = ?", id)
 		if result.Error != nil {
 			return result.Error
@@ -119,6 +178,16 @@ func (s *RDBConfigStore) DeleteAlertChannel(ctx context.Context, id string) erro
 		}
 		return nil
 	})
+}
+
+func filterOutString(values []string, target string) []string {
+	filtered := values[:0]
+	for _, value := range values {
+		if value != target {
+			filtered = append(filtered, value)
+		}
+	}
+	return filtered
 }
 
 func (s *RDBConfigStore) ListAlertRules(ctx context.Context) ([]tables.TableAlertRule, error) {

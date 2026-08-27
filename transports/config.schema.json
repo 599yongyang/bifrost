@@ -1114,6 +1114,65 @@
           },
           "additionalProperties": false
         },
+        "daily_report": {
+          "type": "object",
+          "description": "Optional global daily service-quality report. It builds one snapshot for the previous business day and renders separate internal and customer-facing reports through existing alert channels.",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "Run and deliver the daily report automatically. Manual preview and generation remain available when disabled."
+            },
+            "timezone": {
+              "type": "string",
+              "default": "Asia/Shanghai",
+              "description": "IANA timezone used to define the business day and scheduled send time."
+            },
+            "generate_time": {
+              "type": "string",
+              "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$",
+              "default": "03:00",
+              "description": "Off-peak local time used to query logs and freeze the previous business-day snapshot. Must be earlier than send_time."
+            },
+            "send_time": {
+              "type": "string",
+              "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$",
+              "default": "09:00",
+              "description": "Local time used to send the already-generated snapshot. The report covers the previous complete business day."
+            },
+            "slow_threshold_ms": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 10000,
+              "description": "End-to-end request latency threshold, in milliseconds, used to classify slow requests."
+            },
+            "internal_enabled": {
+              "type": "boolean",
+              "default": true,
+              "description": "Render and deliver the internal provider/model detail report."
+            },
+            "internal_channel_ids": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1 },
+              "default": [],
+              "description": "Existing alert channel IDs that receive the internal report."
+            },
+            "external_enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "Render and deliver the customer-facing allowlisted service-quality summary."
+            },
+            "external_channel_ids": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1 },
+              "default": [],
+              "description": "Existing alert channel IDs that receive the customer-facing report."
+            }
+          },
+          "additionalProperties": false
+        },
         "channels": {
           "type": "array",
           "description": "Declarative alert channels synced into the enterprise config store at startup.",

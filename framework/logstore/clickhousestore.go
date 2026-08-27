@@ -606,3 +606,15 @@ func (s *ClickHouseLogStore) UpdateAsyncJob(ctx context.Context, id string, upda
 	}
 	return s.chReinsert(ctx, &existing)
 }
+
+func (s *ClickHouseLogStore) UpdateDailyReportRun(ctx context.Context, id string, updates map[string]interface{}) error {
+	// UpdateMap contains the full serialized run. Append a new
+	// ReplacingMergeTree version directly so report state changes do not depend
+	// on a ClickHouse read-modify-write cycle.
+	row := make(map[string]interface{}, len(updates)+1)
+	for key, value := range updates {
+		row[key] = value
+	}
+	row["id"] = id
+	return s.db.WithContext(ctx).Table((DailyReportRun{}).TableName()).Create(row).Error
+}

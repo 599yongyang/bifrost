@@ -7,7 +7,8 @@ function RouteComponent() {
 	const hasRulesAccess = useRbac(RbacResource.AlertRules, RbacOperation.View);
 	const hasChannelsAccess = useRbac(RbacResource.AlertChannels, RbacOperation.View);
 	const hasHistoryAccess = useRbac(RbacResource.AlertHistory, RbacOperation.View);
-	const hasAlertingAccess = hasRulesAccess || hasChannelsAccess || hasHistoryAccess;
+	const hasReportsAccess = hasRulesAccess;
+	const hasAlertingAccess = hasRulesAccess || hasChannelsAccess || hasHistoryAccess || hasReportsAccess;
 	const location = useLocation();
 	const navigate = useNavigate();
 	const isIndex = location.pathname === "/workspace/alerting" || location.pathname === "/workspace/alerting/";
@@ -15,7 +16,9 @@ function RouteComponent() {
 		? "/workspace/alerting/rules"
 		: hasChannelsAccess
 			? "/workspace/alerting/channels"
-			: "/workspace/alerting/history";
+			: hasReportsAccess
+				? "/workspace/alerting/daily-reports"
+				: "/workspace/alerting/history";
 
 	useEffect(() => {
 		if (hasAlertingAccess && isIndex) {

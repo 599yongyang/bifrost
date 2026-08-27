@@ -211,6 +211,7 @@ const SIDEBAR_LABEL_KEYS: Record<string, string> = {
 	Channels: "sidebar.sub.channels",
 	Rules: "sidebar.sub.rules",
 	History: "sidebar.sub.history",
+	"Daily Reports": "sidebar.sub.dailyReports",
 	"Virtual Keys": "sidebar.sub.virtualKeys",
 	Users: "sidebar.sub.users",
 	Teams: "sidebar.sub.teams",
@@ -618,6 +619,7 @@ export default function AppSidebar() {
 	const hasAlertChannelsAccess = useRbac(RbacResource.AlertChannels, RbacOperation.View);
 	const hasAlertHistoryAccess = useRbac(RbacResource.AlertHistory, RbacOperation.View);
 	const hasAlertingAccess = hasAlertRulesAccess || hasAlertChannelsAccess || hasAlertHistoryAccess;
+	const hasDailyReportsAccess = hasAlertRulesAccess;
 	const hasDashboardAccess = useRbac(RbacResource.Dashboard, RbacOperation.View);
 	const hasModelProvidersAccess = useRbac(RbacResource.ModelProvider, RbacOperation.View);
 	const hasMCPGatewayAccess = useRbac(RbacResource.MCPGateway, RbacOperation.View);
@@ -879,6 +881,13 @@ export default function AppSidebar() {
 						description: "Review alert delivery history",
 						hasAccess: hasAlertHistoryAccess,
 					},
+					{
+						title: "Daily Reports",
+						url: "/workspace/alerting/daily-reports",
+						icon: ScrollText,
+						description: "Schedule and review daily reports",
+						hasAccess: hasDailyReportsAccess,
+					},
 				],
 			},
 			{
@@ -1114,6 +1123,7 @@ export default function AppSidebar() {
 			hasAPIKeyAccess,
 			hasObservabilityAccess,
 			hasAlertingAccess,
+			hasDailyReportsAccess,
 			hasDashboardAccess,
 			hasModelProvidersAccess,
 			hasMCPGatewayAccess,

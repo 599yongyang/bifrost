@@ -147,6 +147,16 @@ type LogStore interface {
 	ListAlertHistory(ctx context.Context, query AlertHistoryQuery) ([]AlertHistory, int64, error)
 	DeleteAlertHistoryBefore(ctx context.Context, cutoff time.Time) (int64, error)
 	ListLatestAlertRuleSends(ctx context.Context) ([]AlertHistory, error)
+
+	// Daily report methods
+	BuildDailyReportSnapshot(ctx context.Context, query DailyReportMetricsQuery) (*DailyReportSnapshot, error)
+	CreateDailyReportRun(ctx context.Context, run *DailyReportRun) error
+	UpdateDailyReportRun(ctx context.Context, id string, updates map[string]interface{}) error
+	FindDailyReportRun(ctx context.Context, id string) (*DailyReportRun, error)
+	FindDailyReportRunByBusinessDate(ctx context.Context, businessDate, timezone string) (*DailyReportRun, error)
+	ListDailyReportRuns(ctx context.Context, query DailyReportHistoryQuery) ([]DailyReportRun, int64, error)
+	CreateDailyReportDelivery(ctx context.Context, delivery *DailyReportDelivery) error
+	ListDailyReportDeliveries(ctx context.Context, runID string) ([]DailyReportDelivery, error)
 }
 
 // NewLogStore creates a new log store based on the configuration.

@@ -23,6 +23,7 @@ type memoryAlertStore struct {
 	rules     []tables.TableAlertRule
 	history   []logstore.AlertHistory
 	cooldowns map[string]time.Time
+	settings  *tables.TableDailyReportSettings
 }
 
 func (s *memoryAlertStore) ListAlertChannels(context.Context) ([]tables.TableAlertChannel, error) {
@@ -128,6 +129,25 @@ func (s *memoryAlertStore) DeleteAlertSuppressionsBefore(_ context.Context, cuto
 		}
 	}
 	return deleted, nil
+}
+func (s *memoryAlertStore) GetDailyReportSettings(context.Context) (*tables.TableDailyReportSettings, error) {
+	if s.settings == nil {
+		return nil, configstore.ErrNotFound
+	}
+	clone := *s.settings
+	clone.InternalChannelIDs = append([]string(nil), s.settings.InternalChannelIDs...)
+	clone.ExternalChannelIDs = append([]string(nil), s.settings.ExternalChannelIDs...)
+	return &clone, nil
+}
+func (s *memoryAlertStore) UpsertDailyReportSettings(_ context.Context, settings *tables.TableDailyReportSettings) error {
+	if settings == nil {
+		return errors.New("settings cannot be nil")
+	}
+	clone := *settings
+	clone.InternalChannelIDs = append([]string(nil), settings.InternalChannelIDs...)
+	clone.ExternalChannelIDs = append([]string(nil), settings.ExternalChannelIDs...)
+	s.settings = &clone
+	return nil
 }
 func (s *memoryAlertStore) ListLatestAlertRuleSends(context.Context) ([]logstore.AlertHistory, error) {
 	latest := make(map[string]logstore.AlertHistory)
@@ -527,7 +547,7 @@ func TestWeComDeliveryUsesDynamicMarkdownAndChecksErrorCode(t *testing.T) {
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"errcode":0,"errmsg":"ok"}`)), Header: make(http.Header)}, nil
 	})}
 	rule := &tables.TableAlertRule{ID: "r1", Name: "OpenAI 错误率", ScopeType: "provider", ScopeID: "openai", CELExpression: "provider_error_rate >= 10"}
-	channel := &tables.TableAlertChannel{ID: "c1", Type: tables.AlertChannelWeCom, Config: map[string]any{"webhook_url": "http://127.0.0.1/hook"}}
+	channel := &tables.TableAlertChannel{ID: "c1", Name: "企业微信", Type: tables.AlertChannelWeCom, Config: map[string]any{"webhook_url": "http://127.0.0.1/hook"}}
 	input := map[string]any{
 		"provider": "openai", "model": "gpt-4.1", "provider_error_rate": 12.5,
 		"provider_error_count": int64(25), "provider_request_count": int64(200), "window_seconds": int64(300),
