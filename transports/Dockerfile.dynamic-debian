@@ -5,7 +5,8 @@ WORKDIR /app
 RUN apk upgrade --no-cache
 
 COPY ui/package*.json ./
-RUN npm ci
+RUN --mount=type=cache,id=moon-bifrost-v2-npm,target=/root/.npm,sharing=locked \
+    npm ci --cache /root/.npm --prefer-offline
 
 COPY ui/ ./
 RUN npm run build-enterprise
@@ -38,8 +39,8 @@ RUN go work init \
       ./plugins/otel \
       ./plugins/routing \
       ./transports
-RUN --mount=type=cache,target=/go/pkg/mod \
-    --mount=type=cache,target=/root/.cache/go-build \
+RUN --mount=type=cache,id=moon-bifrost-v2-go-mod,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,id=moon-bifrost-v2-go-build,target=/root/.cache/go-build,sharing=locked \
     sync_attempt=1; \
     until go work sync; do \
       if [ "$sync_attempt" -ge 3 ]; then exit 1; fi; \
@@ -59,9 +60,9 @@ COPY --from=ui-builder /app/out ./transports/bifrost-http/ui
 # Dynamic Go plugins require a dynamically linked Bifrost binary built with the
 # same Go toolchain, GOARCH, libc ABI, and shared package sources as the plugin.
 ARG VERSION=unknown
-RUN --mount=type=cache,target=/go/pkg/mod \
-    --mount=type=cache,target=/root/.cache/go-build \
-    --mount=type=cache,target=/tmp/bifrost-go-tmp \
+RUN --mount=type=cache,id=moon-bifrost-v2-go-mod,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,id=moon-bifrost-v2-go-build,target=/root/.cache/go-build,sharing=locked \
+    --mount=type=cache,id=moon-bifrost-v2-go-tmp,target=/tmp/bifrost-go-tmp,sharing=locked \
     test "$(go list -m -f '{{.Dir}}' github.com/maximhq/bifrost/core)" = "/app/core" && \
     test "$(go list -m -f '{{.Dir}}' github.com/maximhq/bifrost/framework)" = "/app/framework" && \
     test "$(go list -m -f '{{.Dir}}' github.com/maximhq/bifrost/plugins/governance)" = "/app/plugins/governance" && \
