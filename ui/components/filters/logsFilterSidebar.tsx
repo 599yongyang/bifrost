@@ -13,6 +13,8 @@ import type { LogFilters } from "@/lib/types/logs";
 import { cn } from "@/lib/utils";
 import { ChevronDown, LoaderCircle, PanelLeftClose, Plus, RotateCcw, Search } from "lucide-react";
 import { Ref, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { logsFilterCopy } from "./logsFilterCopy";
+import { latencySecondsToMilliseconds } from "./logsFilterModel";
 
 const COLLAPSE_STORAGE_KEY = "logs-filter-sidebar-collapsed";
 
@@ -114,6 +116,7 @@ export function LogsFilterSidebar({ filters, onFiltersChange }: LogsSidebarProps
 					<CustomerFilter filters={filters} onFiltersChange={onFiltersChange} />
 					<BusinessUnitFilter filters={filters} onFiltersChange={onFiltersChange} />
 					<SessionFilter filters={filters} onFiltersChange={onFiltersChange} />
+					<LatencyFilter filters={filters} onFiltersChange={onFiltersChange} />
 					<CostFilter filters={filters} onFiltersChange={onFiltersChange} />
 					<StopReasonFilter filters={filters} onFiltersChange={onFiltersChange} />
 					<MetadataFilters filters={filters} onFiltersChange={onFiltersChange} />
@@ -1116,6 +1119,96 @@ function BusinessUnitFilter({ filters, onFiltersChange, defaultOpen }: FilterCom
 				fetching={isFetching}
 				testIdPrefix="business-units-filter"
 			/>
+		</FilterSection>
+	);
+}
+
+// ---------------------------------------------------------------------------
+// LatencyFilter
+// ---------------------------------------------------------------------------
+
+const latencyPresets = [10, 30, 60, 120];
+
+function LatencyFilter({ filters, onFiltersChange, defaultOpen }: FilterComponentProps) {
+	const copy = logsFilterCopy();
+	const hasActive = filters.min_latency !== undefined || filters.max_latency !== undefined;
+	const minSeconds = filters.min_latency === undefined ? "" : filters.min_latency / 1000;
+	const maxSeconds = filters.max_latency === undefined ? "" : filters.max_latency / 1000;
+
+	const updateSeconds = (field: "min_latency" | "max_latency", value: string) => {
+		const milliseconds = latencySecondsToMilliseconds(value);
+		const next = { ...filters, [field]: milliseconds };
+		if (field === "min_latency" && milliseconds !== undefined && next.max_latency !== undefined && milliseconds > next.max_latency) {
+			next.max_latency = undefined;
+		}
+		if (field === "max_latency" && milliseconds !== undefined && next.min_latency !== undefined && milliseconds < next.min_latency) {
+			next.min_latency = undefined;
+		}
+		onFiltersChange(next);
+	};
+
+	return (
+		<FilterSection title={copy.latency} defaultOpen={defaultOpen || hasActive} testId="latency-filter-toggle">
+			<div className="space-y-3 p-3">
+				<div className="flex flex-wrap gap-1.5">
+					{latencyPresets.map((seconds) => {
+						const selected = filters.min_latency === seconds * 1000 && filters.max_latency === undefined;
+						return (
+							<Button
+								key={seconds}
+								type="button"
+								variant={selected ? "default" : "outline"}
+								size="sm"
+								className="h-7 px-2 text-xs"
+								onClick={() => onFiltersChange({ ...filters, min_latency: seconds * 1000, max_latency: undefined })}
+								data-testid={`latency-filter-preset-${seconds}`}
+							>
+								{copy.secondsOrMore(seconds)}
+							</Button>
+						);
+					})}
+				</div>
+				<div className="grid grid-cols-2 gap-2">
+					<label className="space-y-1 text-xs">
+						<span className="text-muted-foreground">{copy.minimum}</span>
+						<Input
+							type="number"
+							min={0}
+							step={0.1}
+							value={minSeconds}
+							onChange={(event) => updateSeconds("min_latency", event.target.value)}
+							placeholder="0"
+							data-testid="latency-filter-min-seconds"
+						/>
+					</label>
+					<label className="space-y-1 text-xs">
+						<span className="text-muted-foreground">{copy.maximum}</span>
+						<Input
+							type="number"
+							min={0}
+							step={0.1}
+							value={maxSeconds}
+							onChange={(event) => updateSeconds("max_latency", event.target.value)}
+							placeholder={copy.noLimit}
+							data-testid="latency-filter-max-seconds"
+						/>
+					</label>
+				</div>
+				<div className="flex items-center justify-between gap-2">
+					<p className="text-muted-foreground text-xs">{copy.unitHelp}</p>
+					{hasActive && (
+						<Button
+							type="button"
+							variant="ghost"
+							size="sm"
+							className="h-7 px-2 text-xs"
+							onClick={() => onFiltersChange({ ...filters, min_latency: undefined, max_latency: undefined })}
+						>
+							{copy.clear}
+						</Button>
+					)}
+				</div>
+			</div>
 		</FilterSection>
 	);
 }
