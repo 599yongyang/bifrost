@@ -12,12 +12,13 @@ import (
 
 // BifrostChatRequest is the request struct for chat completion requests
 type BifrostChatRequest struct {
-	Provider       ModelProvider   `json:"provider"`
-	Model          string          `json:"model"`
-	Input          []ChatMessage   `json:"input,omitempty"`
-	Params         *ChatParameters `json:"params,omitempty"`
-	Fallbacks      []Fallback      `json:"fallbacks,omitempty"`
-	RawRequestBody []byte          `json:"-"` // set bifrost-use-raw-request-body to true in ctx to use the raw request body. Bifrost will directly send this to the downstream provider.
+	Provider       ModelProvider       `json:"provider"`
+	Model          string              `json:"model"`
+	Input          []ChatMessage       `json:"input,omitempty"`
+	Params         *ChatParameters     `json:"params,omitempty"`
+	Fallbacks      []Fallback          `json:"fallbacks,omitempty"`
+	ErrorFallbacks []ErrorFallbackRule `json:"error_fallbacks,omitempty"`
+	RawRequestBody []byte              `json:"-"` // set bifrost-use-raw-request-body to true in ctx to use the raw request body. Bifrost will directly send this to the downstream provider.
 }
 
 // GetRawRequestBody returns the raw request body

@@ -68,6 +68,7 @@ type BifrostVideoGenerationRequest struct {
 	Input          *VideoGenerationInput      `json:"input"`
 	Params         *VideoGenerationParameters `json:"params,omitempty"`
 	Fallbacks      []Fallback                 `json:"fallbacks,omitempty"`
+	ErrorFallbacks []ErrorFallbackRule        `json:"error_fallbacks,omitempty"`
 	RawRequestBody []byte                     `json:"-"`
 }
 
@@ -193,6 +194,7 @@ type BifrostVideoEditRequest struct {
 	Input          *VideoEditInput      `json:"input"`
 	Params         *VideoEditParameters `json:"params,omitempty"`
 	Fallbacks      []Fallback           `json:"fallbacks,omitempty"`
+	ErrorFallbacks []ErrorFallbackRule  `json:"error_fallbacks,omitempty"`
 	RawRequestBody []byte               `json:"-"`
 }
 
