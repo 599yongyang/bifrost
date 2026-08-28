@@ -314,6 +314,15 @@ func migrationClickHouseWebhookDeliveriesTable(ctx context.Context, db *gorm.DB,
 	return clickhouseReconcileColumns(ctx, db, &WebhookDelivery{}, "webhook_deliveries", cluster, logger)
 }
 
+func migrationClickHouseAlertHistoryTable(ctx context.Context, db *gorm.DB, cluster string, retentionDays int, logger schemas.Logger) error {
+	if err := clickhouseCreateTable(ctx, db, &AlertHistory{}, chTableOpts{
+		table: "enterprise_alert_history", orderBy: "(created_at, id)", ttl: chLogsTTL(retentionDays),
+	}, cluster); err != nil {
+		return fmt.Errorf("clickhouse: create enterprise_alert_history table: %w", err)
+	}
+	return clickhouseReconcileColumns(ctx, db, &AlertHistory{}, "enterprise_alert_history", cluster, logger)
+}
+
 // clickhouseMigrationSteps lists the per-table migrations in execution order,
 // mirroring logstoreMigrationSteps for the SQL stores.
 var clickhouseMigrationSteps = []clickhouseMigrationStep{
@@ -321,6 +330,7 @@ var clickhouseMigrationSteps = []clickhouseMigrationStep{
 	migrationClickHouseMCPToolLogsTable,
 	migrationClickHouseAsyncJobsTable,
 	migrationClickHouseWebhookDeliveriesTable,
+	migrationClickHouseAlertHistoryTable,
 }
 
 // triggerClickHouseMigrations runs all registered ClickHouse table migrations

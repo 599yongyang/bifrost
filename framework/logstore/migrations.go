@@ -295,6 +295,7 @@ var logstoreMigrationSteps = []migrationStep{
 	{IDs: []string{"logs_recreate_matviews_with_cost_breakdown"}, run: migrationRecreateMatViewsWithCostBreakdown},
 	{IDs: []string{"logs_add_overhead_breakdown_column"}, run: migrationAddOverheadBreakdownColumn},
 	{IDs: []string{"observability_exports_init"}, run: migrationCreateObservationExportsTable},
+	{IDs: []string{"enterprise_alert_history_init"}, run: migrationCreateAlertHistoryTable},
 }
 
 func migrationCreateObservationExportsTable(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
@@ -320,6 +321,19 @@ func migrationCreateObservationExportsTable(ctx context.Context, db *gorm.DB, lo
 	}})
 	if err := m.Migrate(); err != nil {
 		return fmt.Errorf("error while creating observability exports table: %w", err)
+	}
+	return nil
+}
+
+func migrationCreateAlertHistoryTable(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	migrationName := "enterprise_alert_history_init"
+	m := migrator.New(db, migrator.DefaultOptions, []*migrator.Migration{{
+		ID:       migrationName,
+		Migrate:  func(tx *gorm.DB) error { return tx.WithContext(ctx).AutoMigrate(&AlertHistory{}) },
+		Rollback: func(tx *gorm.DB) error { return tx.WithContext(ctx).Migrator().DropTable(&AlertHistory{}) },
+	}})
+	if err := m.Migrate(); err != nil {
+		return fmt.Errorf("error creating alert history table: %w", err)
 	}
 	return nil
 }
