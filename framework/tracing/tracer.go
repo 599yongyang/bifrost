@@ -4,6 +4,8 @@ package tracing
 import (
 	"context"
 	"errors"
+	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -104,11 +106,14 @@ func (t *Tracer) SetObservabilityPlugins(obsPlugins []schemas.ObservabilityPlugi
 	// path does not rebuild a map per trace.
 	slots := make([]*obsPluginSlot, 0, len(obsPlugins))
 	seenPlugins := make(map[string]struct{}, len(obsPlugins))
-	for _, plugin := range obsPlugins {
+	for index, plugin := range obsPlugins {
 		if plugin == nil {
 			continue
 		}
-		name := plugin.GetName()
+		name, ok := t.observabilityPluginName(plugin, index)
+		if !ok {
+			continue
+		}
 		if _, exists := seenPlugins[name]; exists {
 			continue
 		}
@@ -140,6 +145,23 @@ func (t *Tracer) SetObservabilityPlugins(obsPlugins []schemas.ObservabilityPlugi
 		}
 	}
 	t.cachedHdrPatterns.Store(&patterns)
+}
+
+func (t *Tracer) observabilityPluginName(plugin schemas.ObservabilityPlugin, index int) (name string, ok bool) {
+	fallback := "observability_plugin_" + strconv.Itoa(index)
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			if t.logger != nil {
+				t.logger.Error("observability plugin %s panicked during GetName: panic_type=%T\n%s", fallback, recovered, debug.Stack())
+			}
+			name, ok = "", false
+		}
+	}()
+	name = strings.TrimSpace(plugin.GetName())
+	if name == "" {
+		name = fallback
+	}
+	return name, true
 }
 
 // ShouldCaptureRequestHeaders reports whether any observability plugin has opted into
@@ -936,8 +958,8 @@ func (t *Tracer) CompleteAndFlushTrace(traceID string) {
 				// Isolate each plugin callback — one bad observability backend should
 				// not crash the server or prevent other plugins from receiving the trace.
 				defer func() {
-					if r := recover(); r != nil && t.logger != nil {
-						t.logger.Error("observability plugin %s panicked during trace injection: %v", slot.name, r)
+					if recovered := recover(); recovered != nil && t.logger != nil {
+						t.logger.Error("observability plugin %s panicked during trace injection: panic_type=%T\n%s", slot.name, recovered, debug.Stack())
 					}
 				}()
 				injectCtx, cancel := context.WithTimeout(context.Background(), slot.injectTimeout)
