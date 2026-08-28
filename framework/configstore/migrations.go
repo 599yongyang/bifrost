@@ -481,6 +481,8 @@ var configstoreMigrationSteps = []migrationStep{
 	{IDs: []string{"add_alert_cooldowns_table"}, run: migrationAddAlertCooldownsTable},
 	{IDs: []string{"add_alert_notify_once_field"}, run: migrationAddAlertNotifyOnceField},
 	{IDs: []string{"add_alert_config_managed_fields"}, run: migrationAddAlertConfigManagedFields},
+	{IDs: []string{"add_daily_report_settings_table"}, run: migrationAddDailyReportSettingsTable},
+	{IDs: []string{"add_daily_report_generate_time"}, run: migrationAddDailyReportGenerateTime},
 }
 
 // migrationAddBatchJobsAttributionColumns adds the requester-identity columns to
@@ -561,6 +563,18 @@ func migrationAddAlertConfigManagedFields(ctx context.Context, db *gorm.DB, logg
 	return runAlertingMigration(ctx, db, logger, "add_alert_config_managed_fields", func(tx *gorm.DB) error {
 		return tx.AutoMigrate(&tables.TableAlertChannel{}, &tables.TableAlertRule{})
 	}, func(*gorm.DB) error { return fmt.Errorf("managed fields are non-rollbackable") })
+}
+
+func migrationAddDailyReportSettingsTable(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	return runAlertingMigration(ctx, db, logger, "add_daily_report_settings_table", func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&tables.TableDailyReportSettings{})
+	}, func(tx *gorm.DB) error { return tx.Migrator().DropTable(&tables.TableDailyReportSettings{}) })
+}
+
+func migrationAddDailyReportGenerateTime(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	return runAlertingMigration(ctx, db, logger, "add_daily_report_generate_time", func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&tables.TableDailyReportSettings{})
+	}, func(*gorm.DB) error { return fmt.Errorf("generate_time is non-rollbackable") })
 }
 
 func runAlertingMigration(ctx context.Context, db *gorm.DB, logger schemas.Logger, id string, migrate, rollback func(*gorm.DB) error) error {

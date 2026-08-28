@@ -10,7 +10,7 @@ import (
 
 func TestAlertCooldownUpsertAndChannelDetach(t *testing.T) {
 	store := setupRDBTestStore(t)
-	if err := store.DB().AutoMigrate(&tables.TableAlertChannel{}, &tables.TableAlertRule{}, &tables.TableAlertCooldown{}); err != nil {
+	if err := store.DB().AutoMigrate(&tables.TableAlertChannel{}, &tables.TableAlertRule{}, &tables.TableAlertCooldown{}, &tables.TableDailyReportSettings{}); err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
@@ -57,5 +57,24 @@ func TestAlertCooldownUpsertAndChannelDetach(t *testing.T) {
 	}
 	if updated.Enabled || len(updated.ChannelIDs) != 0 {
 		t.Fatalf("expected rule to be disabled and detached: %#v", updated)
+	}
+	settings := &tables.TableDailyReportSettings{
+		Timezone: "Asia/Shanghai", GenerateTime: "03:00", SendTime: "09:00", SlowThresholdMs: 15000,
+		InternalEnabled: true, ExternalEnabled: true,
+		InternalChannelIDs: []string{"c-internal"}, ExternalChannelIDs: []string{"c-external"},
+	}
+	if err := store.UpsertDailyReportSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	loadedSettings, err := store.GetDailyReportSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loadedSettings.ID != tables.DefaultDailyReportSettingsID || loadedSettings.GenerateTime != "03:00" || loadedSettings.SendTime != "09:00" || len(loadedSettings.InternalChannelIDs) != 1 || len(loadedSettings.ExternalChannelIDs) != 1 {
+		t.Fatalf("unexpected daily report settings: %#v", loadedSettings)
+	}
+	loadedSettings.GenerateTime = "10:00"
+	if err := store.UpsertDailyReportSettings(ctx, loadedSettings); err == nil {
+		t.Fatal("expected generate_time later than send_time to be rejected")
 	}
 }
