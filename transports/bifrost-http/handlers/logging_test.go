@@ -5,7 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
+	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -576,6 +579,289 @@ type dashboardLogManager struct {
 	lastMCPFilters         logstore.MCPToolLogSearchFilters
 	lastRecalculateFilters logstore.SearchFilters
 	lastRecalculateContext chan context.Context
+}
+
+type manualObservationLogManager struct {
+	*dashboardLogManager
+	logs          []logstore.Log
+	authorizeErr  map[string]error
+	states        []logstore.ObservationExport
+	requestedIDs  []string
+	authorizedIDs []string
+}
+
+func (m *manualObservationLogManager) GetLog(_ context.Context, id string) (*logstore.Log, error) {
+	for i := range m.logs {
+		if m.logs[i].ID == id {
+			copy := m.logs[i]
+			return &copy, nil
+		}
+	}
+	return nil, logstore.ErrNotFound
+}
+
+func (m *manualObservationLogManager) AuthorizeManualObservationExport(_ context.Context, id string) error {
+	m.authorizedIDs = append(m.authorizedIDs, id)
+	if err := m.authorizeErr[id]; err != nil {
+		return err
+	}
+	_, err := m.GetLog(context.Background(), id)
+	return err
+}
+
+func (m *manualObservationLogManager) GetObservationExports(_ context.Context, ids []string) ([]logstore.ObservationExport, error) {
+	m.requestedIDs = append([]string(nil), ids...)
+	return append([]logstore.ObservationExport(nil), m.states...), nil
+}
+
+func (m *manualObservationLogManager) Search(_ context.Context, _ *logstore.SearchFilters, pagination *logstore.PaginationOptions) (*logstore.SearchResult, error) {
+	return &logstore.SearchResult{
+		Logs: m.logs,
+		Pagination: logstore.PaginationOptions{
+			Limit: pagination.Limit, Offset: pagination.Offset, TotalCount: 3,
+		},
+		HasLogs: len(m.logs) > 0,
+	}, nil
+}
+
+type manualObservationExporterStub struct {
+	status  string
+	reason  string
+	err     error
+	targets []string
+	manual  bool
+	queued  []string
+}
+
+func (s *manualObservationExporterStub) EnqueueManualExport(_ context.Context, id string) (string, string, error) {
+	s.queued = append(s.queued, id)
+	return s.status, s.reason, s.err
+}
+func (s *manualObservationExporterStub) ObservationTargetIDs() []string {
+	return append([]string(nil), s.targets...)
+}
+func (s *manualObservationExporterStub) ManualExportAvailable() bool { return s.manual }
+
+type noopRedactedKeysManager struct{}
+
+func (noopRedactedKeysManager) GetAllRedactedKeys(context.Context, []string) []schemas.Key {
+	return nil
+}
+func (noopRedactedKeysManager) GetAllRedactedVirtualKeys(context.Context, []string) []tables.TableVirtualKey {
+	return nil
+}
+func (noopRedactedKeysManager) GetAllRedactedRoutingRules(context.Context, []string) []tables.TableRoutingRule {
+	return nil
+}
+
+func TestManualObservationExportEndpointStatuses(t *testing.T) {
+	secretErr := errors.New("secret raw exporter failure")
+	tests := []struct {
+		name       string
+		authorize  error
+		exporter   *manualObservationExporterStub
+		wantStatus int
+		wantReason string
+		wantQueue  bool
+	}{
+		{"success", nil, &manualObservationExporterStub{status: logstore.ObservationExportStatusPending, reason: "queued", targets: []string{"profile-0"}, manual: true}, 202, "queued", true},
+		{"queue full", nil, &manualObservationExporterStub{status: logstore.ObservationExportStatusFailed, reason: "queue_full", err: secretErr, targets: []string{"profile-0"}, manual: true}, 429, "queue_full", true},
+		{"unavailable", nil, &manualObservationExporterStub{status: logstore.ObservationExportStatusUnavailable, reason: "target_unavailable", err: secretErr, targets: []string{"profile-0"}, manual: true}, 503, "target_unavailable", true},
+		{"irrecoverable safe reason", nil, &manualObservationExporterStub{status: logstore.ObservationExportStatusUnavailable, reason: "missing_input", targets: []string{"profile-0"}, manual: true}, 503, "missing_input", true},
+		{"not found", logstore.ErrNotFound, &manualObservationExporterStub{targets: []string{"profile-0"}, manual: true}, 404, "log_not_found", false},
+		{"forbidden", ErrManualObservationExportForbidden, &manualObservationExporterStub{targets: []string{"profile-0"}, manual: true}, 403, "forbidden", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manager := &manualObservationLogManager{dashboardLogManager: &dashboardLogManager{}, logs: []logstore.Log{{ID: "log-1"}}, authorizeErr: map[string]error{"log-1": tt.authorize}}
+			h := &LoggingHandler{logManager: manager, manualExporterProvider: func() ManualObservationExporter { return tt.exporter }}
+			ctx := newTestRequestCtx(`{"ids":["log-1"]}`)
+			h.exportLogsToObservability(ctx)
+			if ctx.Response.StatusCode() != tt.wantStatus {
+				t.Fatalf("status = %d, want %d: %s", ctx.Response.StatusCode(), tt.wantStatus, ctx.Response.Body())
+			}
+			body := string(ctx.Response.Body())
+			if !strings.Contains(body, tt.wantReason) || strings.Contains(body, "secret raw") {
+				t.Fatalf("unsafe or incorrect response: %s", body)
+			}
+			if (len(tt.exporter.queued) > 0) != tt.wantQueue {
+				t.Fatalf("queued = %v, wantQueue=%v", tt.exporter.queued, tt.wantQueue)
+			}
+		})
+	}
+}
+
+func TestManualObservationExportEndpointRejectsUnavailableExporter(t *testing.T) {
+	h := &LoggingHandler{logManager: &manualObservationLogManager{dashboardLogManager: &dashboardLogManager{}}}
+	ctx := newTestRequestCtx(`{"ids":["log-1"]}`)
+	h.exportLogsToObservability(ctx)
+	if ctx.Response.StatusCode() != fasthttp.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", ctx.Response.StatusCode())
+	}
+}
+
+func TestManualObservationExportMixedBatchReturnsMultiStatus(t *testing.T) {
+	manager := &manualObservationLogManager{
+		dashboardLogManager: &dashboardLogManager{}, logs: []logstore.Log{{ID: "log-1"}},
+		authorizeErr: map[string]error{"missing": logstore.ErrNotFound},
+	}
+	exporter := &manualObservationExporterStub{status: logstore.ObservationExportStatusPending, reason: "queued", targets: []string{"profile-0"}, manual: true}
+	h := &LoggingHandler{logManager: manager, manualExporterProvider: func() ManualObservationExporter { return exporter }}
+	ctx := newTestRequestCtx(`{"ids":["log-1","missing"]}`)
+	h.exportLogsToObservability(ctx)
+	if ctx.Response.StatusCode() != fasthttp.StatusMultiStatus {
+		t.Fatalf("status = %d, want 207: %s", ctx.Response.StatusCode(), ctx.Response.Body())
+	}
+	body := string(ctx.Response.Body())
+	if !strings.Contains(body, `"id":"log-1","status":"pending","reason":"queued"`) ||
+		!strings.Contains(body, `"id":"missing","status":"failed","reason":"log_not_found"`) {
+		t.Fatalf("mixed per-item results missing: %s", body)
+	}
+}
+
+func TestManualObservationExportAllFailedBatchReturnsMultiStatus(t *testing.T) {
+	manager := &manualObservationLogManager{
+		dashboardLogManager: &dashboardLogManager{},
+		authorizeErr:        map[string]error{"missing-1": logstore.ErrNotFound, "missing-2": ErrManualObservationExportForbidden},
+	}
+	exporter := &manualObservationExporterStub{targets: []string{"profile-0"}, manual: true}
+	h := &LoggingHandler{logManager: manager, manualExporterProvider: func() ManualObservationExporter { return exporter }}
+	ctx := newTestRequestCtx(`{"ids":["missing-1","missing-2"]}`)
+	h.exportLogsToObservability(ctx)
+	if ctx.Response.StatusCode() != fasthttp.StatusMultiStatus {
+		t.Fatalf("status = %d, want 207: %s", ctx.Response.StatusCode(), ctx.Response.Body())
+	}
+}
+
+func TestManualObservationExportNormalizesIDsBeforeLimitAndWork(t *testing.T) {
+	logs := make([]logstore.Log, 50)
+	ids := make([]string, 0, 110)
+	for i := range logs {
+		id := fmt.Sprintf("log-%02d", i)
+		logs[i].ID = id
+		ids = append(ids, " "+id+" ", id)
+	}
+	ids = append(ids, "", "   ")
+	body, err := json.Marshal(manualObservationExportRequest{IDs: ids})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := &manualObservationLogManager{dashboardLogManager: &dashboardLogManager{}, logs: logs}
+	exporter := &manualObservationExporterStub{status: logstore.ObservationExportStatusPending, reason: "queued", targets: []string{"profile-0"}, manual: true}
+	h := &LoggingHandler{logManager: manager, manualExporterProvider: func() ManualObservationExporter { return exporter }}
+	ctx := newTestRequestCtx(string(body))
+	h.exportLogsToObservability(ctx)
+	if ctx.Response.StatusCode() != fasthttp.StatusAccepted {
+		t.Fatalf("status = %d, want 202: %s", ctx.Response.StatusCode(), ctx.Response.Body())
+	}
+	if len(manager.authorizedIDs) != 50 || len(exporter.queued) != 50 {
+		t.Fatalf("authorize=%d enqueue=%d, want 50 unique IDs", len(manager.authorizedIDs), len(exporter.queued))
+	}
+	for i := range manager.authorizedIDs {
+		if manager.authorizedIDs[i] != exporter.queued[i] {
+			t.Fatalf("work differed at %d: authorize=%q enqueue=%q", i, manager.authorizedIDs[i], exporter.queued[i])
+		}
+	}
+}
+
+func TestManualObservationExportRejectsFiftyOneUniqueIDsBeforeWork(t *testing.T) {
+	ids := make([]string, 51)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("log-%02d", i)
+	}
+	body, err := json.Marshal(manualObservationExportRequest{IDs: ids})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := &manualObservationLogManager{dashboardLogManager: &dashboardLogManager{}}
+	exporter := &manualObservationExporterStub{status: logstore.ObservationExportStatusPending, reason: "queued", targets: []string{"profile-0"}, manual: true}
+	h := &LoggingHandler{logManager: manager, manualExporterProvider: func() ManualObservationExporter { return exporter }}
+	ctx := newTestRequestCtx(string(body))
+	h.exportLogsToObservability(ctx)
+	if ctx.Response.StatusCode() != fasthttp.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", ctx.Response.StatusCode())
+	}
+	if len(manager.authorizedIDs) != 0 || len(exporter.queued) != 0 {
+		t.Fatalf("over-limit request performed work: authorize=%v enqueue=%v", manager.authorizedIDs, exporter.queued)
+	}
+}
+
+func TestManualObservationExportDuplicateIDRunsOnce(t *testing.T) {
+	manager := &manualObservationLogManager{dashboardLogManager: &dashboardLogManager{}, logs: []logstore.Log{{ID: "log-1"}}}
+	exporter := &manualObservationExporterStub{status: logstore.ObservationExportStatusPending, reason: "queued", targets: []string{"profile-0"}, manual: true}
+	h := &LoggingHandler{logManager: manager, manualExporterProvider: func() ManualObservationExporter { return exporter }}
+	ctx := newTestRequestCtx(`{"ids":[" log-1 ","log-1","log-1"]}`)
+	h.exportLogsToObservability(ctx)
+	if ctx.Response.StatusCode() != fasthttp.StatusAccepted || len(manager.authorizedIDs) != 1 || len(exporter.queued) != 1 {
+		t.Fatalf("status=%d authorize=%v enqueue=%v", ctx.Response.StatusCode(), manager.authorizedIDs, exporter.queued)
+	}
+}
+
+func TestLogListObservationStatusEnrichmentRespectsPage(t *testing.T) {
+	manager := &manualObservationLogManager{
+		dashboardLogManager: &dashboardLogManager{},
+		logs:                []logstore.Log{{ID: "page-1"}, {ID: "page-2"}},
+		states: []logstore.ObservationExport{
+			{LogID: "page-1", TargetID: "active", Status: logstore.ObservationExportStatusExported},
+			{LogID: "page-2", TargetID: "inactive", Status: logstore.ObservationExportStatusFailed},
+			{LogID: "off-page", TargetID: "active", Status: logstore.ObservationExportStatusExported},
+		},
+	}
+	exporter := &manualObservationExporterStub{targets: []string{"active"}, manual: true}
+	h := &LoggingHandler{
+		logManager: manager, redactedKeysManager: noopRedactedKeysManager{},
+		manualExporterProvider: func() ManualObservationExporter { return exporter },
+	}
+	ctx := newTestRequestCtx("")
+	ctx.Request.SetRequestURI("/api/logs?limit=2&offset=1")
+	h.getLogs(ctx)
+	if ctx.Response.StatusCode() != fasthttp.StatusOK {
+		t.Fatalf("status = %d: %s", ctx.Response.StatusCode(), ctx.Response.Body())
+	}
+	if !reflect.DeepEqual(manager.requestedIDs, []string{"page-1", "page-2"}) {
+		t.Fatalf("status lookup ids = %v", manager.requestedIDs)
+	}
+	var response logstore.SearchResult
+	if err := json.Unmarshal(ctx.Response.Body(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Pagination.TotalCount != 3 || response.Pagination.Offset != 1 || len(response.Logs) != 2 {
+		t.Fatalf("pagination changed by enrichment: %+v", response.Pagination)
+	}
+	if !response.Logs[0].ObservationExportConfigured || !response.Logs[0].ObservationManualExportConfigured || len(response.Logs[0].ObservationExports) != 1 {
+		t.Fatalf("page-1 enrichment missing: %+v", response.Logs[0])
+	}
+	if len(response.Logs[1].ObservationExports) != 0 {
+		t.Fatalf("inactive target state leaked into response: %+v", response.Logs[1].ObservationExports)
+	}
+}
+
+func TestLogDetailIncludesObservationTargetStates(t *testing.T) {
+	manager := &manualObservationLogManager{
+		dashboardLogManager: &dashboardLogManager{},
+		logs:                []logstore.Log{{ID: "detail-1"}},
+		states: []logstore.ObservationExport{{
+			LogID: "detail-1", TargetID: "active", Status: logstore.ObservationExportStatusFailed, Reason: "trace_emit_failed",
+		}},
+	}
+	exporter := &manualObservationExporterStub{targets: []string{"active"}, manual: true}
+	h := &LoggingHandler{
+		logManager: manager, redactedKeysManager: noopRedactedKeysManager{},
+		manualExporterProvider: func() ManualObservationExporter { return exporter },
+	}
+	ctx := newTestRequestCtx("")
+	ctx.SetUserValue("id", "detail-1")
+	h.getLogByID(ctx)
+	if ctx.Response.StatusCode() != fasthttp.StatusOK {
+		t.Fatalf("status = %d: %s", ctx.Response.StatusCode(), ctx.Response.Body())
+	}
+	var response logstore.Log
+	if err := json.Unmarshal(ctx.Response.Body(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.ObservationExportConfigured || !response.ObservationManualExportConfigured || len(response.ObservationExports) != 1 {
+		t.Fatalf("detail enrichment missing: %+v", response)
+	}
 }
 
 func (m *dashboardLogManager) GetLog(ctx context.Context, id string) (*logstore.Log, error) {
