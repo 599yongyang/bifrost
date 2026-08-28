@@ -14,14 +14,17 @@ import (
 	"github.com/maximhq/bifrost/framework/configstore"
 	"github.com/maximhq/bifrost/framework/configstore/tables"
 	"github.com/maximhq/bifrost/framework/logstore"
+	"github.com/maximhq/bifrost/framework/sidekiq"
 	alertengine "github.com/maximhq/bifrost/transports/bifrost-http/alerting"
 	"github.com/maximhq/bifrost/transports/bifrost-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
 type AlertingHandler struct {
-	manager *alertengine.Manager
-	store   configstore.AlertStore
+	manager             *alertengine.Manager
+	store               configstore.AlertStore
+	dailyReportRunner   *sidekiq.Runner
+	dailyReportJobStore DailyReportJobStore
 }
 
 func NewAlertingHandler(manager *alertengine.Manager, store configstore.AlertStore) *AlertingHandler {
@@ -49,6 +52,16 @@ func (h *AlertingHandler) RegisterRoutes(r *router.Router, middlewares ...schema
 
 	r.GET("/api/alerting/history", lib.ChainMiddlewares(h.listHistory, middlewares...))
 	r.POST("/api/alerting/evaluate", lib.ChainMiddlewares(h.evaluateNow, middlewares...))
+
+	r.GET("/api/alerting/reports/settings", lib.ChainMiddlewares(h.getDailyReportSettings, middlewares...))
+	r.PUT("/api/alerting/reports/settings", lib.ChainMiddlewares(h.updateDailyReportSettings, middlewares...))
+	r.POST("/api/alerting/reports/preview", lib.ChainMiddlewares(h.previewDailyReport, middlewares...))
+	r.POST("/api/alerting/reports/jobs", lib.ChainMiddlewares(h.startDailyReportJob, middlewares...))
+	r.GET("/api/alerting/reports/jobs/status", lib.ChainMiddlewares(h.getDailyReportJobStatus, middlewares...))
+	r.POST("/api/alerting/reports/generate", lib.ChainMiddlewares(h.generateDailyReport, middlewares...))
+	r.GET("/api/alerting/reports/runs", lib.ChainMiddlewares(h.listDailyReportRuns, middlewares...))
+	r.GET("/api/alerting/reports/runs/{id}", lib.ChainMiddlewares(h.getDailyReportRun, middlewares...))
+	r.POST("/api/alerting/reports/runs/{id}/deliver", lib.ChainMiddlewares(h.deliverDailyReportRun, middlewares...))
 }
 
 type channelRequest struct {

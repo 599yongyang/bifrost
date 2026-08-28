@@ -23,6 +23,21 @@ type memoryAlertStore struct {
 	rules     []tables.TableAlertRule
 	history   []logstore.AlertHistory
 	cooldowns map[string]time.Time
+	settings  *tables.TableDailyReportSettings
+}
+
+func (s *memoryAlertStore) GetDailyReportSettings(context.Context) (*tables.TableDailyReportSettings, error) {
+	if s.settings == nil {
+		return nil, configstore.ErrNotFound
+	}
+	settings := *s.settings
+	return &settings, nil
+}
+
+func (s *memoryAlertStore) UpsertDailyReportSettings(_ context.Context, settings *tables.TableDailyReportSettings) error {
+	copy := *settings
+	s.settings = &copy
+	return nil
 }
 
 func (s *memoryAlertStore) ListAlertChannels(context.Context) ([]tables.TableAlertChannel, error) {
