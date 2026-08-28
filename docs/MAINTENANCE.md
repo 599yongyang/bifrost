@@ -57,7 +57,7 @@ docker save bifrost-moon:1.6.10-moon.21 \
   -o ./bifrost-moon-1.6.10-moon.21-amd64.tar
 ```
 
-随后必须使用完全相同的 `core + framework + transports + plugin` workspace、Go 版本、
+随后必须使用完全相同的 `core + framework + transports + governance + plugin` workspace、Go 版本、
 CPU 架构以及 Debian/glibc 环境构建配套的 Moon 插件。升级、部署和回滚镜像时，必须同步
 处理对应的 `.so` 插件。
 

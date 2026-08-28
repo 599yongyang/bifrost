@@ -29,10 +29,11 @@ ENV CGO_ENABLED=1 GOOS=linux GODEBUG=http2client=0
 
 COPY core/go.mod core/go.sum ./core/
 COPY framework/go.mod framework/go.sum ./framework/
+COPY plugins/governance/go.mod plugins/governance/go.sum ./plugins/governance/
 COPY plugins/logging/go.mod plugins/logging/go.sum ./plugins/logging/
 COPY plugins/otel/go.mod plugins/otel/go.sum ./plugins/otel/
 COPY transports/go.mod transports/go.sum ./transports/
-RUN go work init ./core ./framework ./plugins/logging ./plugins/otel ./transports
+RUN go work init ./core ./framework ./plugins/governance ./plugins/logging ./plugins/otel ./transports
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     sync_attempt=1; \
@@ -44,6 +45,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 COPY core/ ./core/
 COPY framework/ ./framework/
+COPY plugins/governance/ ./plugins/governance/
 COPY plugins/logging/ ./plugins/logging/
 COPY plugins/otel/ ./plugins/otel/
 COPY transports/ ./transports/
@@ -57,6 +59,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/tmp/bifrost-go-tmp \
     test "$(go list -m -f '{{.Dir}}' github.com/maximhq/bifrost/core)" = "/app/core" && \
     test "$(go list -m -f '{{.Dir}}' github.com/maximhq/bifrost/framework)" = "/app/framework" && \
+    test "$(go list -m -f '{{.Dir}}' github.com/maximhq/bifrost/plugins/governance)" = "/app/plugins/governance" && \
     test "$(go list -m -f '{{.Dir}}' github.com/maximhq/bifrost/plugins/logging)" = "/app/plugins/logging" && \
     test "$(go list -m -f '{{.Dir}}' github.com/maximhq/bifrost/plugins/otel)" = "/app/plugins/otel" && \
     GOTMPDIR=/tmp/bifrost-go-tmp go build \
