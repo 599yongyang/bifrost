@@ -553,6 +553,11 @@ export interface BifrostError {
 	is_bifrost_error: boolean;
 	status_code?: number;
 	error: ErrorField;
+	extra_fields?: {
+		upstream_request_id?: string;
+		upstream_response_headers?: Record<string, string>;
+		[key: string]: unknown;
+	};
 }
 
 // Citation and Annotation types

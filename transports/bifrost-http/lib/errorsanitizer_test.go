@@ -82,6 +82,29 @@ func TestSanitizeBifrostErrorForClientPreservesNonSensitiveServerMessage(t *test
 	}
 }
 
+func TestSanitizeBifrostErrorForClientHidesUpstreamRequestID(t *testing.T) {
+	err := &schemas.BifrostError{
+		Error: &schemas.ErrorField{Message: "upstream failed"},
+		ExtraFields: schemas.BifrostErrorExtraFields{
+			UpstreamRequestID: "provider-request-123",
+			UpstreamResponseHeaders: map[string]string{
+				"x-client-request-id": "provider-request-123",
+			},
+		},
+	}
+
+	sanitized := SanitizeBifrostErrorForClient(err)
+	if sanitized.ExtraFields.UpstreamRequestID != "" {
+		t.Fatalf("client error exposed upstream request ID %q", sanitized.ExtraFields.UpstreamRequestID)
+	}
+	if sanitized.ExtraFields.UpstreamResponseHeaders != nil {
+		t.Fatalf("client error exposed upstream response headers %#v", sanitized.ExtraFields.UpstreamResponseHeaders)
+	}
+	if err.ExtraFields.UpstreamRequestID != "provider-request-123" {
+		t.Fatal("sanitizer mutated the original upstream request ID")
+	}
+}
+
 func TestSanitizeBifrostTimeoutErrorKeepsMetadataAndHidesCause(t *testing.T) {
 	err := &schemas.BifrostError{
 		Error: &schemas.ErrorField{Message: "upstream connection timed out", Error: errors.New("dial tcp secret.internal: timeout"), Param: "secret"},

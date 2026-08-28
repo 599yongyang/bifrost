@@ -2047,20 +2047,28 @@ type BifrostErrorExtraFields struct {
 	// matched (i.e. RoutingInfo.ResolvedKeyAlias != nil), otherwise
 	// RoutingInfo.Model. Still populated for backward compatibility; new
 	// consumers should read from RoutingInfo.
-	ResolvedModelUsed         string                `json:"resolved_model_used,omitempty"`
-	RequestType               RequestType           `json:"request_type,omitempty"`
-	MCPRequestType            MCPRequestType        `json:"mcp_request_type,omitempty"`
-	RawRequest                interface{}           `json:"raw_request,omitempty"`
-	RawResponse               interface{}           `json:"raw_response,omitempty"`
-	ConvertedRequestType      RequestType           `json:"converted_request_type,omitempty"`
-	DroppedCompatPluginParams []string              `json:"dropped_compat_plugin_params,omitempty"`
-	Latency                   int64                 `json:"latency,omitempty"` // in milliseconds
-	TimeoutSource             TimeoutSource         `json:"timeout_source,omitempty"`
-	ConfiguredTimeoutSeconds  int                   `json:"configured_timeout_seconds,omitempty"`
-	ElapsedMS                 int64                 `json:"elapsed_ms,omitempty"`
-	UpstreamResponseReceived  *bool                 `json:"upstream_response_received,omitempty"`
-	KeyStatuses               []KeyStatus           `json:"key_statuses,omitempty"`
-	MCPAuthRequired           *MCPAuthRequiredError `json:"mcp_auth_required,omitempty"` // Set when a per-user MCP tool requires the caller to complete an inline auth flow (OAuth or headers)
+	ResolvedModelUsed         string         `json:"resolved_model_used,omitempty"`
+	RequestType               RequestType    `json:"request_type,omitempty"`
+	MCPRequestType            MCPRequestType `json:"mcp_request_type,omitempty"`
+	RawRequest                interface{}    `json:"raw_request,omitempty"`
+	RawResponse               interface{}    `json:"raw_response,omitempty"`
+	ConvertedRequestType      RequestType    `json:"converted_request_type,omitempty"`
+	DroppedCompatPluginParams []string       `json:"dropped_compat_plugin_params,omitempty"`
+	Latency                   int64          `json:"latency,omitempty"` // in milliseconds
+	TimeoutSource             TimeoutSource  `json:"timeout_source,omitempty"`
+	ConfiguredTimeoutSeconds  int            `json:"configured_timeout_seconds,omitempty"`
+	ElapsedMS                 int64          `json:"elapsed_ms,omitempty"`
+	UpstreamResponseReceived  *bool          `json:"upstream_response_received,omitempty"`
+	// UpstreamRequestID is a provider-issued correlation ID captured from an
+	// allowlisted response header. It is persisted for operator troubleshooting
+	// and stripped from public HTTP error responses.
+	UpstreamRequestID string `json:"upstream_request_id,omitempty"`
+	// UpstreamResponseHeaders contains a minimal allowlist of safe operational
+	// headers preserved for internal logs only. Public HTTP error wrappers omit
+	// it even when the internal error is otherwise client-safe.
+	UpstreamResponseHeaders map[string]string     `json:"upstream_response_headers,omitempty"`
+	KeyStatuses             []KeyStatus           `json:"key_statuses,omitempty"`
+	MCPAuthRequired         *MCPAuthRequiredError `json:"mcp_auth_required,omitempty"` // Set when a per-user MCP tool requires the caller to complete an inline auth flow (OAuth or headers)
 	// BilledUsage carries provider-reported token usage that was consumed even
 	// though the request ultimately failed or was cancelled (e.g. a stream
 	// aborted mid-response, or a 5xx returned after input tokens were
