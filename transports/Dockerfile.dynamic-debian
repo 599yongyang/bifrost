@@ -70,6 +70,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     test "$(go list -m -f '{{.Dir}}' github.com/maximhq/bifrost/plugins/routing)" = "/app/plugins/routing" && \
     GOTMPDIR=/tmp/bifrost-go-tmp go build \
       -ldflags="-w -s -X main.Version=v${VERSION}" \
+      -p=2 \
       -trimpath \
       -o /app/main \
       ./transports/bifrost-http

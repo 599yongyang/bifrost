@@ -17,9 +17,9 @@ import { useBranding } from "@/lib/hooks/useBranding";
 import { useGetCoreConfigQuery, useGetVersionQuery, useLogoutMutation } from "@/lib/store";
 import type { UserInfo } from "@enterprise/lib/store/utils/tokenManager";
 import { getUserInfo } from "@enterprise/lib/store/utils/tokenManager";
-import { BooksIcon, DiscordLogoIcon, GithubLogoIcon } from "@phosphor-icons/react";
+import { BooksIcon, GithubLogoIcon } from "@phosphor-icons/react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
-import { BugIcon, ChevronDown, LogOut, Menu, User } from "lucide-react";
+import { ChevronDown, LogOut, Menu, User } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEffect, useMemo, useState } from "react";
 
@@ -35,20 +35,9 @@ const externalLinks: {
 	strokeWidth?: number;
 }[] = [
 	{
-		title: "Discord Server",
-		url: "https://discord.gg/exN5KAydbU",
-		icon: DiscordLogoIcon,
-	},
-	{
 		title: "GitHub Repository",
 		url: "https://github.com/maximhq/bifrost",
 		icon: GithubLogoIcon,
-	},
-	{
-		title: "Report a bug",
-		url: "https://github.com/maximhq/bifrost/issues/new?title=[Bug Report]&labels=bug&type=bug&projects=maximhq/1",
-		icon: BugIcon,
-		strokeWidth: 1.5,
 	},
 	{
 		title: "Full Documentation",
