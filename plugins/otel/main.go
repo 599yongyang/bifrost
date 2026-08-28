@@ -3,6 +3,8 @@ package otel
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"maps"
 	"os"
@@ -16,6 +18,7 @@ import (
 	"github.com/bytedance/sonic"
 	bifrost "github.com/maximhq/bifrost/core"
 	"github.com/maximhq/bifrost/core/schemas"
+	"github.com/maximhq/bifrost/framework/logstore"
 	"github.com/maximhq/bifrost/framework/modelcatalog"
 	"go.opentelemetry.io/otel/attribute"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
@@ -392,12 +395,14 @@ func hideResolvedEnvValue(v *schemas.SecretVar) *schemas.SecretVar {
 // plus an optional metrics exporter, along with the per-profile identity (service name)
 // used when converting traces for this destination.
 type otelTarget struct {
+	id                     string
 	serviceName            string
 	url                    string
 	traceType              TraceType
 	client                 OtelClient
 	mediaUploader          mediaUploader
 	mediaSem               chan struct{}
+	mediaRuntimeOnce       sync.Once
 	metricsExporter        *MetricsExporter
 	requestHeaders         []string
 	disableContentLogging  bool
@@ -418,6 +423,14 @@ type otelTarget struct {
 	mediaConsecutiveFailures atomic.Int64
 	mediaBreakerOpenUntil    atomic.Int64
 	failedMediaBatches       atomic.Int64
+}
+
+func (t *otelTarget) ensureMediaRuntime() {
+	t.mediaRuntimeOnce.Do(func() {
+		if t.mediaSem == nil {
+			t.mediaSem = make(chan struct{}, 4)
+		}
+	})
 }
 
 func (t *otelTarget) tripMediaBreaker() {
@@ -497,9 +510,54 @@ type OtelPlugin struct {
 
 	pricingManager *modelcatalog.ModelCatalog
 
-	pluginSpanFilter *PluginSpanFilter
-	selector         *traceSelector
+	pluginSpanFilter     *PluginSpanFilter
+	selector             *traceSelector
+	exportStoreMu        sync.RWMutex
+	exportStore          logstore.ObservationExportStore
+	manualRepo           ManualExportRepository
+	manualQueue          chan manualExportJob
+	manualWG             sync.WaitGroup
+	statusQueue          chan logstore.ObservationExport
+	statusWG             sync.WaitGroup
+	statusFallbackWrites atomic.Int64
+	statusMaxPending     atomic.Int64
 }
+
+// SetObservationExportStore wires the durable status/reconstruction seam used
+// by manual export without depending on a concrete logging backend.
+func (p *OtelPlugin) SetObservationExportStore(store logstore.ObservationExportStore) {
+	if p == nil {
+		return
+	}
+	p.exportStoreMu.Lock()
+	p.exportStore = store
+	p.manualRepo = nil
+	if repo, ok := store.(ManualExportRepository); ok {
+		p.manualRepo = repo
+	}
+	p.exportStoreMu.Unlock()
+}
+
+func (p *OtelPlugin) observationExportStores() (logstore.ObservationExportStore, ManualExportRepository) {
+	p.exportStoreMu.RLock()
+	defer p.exportStoreMu.RUnlock()
+	return p.exportStore, p.manualRepo
+}
+
+func (p *OtelPlugin) ObservationTargetIDs() []string {
+	if p == nil {
+		return nil
+	}
+	ids := make([]string, 0, len(p.targets))
+	for _, target := range p.targets {
+		if target != nil && target.mediaUploader != nil {
+			ids = append(ids, target.id)
+		}
+	}
+	return ids
+}
+
+func (p *OtelPlugin) ManualExportAvailable() bool { return p != nil && len(p.manualTargets()) > 0 }
 
 // Init function for the OTEL plugin
 func Init(ctx context.Context, config *Config, _logger schemas.Logger, pricingManager *modelcatalog.ModelCatalog, bifrostVersion string) (*OtelPlugin, error) {
@@ -554,6 +612,8 @@ func Init(ctx context.Context, config *Config, _logger schemas.Logger, pricingMa
 		instanceAttrs:             instanceAttrs,
 		pluginSpanFilter:          config.PluginSpanFilter,
 		selector:                  selector,
+		manualQueue:               make(chan manualExportJob, 100),
+		statusQueue:               make(chan logstore.ObservationExport, 4096),
 	}
 	p.ctx, p.cancel = context.WithCancel(ctx)
 
@@ -571,6 +631,8 @@ func Init(ctx context.Context, config *Config, _logger schemas.Logger, pricingMa
 		}
 		p.targets = append(p.targets, target)
 	}
+	p.startManualExportWorkers(2)
+	p.startExportStatusWriter()
 
 	return p, nil
 }
@@ -693,6 +755,7 @@ func (p *OtelPlugin) buildTarget(index int, profile *Profile) (*otelTarget, erro
 		}
 		logger.Info("OTEL metrics push enabled for profile %d, pushing to %s every %d seconds", index, profile.MetricsEndpoint.GetValue(), pushInterval)
 	}
+	target.id = observationTargetID(index, serviceName, target.url)
 
 	return target, nil
 }
@@ -870,6 +933,145 @@ func (p *OtelPlugin) RecordHTTPMetrics(ctx context.Context, path, method, status
 	}
 }
 
+func traceLogID(trace *schemas.Trace) string {
+	if trace == nil {
+		return ""
+	}
+	return firstNonEmpty(trace.RequestID, trace.InternalID, trace.TraceID)
+}
+
+func (p *OtelPlugin) persistExportState(ctx context.Context, trace *schemas.Trace, target *otelTarget, status, source, reason, rule string) {
+	if p == nil || target == nil || target.mediaUploader == nil {
+		return
+	}
+	store, _ := p.observationExportStores()
+	if store == nil {
+		return
+	}
+	logID := traceLogID(trace)
+	if logID == "" {
+		return
+	}
+	now := time.Now().UTC()
+	state := logstore.ObservationExport{
+		LogID: logID, TargetID: target.id, Status: status, Source: source,
+		Reason: reason, SelectionRule: rule, ExternalTraceID: trace.TraceID, Attempts: 1, UpdatedAt: now,
+	}
+	if status == logstore.ObservationExportStatusExported {
+		state.ExportedAt = &now
+	}
+	if p.statusQueue == nil {
+		_ = store.UpsertObservationExport(ctx, &state)
+		return
+	}
+	select {
+	case p.statusQueue <- state:
+	default:
+		p.statusFallbackWrites.Add(1)
+		writeBase := context.Background()
+		if ctx != nil {
+			writeBase = context.WithoutCancel(ctx)
+		}
+		writeCtx, cancel := context.WithTimeout(writeBase, 2*time.Second)
+		defer cancel()
+		if err := store.UpsertObservationExport(writeCtx, &state); err != nil && logger != nil {
+			logger.Warn("status queue full and synchronous observability state write failed log_id=%s target_id=%s: %v", state.LogID, state.TargetID, err)
+		}
+	}
+}
+
+func (p *OtelPlugin) startExportStatusWriter() {
+	if p == nil || p.statusQueue == nil || p.ctx == nil {
+		return
+	}
+	p.statusWG.Add(1)
+	go func() {
+		defer p.statusWG.Done()
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+		pending := make(map[string]logstore.ObservationExport, 100)
+		retryOnTicker := false
+		add := func(state logstore.ObservationExport) {
+			pending[state.LogID+"\x00"+state.TargetID] = state
+			for {
+				maximum := p.statusMaxPending.Load()
+				if int64(len(pending)) <= maximum || p.statusMaxPending.CompareAndSwap(maximum, int64(len(pending))) {
+					break
+				}
+			}
+		}
+		flush := func(ctx context.Context) bool {
+			if len(pending) == 0 {
+				return true
+			}
+			store, _ := p.observationExportStores()
+			if store == nil {
+				return false
+			}
+			states := make([]logstore.ObservationExport, 0, len(pending))
+			for _, state := range pending {
+				states = append(states, state)
+			}
+			if err := store.BatchUpsertObservationExports(ctx, states); err != nil {
+				if logger != nil {
+					logger.Warn("failed to persist observability export state batch: %v", err)
+				}
+				return false
+			}
+			clear(pending)
+			return true
+		}
+		flushTimed := func() bool {
+			flushCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			return flush(flushCtx)
+		}
+		for {
+			input := p.statusQueue
+			maxPending := cap(p.statusQueue)
+			if retryOnTicker && maxPending > 0 && len(pending) >= maxPending {
+				// Stop draining while persistence is down. The bounded channel then
+				// applies backpressure and producers use their synchronous fallback.
+				input = nil
+			}
+			select {
+			case state := <-input:
+				add(state)
+				if len(pending) >= 100 && !retryOnTicker {
+					retryOnTicker = !flushTimed()
+				}
+			case <-ticker.C:
+				retryOnTicker = !flushTimed()
+			case <-p.ctx.Done():
+				for {
+					select {
+					case state := <-p.statusQueue:
+						add(state)
+					default:
+						shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+						defer cancel()
+						for attempt := 0; attempt < 3 && len(pending) > 0; attempt++ {
+							if flush(shutdownCtx) {
+								break
+							}
+							if attempt < 2 {
+								select {
+								case <-time.After(50 * time.Millisecond):
+								case <-shutdownCtx.Done():
+								}
+							}
+						}
+						if len(pending) > 0 && logger != nil {
+							logger.Error("failed to persist %d observability export states during shutdown", len(pending))
+						}
+						return
+					}
+				}
+			}
+		}
+	}()
+}
+
 // Inject receives a completed trace and sends it to the OTEL collector.
 // Implements schemas.ObservabilityPlugin interface.
 // This method is called asynchronously by TracingMiddleware after the response
@@ -881,6 +1083,11 @@ func (p *OtelPlugin) Inject(ctx context.Context, trace *schemas.Trace) error {
 	decision := p.selector.decide(trace)
 	annotateSelectionDecision(trace, decision, p.selector != nil && p.selector.dryRun)
 	exportTrace := p.selector == nil || p.selector.dryRun || decision.selected
+	if !exportTrace {
+		for _, target := range p.targets {
+			p.persistExportState(ctx, trace, target, logstore.ObservationExportStatusNotExported, logstore.ObservationExportSourceAutomatic, decision.reason, decision.ruleID)
+		}
+	}
 	// Emit the trace to every configured profile's collector, and record metrics against
 	// each profile's exporter. Conversion is per-target because the resource service name
 	// differs per profile; everything else (filter, instance attrs) is shared.
@@ -903,6 +1110,7 @@ func (p *OtelPlugin) Inject(ctx context.Context, trace *schemas.Trace) error {
 			}
 			mediaRefs, mediaOK := uploadTraceMedia(ctx, t, trace)
 			if !mediaOK && p.selector != nil && decision.selected && isImageRequestType(selectionFactsFromTrace(trace).requestType) {
+				p.persistExportState(ctx, trace, t, logstore.ObservationExportStatusFailed, logstore.ObservationExportSourceAutomatic, "media_upload_failed", decision.ruleID)
 				return
 			}
 			resourceSpan := p.convertTraceToResourceSpanWithMedia(t.serviceName, trace, t.requestHeaders, t.disableContentLogging, t.groupTracesBySession, t.disableRootSpanContent, mediaRefs)
@@ -915,9 +1123,11 @@ func (p *OtelPlugin) Inject(ctx context.Context, trace *schemas.Trace) error {
 				if n := t.failedExports.Load(); n == 1 || n%exportLogThrottle == 0 {
 					logger.Error("failed to emit trace %s to %s: %v (%d failed exports so far)", trace.TraceID, t.url, err, n)
 				}
+				p.persistExportState(ctx, trace, t, logstore.ObservationExportStatusFailed, logstore.ObservationExportSourceAutomatic, "trace_emit_failed", decision.ruleID)
 				return
 			}
 			t.resetBreaker()
+			p.persistExportState(ctx, trace, t, logstore.ObservationExportStatusExported, logstore.ObservationExportSourceAutomatic, "selected", decision.ruleID)
 		}(t)
 	}
 	wg.Wait()
@@ -1351,6 +1561,8 @@ func (p *OtelPlugin) Cleanup() error {
 	if p.cancel != nil {
 		p.cancel()
 	}
+	p.manualWG.Wait()
+	p.statusWG.Wait()
 	var firstErr error
 	for _, t := range p.targets {
 		// Shutdown metrics exporter first
@@ -1369,6 +1581,11 @@ func (p *OtelPlugin) Cleanup() error {
 		}
 	}
 	return firstErr
+}
+
+func observationTargetID(index int, serviceName, endpoint string) string {
+	digest := sha256.Sum256([]byte(fmt.Sprintf("%d\x00%s\x00%s", index, serviceName, endpoint)))
+	return "otel-" + hex.EncodeToString(digest[:8])
 }
 
 // GetMetricsExporter returns the first profile's metrics exporter for external use

@@ -323,10 +323,8 @@ func uploadTraceMedia(ctx context.Context, target *otelTarget, trace *schemas.Tr
 	if target.mediaBreakerOpen() {
 		return nil, false
 	}
+	target.ensureMediaRuntime()
 	mediaSem := target.mediaSem
-	if mediaSem == nil {
-		mediaSem = make(chan struct{}, 4)
-	}
 	refs := make(map[string]string, len(attachments))
 	mediaCtx, cancel := context.WithTimeout(ctx, target.exportTimeout)
 	defer cancel()
