@@ -87,6 +87,27 @@ scripts/build-fork-plugin.sh "$RELEASE_VERSION"
 5. Moon `.so` 从容器内的新文件路径加载成功，无 package-version/build-ID 错误。
 6. Chat、Responses、Image generation/edit/variation、fallback、streaming、治理与日志路径通过。
 
+### 生产配置兼容审计
+
+不要将生产密钥提交到仓库。先把生产 `config.json` 和部署/调用清单复制到受控临时目录，
+再从仓库根目录运行只读审计：
+
+```sh
+cd transports
+GOWORK=off go run ./cmd/moon-v2-audit \
+  -config /secure/moon/config.json \
+  -scan /secure/moon/deployment-manifests \
+  -scan /secure/moon/caller-configs
+```
+
+命令会校验 v2 `config.schema.json`，检查动态插件和 SQLite 的容器路径、私网插件下载
+allowlist、加密/初始化配置，并报告旧 `/api/governance/routing-rules`、旧复杂度路由路径和
+`x-bf-prom-*` 调用。输出只包含 JSON 字段位置或文件名/行号，不打印配置值和源代码行。
+`ERROR` 会返回非零退出码；`WARN` 必须在发布清单中逐项确认。
+审计默认不发起 DNS 请求：远程插件使用主机名且未按精确 hostname allowlist 时会产生
+`plugin-host-dns-unverified`。这不是放行结论；仍必须从候选容器执行实际下载/加载验证，
+因为服务端会在每次拨号时重新解析 DNS，并拒绝任何未获 allowlist 许可的非公网地址。
+
 ## Canary 与回滚
 
 v2 canary 必须使用独立端口和从生产数据复制出的独立目录。不要让 v1.6 和 v2 实例同时
