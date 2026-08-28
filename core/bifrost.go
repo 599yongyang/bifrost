@@ -8473,6 +8473,7 @@ func (p *PluginPipeline) RunMCPPreHooks(ctx *schemas.BifrostContext, req *schema
 		}
 		p.logger.Debug("running MCP pre-hook for plugin %s", pluginName)
 		// Start span for this plugin's PreMCPHook
+		prevSpanID := ctx.Value(schemas.BifrostContextKeySpanID)
 		spanID, handle := p.tracer.StartSpanID(ctx, pluginSpanNamesFor(pluginName).mcpPrehook, schemas.SpanKindPlugin)
 		// Mirror the new span ID into ctx for nested operations (no valueCtx alloc).
 		if spanID != "" {
@@ -8480,8 +8481,14 @@ func (p *PluginPipeline) RunMCPPreHooks(ctx *schemas.BifrostContext, req *schema
 		}
 
 		pluginCtx := ctx.WithPluginScope(&pluginName)
-		req, shortCircuit, err = plugin.PreMCPHook(pluginCtx, req)
-		pluginCtx.ReleasePluginScope()
+		err = runPluginCall(p.logger, pluginName, "PreMCPHook", func() (hookErr error) {
+			defer pluginCtx.ReleasePluginScope()
+			req, shortCircuit, hookErr = plugin.PreMCPHook(pluginCtx, req)
+			return hookErr
+		})
+		if isPluginPanicError(err) {
+			shortCircuit = &schemas.MCPPluginShortCircuit{Error: pluginPanicBifrostError()}
+		}
 
 		// End span with appropriate status
 		if err != nil {
@@ -8495,8 +8502,13 @@ func (p *PluginPipeline) RunMCPPreHooks(ctx *schemas.BifrostContext, req *schema
 		} else {
 			p.tracer.EndSpan(handle, schemas.SpanStatusOk, "")
 		}
+		ctx.SetValue(schemas.BifrostContextKeySpanID, prevSpanID)
 
 		p.executedPreHooks = i + 1
+		if isPluginPanicError(err) {
+			p.executedPreHooks = i
+			return req, shortCircuit, p.executedPreHooks
+		}
 		if shortCircuit != nil {
 			return req, shortCircuit, p.executedPreHooks // short-circuit: only plugins up to and including i ran
 		}
@@ -8519,6 +8531,7 @@ func (p *PluginPipeline) RunMCPPostHooks(ctx *schemas.BifrostContext, mcpResp *s
 	if runFrom > len(p.mcpPlugins) {
 		runFrom = len(p.mcpPlugins)
 	}
+	nonRecoverablePluginPanic := isPluginPanicBifrostError(bifrostErr)
 	ctx.BlockRestrictedWrites()
 	defer ctx.UnblockRestrictedWrites()
 	var err error
@@ -8531,6 +8544,7 @@ func (p *PluginPipeline) RunMCPPostHooks(ctx *schemas.BifrostContext, mcpResp *s
 		}
 		p.logger.Debug("running MCP post-hook for plugin %s", pluginName)
 		// Create span per plugin
+		prevSpanID := ctx.Value(schemas.BifrostContextKeySpanID)
 		spanID, handle := p.tracer.StartSpanID(ctx, pluginSpanNamesFor(pluginName).mcpPosthook, schemas.SpanKindPlugin)
 		// Mirror the new span ID into ctx for nested operations (no valueCtx alloc).
 		if spanID != "" {
@@ -8538,8 +8552,11 @@ func (p *PluginPipeline) RunMCPPostHooks(ctx *schemas.BifrostContext, mcpResp *s
 		}
 
 		pluginCtx := ctx.WithPluginScope(&pluginName)
-		mcpResp, bifrostErr, err = plugin.PostMCPHook(pluginCtx, mcpResp, bifrostErr)
-		pluginCtx.ReleasePluginScope()
+		err = runPluginCall(p.logger, pluginName, "PostMCPHook", func() (hookErr error) {
+			defer pluginCtx.ReleasePluginScope()
+			mcpResp, bifrostErr, hookErr = plugin.PostMCPHook(pluginCtx, mcpResp, bifrostErr)
+			return hookErr
+		})
 
 		// End span with appropriate status
 		if err != nil {
@@ -8547,11 +8564,20 @@ func (p *PluginPipeline) RunMCPPostHooks(ctx *schemas.BifrostContext, mcpResp *s
 			p.tracer.EndSpan(handle, schemas.SpanStatusError, err.Error())
 			p.postHookErrors = append(p.postHookErrors, err)
 			p.logger.Warn("error in PostMCPHook for plugin %s: %v", pluginName, err)
+			if isPluginPanicError(err) {
+				mcpResp, bifrostErr = nil, pluginPanicBifrostError()
+				ctx.SetValue(schemas.BifrostContextKeySpanID, prevSpanID)
+				break
+			}
 		} else {
 			p.tracer.EndSpan(handle, schemas.SpanStatusOk, "")
 		}
+		ctx.SetValue(schemas.BifrostContextKeySpanID, prevSpanID)
 		// If a plugin recovers from an error (sets bifrostErr to nil and sets mcpResp), allow that
 		// If a plugin invalidates a response (sets mcpResp to nil and sets bifrostErr), allow that
+	}
+	if nonRecoverablePluginPanic {
+		return nil, pluginPanicBifrostError()
 	}
 	// Final logic: if both are set, error takes precedence, unless error is nil
 	if bifrostErr != nil {
@@ -8588,6 +8614,7 @@ func (p *PluginPipeline) RunMCPPreConnectionHooks(ctx *schemas.BifrostContext, r
 			return req, &schemas.MCPConnectionShortCircuit{Error: pluginPanicBifrostError()}, p.executedPreHooks
 		}
 		p.logger.Debug("running MCP connect pre-hook for plugin %s", pluginName)
+		prevSpanID := ctx.Value(schemas.BifrostContextKeySpanID)
 		spanID, handle := p.tracer.StartSpanID(ctx, pluginSpanNamesFor(pluginName).mcpConnectPrehook, schemas.SpanKindPlugin)
 		if spanID != "" {
 			ctx.SetValue(schemas.BifrostContextKeySpanID, spanID)
@@ -8598,16 +8625,22 @@ func (p *PluginPipeline) RunMCPPreConnectionHooks(ctx *schemas.BifrostContext, r
 		err = nil
 
 		if cp, ok := plugin.(schemas.MCPConnectionPlugin); ok {
-			req, shortCircuit, err = cp.PreMCPConnectionHook(pluginCtx, req)
+			err = runPluginCall(p.logger, pluginName, "PreMCPConnectionHook", func() (hookErr error) {
+				defer pluginCtx.ReleasePluginScope()
+				req, shortCircuit, hookErr = cp.PreMCPConnectionHook(pluginCtx, req)
+				return hookErr
+			})
+			if isPluginPanicError(err) {
+				shortCircuit = &schemas.MCPConnectionShortCircuit{Error: pluginPanicBifrostError()}
+			}
 		} else {
 			// Plugin only implements MCPPlugin — Connect is invisible to it.
 			pluginCtx.ReleasePluginScope()
 			p.tracer.EndSpan(handle, schemas.SpanStatusOk, "skipped (not MCPConnectionPlugin)")
+			ctx.SetValue(schemas.BifrostContextKeySpanID, prevSpanID)
 			p.executedPreHooks = i + 1
 			continue
 		}
-
-		pluginCtx.ReleasePluginScope()
 
 		if err != nil {
 			p.tracer.SetAttribute(handle, "error", err.Error())
@@ -8620,8 +8653,13 @@ func (p *PluginPipeline) RunMCPPreConnectionHooks(ctx *schemas.BifrostContext, r
 		} else {
 			p.tracer.EndSpan(handle, schemas.SpanStatusOk, "")
 		}
+		ctx.SetValue(schemas.BifrostContextKeySpanID, prevSpanID)
 
 		p.executedPreHooks = i + 1
+		if isPluginPanicError(err) {
+			p.executedPreHooks = i
+			return req, shortCircuit, p.executedPreHooks
+		}
 		if shortCircuit != nil {
 			return req, shortCircuit, p.executedPreHooks
 		}
@@ -8642,6 +8680,7 @@ func (p *PluginPipeline) RunMCPPostConnectionHooks(ctx *schemas.BifrostContext, 
 	if runFrom > len(p.mcpPlugins) {
 		runFrom = len(p.mcpPlugins)
 	}
+	nonRecoverablePluginPanic := isPluginPanicBifrostError(bifrostErr)
 	ctx.BlockRestrictedWrites()
 	defer ctx.UnblockRestrictedWrites()
 	var err error
@@ -8653,6 +8692,7 @@ func (p *PluginPipeline) RunMCPPostConnectionHooks(ctx *schemas.BifrostContext, 
 			return nil, pluginPanicBifrostError()
 		}
 		p.logger.Debug("running MCP connect post-hook for plugin %s", pluginName)
+		prevSpanID := ctx.Value(schemas.BifrostContextKeySpanID)
 		spanID, handle := p.tracer.StartSpanID(ctx, pluginSpanNamesFor(pluginName).mcpConnectPosthook, schemas.SpanKindPlugin)
 		if spanID != "" {
 			ctx.SetValue(schemas.BifrostContextKeySpanID, spanID)
@@ -8665,19 +8705,32 @@ func (p *PluginPipeline) RunMCPPostConnectionHooks(ctx *schemas.BifrostContext, 
 		if !ok {
 			pluginCtx.ReleasePluginScope()
 			p.tracer.EndSpan(handle, schemas.SpanStatusOk, "skipped (not MCPConnectionPlugin)")
+			ctx.SetValue(schemas.BifrostContextKeySpanID, prevSpanID)
 			continue
 		}
-		resp, bifrostErr, err = cp.PostMCPConnectionHook(pluginCtx, resp, bifrostErr)
-		pluginCtx.ReleasePluginScope()
+		err = runPluginCall(p.logger, pluginName, "PostMCPConnectionHook", func() (hookErr error) {
+			defer pluginCtx.ReleasePluginScope()
+			resp, bifrostErr, hookErr = cp.PostMCPConnectionHook(pluginCtx, resp, bifrostErr)
+			return hookErr
+		})
 
 		if err != nil {
 			p.tracer.SetAttribute(handle, "error", err.Error())
 			p.tracer.EndSpan(handle, schemas.SpanStatusError, err.Error())
 			p.postHookErrors = append(p.postHookErrors, err)
 			p.logger.Warn("error in PostMCPConnectionHook for plugin %s: %v", pluginName, err)
+			if isPluginPanicError(err) {
+				resp, bifrostErr = nil, pluginPanicBifrostError()
+				ctx.SetValue(schemas.BifrostContextKeySpanID, prevSpanID)
+				break
+			}
 		} else {
 			p.tracer.EndSpan(handle, schemas.SpanStatusOk, "")
 		}
+		ctx.SetValue(schemas.BifrostContextKeySpanID, prevSpanID)
+	}
+	if nonRecoverablePluginPanic {
+		return nil, pluginPanicBifrostError()
 	}
 	if bifrostErr != nil {
 		if resp != nil && bifrostErr.StatusCode == nil && bifrostErr.Error != nil && bifrostErr.Error.Type == nil &&
