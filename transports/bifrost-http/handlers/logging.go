@@ -1651,11 +1651,11 @@ func (h *LoggingHandler) getModelRankings(ctx *fasthttp.RequestCtx) {
 func (h *LoggingHandler) getDimensionRankings(ctx *fasthttp.RequestCtx) {
 	dim := logstore.RankingDimension(string(ctx.QueryArgs().Peek("dimension")))
 	if dim == "" {
-		SendError(ctx, fasthttp.StatusBadRequest, "Missing required query parameter: dimension. Valid values: team, customer, business_unit, user")
+		SendError(ctx, fasthttp.StatusBadRequest, "Missing required query parameter: dimension. Valid values: team, customer, business_unit, user, virtual_key, app, user_agent, routing_rule")
 		return
 	}
 	if !logstore.ValidRankingDimensions[dim] {
-		SendError(ctx, fasthttp.StatusBadRequest, fmt.Sprintf("Invalid dimension: %s. Valid values: team, customer, business_unit, user", dim))
+		SendError(ctx, fasthttp.StatusBadRequest, fmt.Sprintf("Invalid dimension: %s. Valid values: team, customer, business_unit, user, virtual_key, app, user_agent, routing_rule", dim))
 		return
 	}
 
@@ -1670,8 +1670,38 @@ func (h *LoggingHandler) getDimensionRankings(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusInternalServerError, fmt.Sprintf("Dimension rankings calculation failed: %v", err))
 		return
 	}
+	if dim == logstore.RankingDimensionRoutingRule {
+		h.redactRoutingRuleRankings(ctx, result)
+	}
 
 	SendJSON(ctx, result)
+}
+
+func (h *LoggingHandler) redactRoutingRuleRankings(ctx context.Context, result *logstore.DimensionRankingResult) {
+	if result == nil || len(result.Rankings) == 0 {
+		return
+	}
+	ids := make([]string, 0, len(result.Rankings))
+	for _, ranking := range result.Rankings {
+		if ranking.ID != "" {
+			ids = append(ids, ranking.ID)
+		}
+	}
+	redactedByID := make(map[string]tables.TableRoutingRule, len(ids))
+	if h.redactedKeysManager != nil {
+		for _, rule := range h.redactedKeysManager.GetAllRedactedRoutingRules(ctx, ids) {
+			redactedByID[rule.ID] = rule
+		}
+	}
+	for i := range result.Rankings {
+		if rule, ok := redactedByID[result.Rankings[i].ID]; ok {
+			result.Rankings[i].Name = rule.Name
+			continue
+		}
+		// Never fall back to the historical name from the logs table: a missing
+		// redacted row can mean the caller cannot see the rule, not only deletion.
+		result.Rankings[i].Name = ""
+	}
 }
 
 // dashboardRankingDimensions is the fixed set of dimensions returned in the
@@ -1683,6 +1713,7 @@ var dashboardRankingDimensions = []logstore.RankingDimension{
 	logstore.RankingDimensionVirtualKey,
 	logstore.RankingDimensionCustomer,
 	logstore.RankingDimensionBusinessUnit,
+	logstore.RankingDimensionRoutingRule,
 }
 
 const dashboardMCPTopToolsLimit = 10
@@ -1880,6 +1911,7 @@ func (h *LoggingHandler) getDashboard(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusInternalServerError, fmt.Sprintf("Dashboard data calculation failed: %v", err))
 		return
 	}
+	h.redactRoutingRuleRankings(ctx, result.DimensionRankings[string(logstore.RankingDimensionRoutingRule)])
 
 	SendJSON(ctx, result)
 }

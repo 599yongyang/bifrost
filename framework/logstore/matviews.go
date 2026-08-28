@@ -2522,10 +2522,12 @@ func (s *RDBLogStore) getDimensionRankingsFromMatView(ctx context.Context, filte
 	}
 
 	type row struct {
-		ID        string  `gorm:"column:id"`
-		Total     int64   `gorm:"column:total"`
-		TotalTkns int64   `gorm:"column:total_tkns"`
-		TotalCost float64 `gorm:"column:total_cost"`
+		ID           string  `gorm:"column:id"`
+		Total        int64   `gorm:"column:total"`
+		SuccessCount int64   `gorm:"column:success_count"`
+		ErrorCount   int64   `gorm:"column:error_count"`
+		TotalTkns    int64   `gorm:"column:total_tkns"`
+		TotalCost    float64 `gorm:"column:total_cost"`
 	}
 
 	var results []row
@@ -2539,6 +2541,8 @@ func (s *RDBLogStore) getDimensionRankingsFromMatView(ctx context.Context, filte
 	q = q.Select(fmt.Sprintf(`
 		%s AS id,
 		SUM(count) AS total,
+		SUM(success_count) AS success_count,
+		SUM(error_count) AS error_count,
 		SUM(total_tokens) AS total_tkns,
 		SUM(total_cost) AS total_cost
 	`, idCol)).Group(idCol).
@@ -2615,6 +2619,8 @@ func (s *RDBLogStore) getDimensionRankingsFromMatView(ctx context.Context, filte
 			ID:            r.ID,
 			Name:          nameMap[r.ID],
 			TotalRequests: r.Total,
+			SuccessCount:  r.SuccessCount,
+			ErrorCount:    r.ErrorCount,
 			TotalTokens:   r.TotalTkns,
 			TotalCost:     r.TotalCost,
 		}
