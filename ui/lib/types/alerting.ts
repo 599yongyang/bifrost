@@ -257,3 +257,19 @@ export interface DailyReportRunDetail {
 	current_internal_status: DailyReportAudienceStatus;
 	current_external_status: DailyReportAudienceStatus;
 }
+
+export type DailyReportJobState = "idle" | "pending" | "running" | "completed" | "failed";
+
+export interface DailyReportJobStatus {
+	id?: string;
+	status: DailyReportJobState;
+	stage?: string;
+	processed?: number;
+	percent?: number;
+	run_id?: string;
+	deliver?: boolean;
+	message?: string;
+	last_error?: string;
+	started_at?: string;
+	updated_at?: string;
+}

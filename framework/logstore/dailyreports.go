@@ -21,6 +21,7 @@ const (
 )
 
 type dailyAttemptProjection struct {
+	ID              string    `gorm:"column:id"`
 	Timestamp       time.Time `gorm:"column:timestamp"`
 	Provider        string    `gorm:"column:provider"`
 	Model           string    `gorm:"column:model"`
@@ -28,13 +29,7 @@ type dailyAttemptProjection struct {
 	Latency         *float64  `gorm:"column:latency"`
 	NumberOfRetries int       `gorm:"column:number_of_retries"`
 	ErrorDetails    string    `gorm:"column:error_details"`
-}
-
-type dailyRootProjection struct {
-	ID        string    `gorm:"column:id"`
-	Timestamp time.Time `gorm:"column:timestamp"`
-	Status    string    `gorm:"column:status"`
-	Latency   *float64  `gorm:"column:latency"`
+	FallbackIndex   int       `gorm:"column:fallback_index"`
 }
 
 type dailyChildProjection struct {
@@ -129,12 +124,11 @@ func (s *RDBLogStore) BuildDailyReportSnapshot(ctx context.Context, query DailyR
 	current := newDailyWindowAggregate()
 	previous := newDailyWindowAggregate()
 
-	if err := s.collectDailyAttemptAggregates(ctx, prevStart, currentEnd, currentStart, query.SlowThresholdMs, &current, &previous); err != nil {
+	reportDailyMetricsProgress(query.Progress, "scanning_logs", 0)
+	if err := s.collectDailyAttemptAggregates(ctx, prevStart, currentEnd, currentStart, query.SlowThresholdMs, &current, &previous, query.Progress); err != nil {
 		return nil, err
 	}
-	if err := s.collectDailyRootAggregates(ctx, prevStart, currentEnd, currentStart, query.SlowThresholdMs, &current, &previous); err != nil {
-		return nil, err
-	}
+	reportDailyMetricsProgress(query.Progress, "building_report", 0)
 
 	snapshot := &DailyReportSnapshot{
 		BusinessDate:    query.BusinessDate,
@@ -172,9 +166,11 @@ func (s *RDBLogStore) collectDailyAttemptAggregates(
 	slowThresholdMs int64,
 	current *dailyWindowAggregate,
 	previous *dailyWindowAggregate,
+	progress func(DailyReportMetricsProgress),
 ) error {
+	var processed int64
 	base := s.ScopedDB(ctx).Model(&Log{}).
-		Select("timestamp, provider, model, status, latency, number_of_retries, error_details").
+		Select("id, timestamp, provider, model, status, latency, number_of_retries, error_details, fallback_index").
 		Where("timestamp >= ? AND timestamp < ?", start, end).
 		Where("status IN ?", []string{"success", "error"})
 	return base.FindInBatches(&[]dailyAttemptProjection{}, dailyReportChunkSize, func(tx *gorm.DB, _ int) error {
@@ -182,42 +178,17 @@ func (s *RDBLogStore) collectDailyAttemptAggregates(
 		if !ok {
 			return fmt.Errorf("unexpected batch destination type %T", tx.Statement.Dest)
 		}
+		currentRoots := make(map[string]*rootState, len(*rows))
+		previousRoots := make(map[string]*rootState, len(*rows))
 		for _, row := range *rows {
 			target := current
 			if row.Timestamp.Before(currentStart) {
 				target = previous
 			}
 			addDailyAttempt(target, row, slowThresholdMs)
-		}
-		return yieldDailyReportBatch(ctx)
-	}).Error
-}
-
-func (s *RDBLogStore) collectDailyRootAggregates(
-	ctx context.Context,
-	start time.Time,
-	end time.Time,
-	currentStart time.Time,
-	slowThresholdMs int64,
-	current *dailyWindowAggregate,
-	previous *dailyWindowAggregate,
-) error {
-	base := s.ScopedDB(ctx).Model(&Log{}).
-		Select("id, timestamp, status, latency").
-		Where("timestamp >= ? AND timestamp < ?", start, end).
-		Where("fallback_index = ?", 0).
-		Where("status IN ?", []string{"success", "error"})
-	return base.FindInBatches(&[]dailyRootProjection{}, dailyReportChunkSize, func(tx *gorm.DB, _ int) error {
-		rows, ok := tx.Statement.Dest.(*[]dailyRootProjection)
-		if !ok {
-			return fmt.Errorf("unexpected root batch destination type %T", tx.Statement.Dest)
-		}
-		// Resolve fallback children while this bounded batch is in memory. Keeping
-		// every root ID for a full day would make peak memory scale linearly with
-		// traffic volume and could affect the gateway process.
-		currentRoots := make(map[string]*rootState, len(*rows))
-		previousRoots := make(map[string]*rootState, len(*rows))
-		for _, row := range *rows {
+			if row.FallbackIndex != 0 {
+				continue
+			}
 			state := &rootState{success: row.Status == "success"}
 			if row.Latency != nil && *row.Latency >= 0 {
 				state.latency = *row.Latency
@@ -229,12 +200,12 @@ func (s *RDBLogStore) collectDailyRootAggregates(
 				if state.success {
 					previous.roots.successes++
 				}
-				continue
-			}
-			currentRoots[row.ID] = state
-			current.roots.total++
-			if state.success {
-				current.roots.successes++
+			} else {
+				currentRoots[row.ID] = state
+				current.roots.total++
+				if state.success {
+					current.roots.successes++
+				}
 			}
 		}
 		if err := s.applyFallbackSuccesses(ctx, currentRoots, slowThresholdMs, &current.roots); err != nil {
@@ -243,8 +214,16 @@ func (s *RDBLogStore) collectDailyRootAggregates(
 		if err := s.applyFallbackSuccesses(ctx, previousRoots, slowThresholdMs, &previous.roots); err != nil {
 			return err
 		}
+		processed += int64(len(*rows))
+		reportDailyMetricsProgress(progress, "scanning_logs", processed)
 		return yieldDailyReportBatch(ctx)
 	}).Error
+}
+
+func reportDailyMetricsProgress(progress func(DailyReportMetricsProgress), stage string, processed int64) {
+	if progress != nil {
+		progress(DailyReportMetricsProgress{Stage: stage, Processed: processed})
+	}
 }
 
 func yieldDailyReportBatch(ctx context.Context) error {

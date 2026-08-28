@@ -57,6 +57,7 @@ func TestBuildDailyReportSnapshotTracksFallbacksAndExcludesCancelled(t *testing.
 	require.NoError(t, store.Create(ctx, mk("direct-ok", currentStart.Add(3*time.Hour), "openai", "gpt-4o", "success", 0, nil, 35000, 0, "")))
 	require.NoError(t, store.Create(ctx, mk("cancelled", currentStart.Add(4*time.Hour), "openai", "gpt-4o", "cancelled", 0, nil, 1000, 0, err429)))
 
+	var progressStages []string
 	snapshot, err := store.BuildDailyReportSnapshot(ctx, DailyReportMetricsQuery{
 		BusinessDate:    "2026-08-26",
 		Timezone:        "UTC",
@@ -64,6 +65,9 @@ func TestBuildDailyReportSnapshotTracksFallbacksAndExcludesCancelled(t *testing.
 		WindowEnd:       currentEnd,
 		SlowThresholdMs: 30000,
 		GeneratedAt:     currentEnd,
+		Progress: func(progress DailyReportMetricsProgress) {
+			progressStages = append(progressStages, progress.Stage)
+		},
 	})
 	require.NoError(t, err)
 	require.Equal(t, int64(2), snapshot.Overview.UserRequests)
@@ -79,6 +83,8 @@ func TestBuildDailyReportSnapshotTracksFallbacksAndExcludesCancelled(t *testing.
 	require.Equal(t, int64(2), snapshot.Providers[0].Attempts)
 	require.Equal(t, "provider_5xx", snapshot.Overview.ErrorBuckets[0].Key)
 	require.InDelta(t, 100.0, snapshot.Trends.FallbackRecoveries.DeltaPercentage, 0.01)
+	require.Contains(t, progressStages, "scanning_logs")
+	require.Contains(t, progressStages, "building_report")
 }
 
 func TestPreviousDailyReportWindowStartUsesLocalCalendarDay(t *testing.T) {

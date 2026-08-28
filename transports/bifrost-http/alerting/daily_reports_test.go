@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bytedance/sonic"
 	"github.com/maximhq/bifrost/core/schemas"
 	"github.com/maximhq/bifrost/framework/configstore/tables"
 	"github.com/maximhq/bifrost/framework/logstore"
@@ -101,8 +102,9 @@ func TestDailyReportPreviewAndGenerateAreIdempotent(t *testing.T) {
 	reusedRun, err := manager.GenerateDailyReportNow(ctx, "2026-08-26")
 	require.NoError(t, err)
 	require.False(t, reusedRun.Created)
-	_, err = manager.PreviewDailyReport(ctx, nil, "2026-08-24")
-	require.ErrorIs(t, err, ErrDailyReportQueryOutsideWindow)
+	manualPreview, err := manager.PreviewDailyReport(ctx, nil, "2026-08-24")
+	require.NoError(t, err)
+	require.Equal(t, "2026-08-24", manualPreview.BusinessDate)
 	manager.now = func() time.Time { return time.Date(2026, 8, 27, 3, 30, 0, 0, time.UTC) }
 
 	originalCompletedAt := firstRun.Run.CompletedAt
@@ -143,6 +145,26 @@ func TestDailyReportPreviewAndGenerateAreIdempotent(t *testing.T) {
 	_, _, err = manager.deliverPreparedDailyReport(ctx, prepared.Run.ID)
 	require.NoError(t, err)
 	require.Len(t, payloads, 3, "send phase should reuse the frozen snapshot")
+
+	jobMetadata, jobID, err := NewDailyReportJobMetadata("2026-08-23", false, store.settings)
+	require.NoError(t, err)
+	require.NotEmpty(t, jobID)
+	store.settings.Timezone = "Asia/Shanghai"
+	var progressUpdates []string
+	finalMetadata, err := manager.RunDailyReportJob(ctx, jobMetadata, func(metadata string) error {
+		progressUpdates = append(progressUpdates, metadata)
+		return nil
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, progressUpdates)
+	var finalJob DailyReportJobMeta
+	require.NoError(t, sonic.Unmarshal([]byte(finalMetadata), &finalJob))
+	require.Equal(t, "completed", finalJob.Stage)
+	require.Equal(t, 100, finalJob.Percent)
+	require.NotEmpty(t, finalJob.RunID)
+	jobRun, err := manager.GetDailyReportRunDetail(ctx, finalJob.RunID)
+	require.NoError(t, err)
+	require.Equal(t, "UTC", jobRun.Run.Timezone, "job must use the settings snapshot captured at enqueue time")
 }
 
 func TestDailyReportRunIDIsDeterministicPerBusinessDay(t *testing.T) {
@@ -150,6 +172,16 @@ func TestDailyReportRunIDIsDeterministicPerBusinessDay(t *testing.T) {
 	require.Equal(t, dailyReportRunID("Asia/Shanghai", "2026-08-26"), dailyReportRunID("Asia/Shanghai", "2026-08-26"))
 	require.NotEqual(t, dailyReportRunID("Asia/Shanghai", "2026-08-26"), dailyReportRunID("UTC", "2026-08-26"))
 	require.NotEqual(t, dailyReportRunID("Asia/Shanghai", "2026-08-26"), dailyReportRunID("Asia/Shanghai", "2026-08-27"))
+	settings := defaultDailyReportSettings()
+	_, previewJobID, err := NewDailyReportJobMetadata("2026-08-26", false, settings)
+	require.NoError(t, err)
+	settings.UpdatedAt = time.Now().UTC()
+	_, samePreviewJobID, err := NewDailyReportJobMetadata("2026-08-26", false, settings)
+	require.NoError(t, err)
+	require.Equal(t, previewJobID, samePreviewJobID, "non-semantic timestamps must not change the job fingerprint")
+	_, deliveryJobID, err := NewDailyReportJobMetadata("2026-08-26", true, settings)
+	require.NoError(t, err)
+	require.NotEqual(t, previewJobID, deliveryJobID)
 }
 
 func TestExternalDailyReportWebhookDoesNotLeakInternalSnapshot(t *testing.T) {

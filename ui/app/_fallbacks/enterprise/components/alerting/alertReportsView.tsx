@@ -4,6 +4,7 @@ import { ComboboxSelect } from "@/components/ui/combobox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -11,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import type {
 	AlertChannel,
+	DailyReportJobStatus,
 	DailyReportPreview,
 	DailyReportRunDetail,
 	DailyReportSettings,
@@ -21,21 +23,31 @@ import {
 	useDeliverDailyReportRunMutation,
 	useGetAlertChannelsQuery,
 	useGetDailyReportHistoryQuery,
+	useGetDailyReportJobStatusQuery,
 	useGetDailyReportRunQuery,
 	useGetDailyReportSettingsQuery,
-	usePreviewDailyReportMutation,
 	useSendDailyReportNowMutation,
+	useStartDailyReportJobMutation,
 	useUpdateDailyReportSettingsMutation,
 } from "@/lib/store";
 import { getSupportedTimezones } from "@/lib/timezones";
 import { cn } from "@/lib/utils";
-import { CalendarDays, Eye, RefreshCw, ScrollText, Send, ShieldCheck, Users } from "lucide-react";
+import { ArrowRight, CalendarDays, CircleAlert, Database, Eye, RefreshCw, ScrollText, Send, ShieldCheck, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import i18n from "@/lib/i18n";
+import { summarizeDailyReportAudience } from "./dailyReportPresentation";
 
 type SlowThresholdUnit = "ms" | "s" | "m";
+
+const dailyReportJobStorageKey = "bifrost.daily-report-job-id";
+
+function persistDailyReportJobID(id: string | null) {
+	if (typeof window === "undefined") return;
+	if (id) window.localStorage.setItem(dailyReportJobStorageKey, id);
+	else window.localStorage.removeItem(dailyReportJobStorageKey);
+}
 
 type FormState = {
 	enabled: boolean;
@@ -117,23 +129,11 @@ function channelOptions(channels: AlertChannel[]) {
 }
 
 function audienceSummary(detail: DailyReportRunDetail, audience: "internal" | "external"): string {
-	const channelIDs = audience === "internal" ? detail.run.internal_channel_ids : detail.run.external_channel_ids;
-	if (channelIDs.length === 0) return t("dailyReportsNoChannels");
-	const latestByChannel = new Map<string, DailyReportRunDetail["deliveries"][number]>();
-	for (const delivery of detail.deliveries) {
-		if (delivery.audience !== audience) continue;
-		const previous = latestByChannel.get(delivery.channel_id);
-		if (!previous || delivery.attempt_no > previous.attempt_no) {
-			latestByChannel.set(delivery.channel_id, delivery);
-		}
-	}
-	const deliveries = [...latestByChannel.values()];
-	if (deliveries.length === 0) return t("dailyReportsPending");
-	const delivered = deliveries.filter((delivery) => delivery.status === "delivered").length;
-	const failed = deliveries.filter((delivery) => delivery.status === "failed").length;
-	if (failed === 0) return t("dailyReportsAudienceDelivered", { delivered, total: channelIDs.length });
-	if (delivered === 0) return t("dailyReportsAudienceFailed", { failed, total: channelIDs.length });
-	return t("dailyReportsAudienceMixed", { delivered, failed, total: channelIDs.length });
+	const summary = summarizeDailyReportAudience(detail, audience);
+	if (summary.kind === "status") return t(`dailyReportsAudienceStatus.${summary.status}`);
+	if (summary.failed === 0) return t("dailyReportsAudienceDelivered", summary);
+	if (summary.delivered === 0) return t("dailyReportsAudienceFailed", summary);
+	return t("dailyReportsAudienceMixed", summary);
 }
 
 function reportSettingsPayload(form: FormState): DailyReportSettingsRequest {
@@ -207,6 +207,56 @@ function MetricCard({ icon: Icon, label, value }: { icon: typeof Users; label: s
 	);
 }
 
+function ScheduleFlow({ generateTime, sendTime }: { generateTime: string; sendTime: string }) {
+	return (
+		<div className="rounded-sm border border-emerald-600/20 bg-emerald-500/[0.04] p-4" data-testid="daily-reports-schedule-flow">
+			<p className="text-foreground mb-3 text-sm font-medium">{t("dailyReportsFlowTitle")}</p>
+			<div className="flex items-center gap-3">
+				<div className="min-w-0 flex-1">
+					<div className="mb-1 flex items-center gap-2">
+						<Database className="h-4 w-4 shrink-0 text-emerald-700" />
+						<span className="font-mono text-base font-semibold tabular-nums">{generateTime || "--:--"}</span>
+					</div>
+					<p className="text-muted-foreground text-xs">{t("dailyReportsFlowGenerate")}</p>
+				</div>
+				<ArrowRight className="text-muted-foreground h-4 w-4 shrink-0" aria-hidden="true" />
+				<div className="min-w-0 flex-1">
+					<div className="mb-1 flex items-center gap-2">
+						<Send className="h-4 w-4 shrink-0 text-emerald-700" />
+						<span className="font-mono text-base font-semibold tabular-nums">{sendTime || "--:--"}</span>
+					</div>
+					<p className="text-muted-foreground text-xs">{t("dailyReportsFlowSend")}</p>
+				</div>
+			</div>
+			<p className="text-muted-foreground mt-3 border-t pt-3 text-xs">{t("dailyReportsTwoStageDescription")}</p>
+		</div>
+	);
+}
+
+function ReportJobProgress({ status }: { status: DailyReportJobStatus }) {
+	const stage = status.stage || "pending";
+	return (
+		<Card className="border-emerald-600/25" data-testid="daily-reports-job-progress">
+			<CardContent className="py-4">
+				<div className="mb-3 flex items-start justify-between gap-4">
+					<div>
+						<p className="font-medium">{t("dailyReportsJobTitle")}</p>
+						<p className="text-muted-foreground mt-1 text-sm">{t(`dailyReportsJobStage.${stage}`)}</p>
+					</div>
+					<Badge variant="outline">{Math.max(0, Math.min(100, status.percent ?? 0))}%</Badge>
+				</div>
+				<Progress value={status.percent ?? 0} className="h-2" />
+				{status.processed ? (
+					<p className="text-muted-foreground mt-2 font-mono text-xs tabular-nums">
+						{t("dailyReportsJobProcessed", { count: status.processed.toLocaleString() })}
+					</p>
+				) : null}
+				<p className="text-muted-foreground mt-2 text-xs">{t("dailyReportsJobPersistentHint")}</p>
+			</CardContent>
+		</Card>
+	);
+}
+
 export default function AlertReportsView() {
 	const canViewRules = useRbac(RbacResource.AlertRules, RbacOperation.View);
 	const canViewChannels = useRbac(RbacResource.AlertChannels, RbacOperation.View);
@@ -223,7 +273,7 @@ export default function AlertReportsView() {
 	const { data: channelsData } = useGetAlertChannelsQuery(undefined, { skip: !hasAccess || !canViewChannels });
 	const { data: runsData, isLoading: runsLoading, refetch: refetchRuns } = useGetDailyReportHistoryQuery(undefined, { skip: !hasAccess });
 	const [updateSettings, updateSettingsState] = useUpdateDailyReportSettingsMutation();
-	const [previewReport, previewState] = usePreviewDailyReportMutation();
+	const [startReportJob, startJobState] = useStartDailyReportJobMutation();
 	const [sendDailyReportNow, sendState] = useSendDailyReportNowMutation();
 	const [deliverRun, deliverState] = useDeliverDailyReportRunMutation();
 
@@ -232,7 +282,19 @@ export default function AlertReportsView() {
 	const [previewTab, setPreviewTab] = useState<"internal" | "external">("internal");
 	const [preview, setPreview] = useState<DailyReportPreview>();
 	const [selectedRunID, setSelectedRunID] = useState<string | null>(null);
+	const [previewRunID, setPreviewRunID] = useState<string | null>(null);
+	const [jobID, setJobID] = useState<string | null>(() =>
+		typeof window === "undefined" ? null : window.localStorage.getItem(dailyReportJobStorageKey),
+	);
+	const { data: jobStatus } = useGetDailyReportJobStatusQuery(
+		{ id: jobID ?? undefined },
+		{
+			skip: !hasAccess || !jobID,
+			pollingInterval: 1500,
+		},
+	);
 	const { data: selectedRunData } = useGetDailyReportRunQuery(selectedRunID ?? "", { skip: !selectedRunID });
+	const { data: previewRunData } = useGetDailyReportRunQuery(previewRunID ?? "", { skip: !previewRunID });
 
 	useEffect(() => {
 		if (settingsData?.settings) {
@@ -241,6 +303,36 @@ export default function AlertReportsView() {
 		}
 	}, [settingsData?.settings]);
 
+	useEffect(() => {
+		if (!jobStatus || !jobID) return;
+		if (jobStatus.status === "completed") {
+			if (jobStatus.run_id) {
+				if (jobStatus.deliver) setSelectedRunID(jobStatus.run_id);
+				else setPreviewRunID(jobStatus.run_id);
+			}
+			persistDailyReportJobID(null);
+			setJobID(null);
+			void refetchRuns();
+		} else if (jobStatus.status === "failed") {
+			toast.error(jobStatus.last_error || t("dailyReportsJobFailed"));
+			persistDailyReportJobID(null);
+			setJobID(null);
+		}
+	}, [jobID, jobStatus, refetchRuns]);
+
+	useEffect(() => {
+		if (!previewRunData || !settingsData?.settings) return;
+		setPreview({
+			business_date: previewRunData.run.business_date,
+			settings: settingsData.settings,
+			snapshot: previewRunData.run.snapshot,
+			internal_content: previewRunData.run.internal_content,
+			external_content: previewRunData.run.external_content,
+		});
+		setBusinessDate(previewRunData.run.business_date);
+		setPreviewRunID(null);
+	}, [previewRunData, settingsData?.settings]);
+
 	if (!hasAccess) {
 		return null;
 	}
@@ -248,6 +340,9 @@ export default function AlertReportsView() {
 	const channels = channelsData?.channels ?? [];
 	const supportedChannelOptions = channelOptions(channels);
 	const selectedRun = selectedRunData ?? runsData?.runs.find((item) => item.run.id === selectedRunID);
+	const selectedHasFrozenContent = Boolean(selectedRun?.run.internal_content || selectedRun?.run.external_content);
+	const selectedFailureDetail = selectedRun?.run.internal_status_detail || selectedRun?.run.external_status_detail;
+	const jobActive = jobStatus?.status === "pending" || jobStatus?.status === "running";
 
 	async function handleSave() {
 		try {
@@ -261,11 +356,11 @@ export default function AlertReportsView() {
 
 	async function handlePreview() {
 		try {
-			const nextPreview = await previewReport({
-				business_date: businessDate,
-				settings: reportSettingsPayload(form),
-			}).unwrap();
-			setPreview(nextPreview);
+			const status = await startReportJob({ business_date: businessDate, deliver: false, settings: reportSettingsPayload(form) }).unwrap();
+			if (status.id) {
+				setJobID(status.id);
+				persistDailyReportJobID(status.id);
+			}
 		} catch (error) {
 			toast.error(getErrorMessage(error));
 		}
@@ -280,13 +375,18 @@ export default function AlertReportsView() {
 				toast.info(t("dailyReportsAlreadyGenerated"));
 				return;
 			}
-			// Generation always uses persisted settings. Save the visible form first
-			// so the just-previewed audiences and channels are exactly what is sent.
-			await updateSettings(reportSettingsPayload(form)).unwrap();
-			const result = await sendDailyReportNow({ business_date: businessDate }).unwrap();
-			toast.success(t("dailyReportsGenerated"));
-			setSelectedRunID(result.run.id);
-			void refetchRuns();
+			if (existing?.current_status === "prepared") {
+				const result = await sendDailyReportNow({ business_date: businessDate }).unwrap();
+				toast.success(t("dailyReportsGenerated"));
+				setSelectedRunID(result.run.id);
+				void refetchRuns();
+				return;
+			}
+			const status = await startReportJob({ business_date: businessDate, deliver: true, settings: reportSettingsPayload(form) }).unwrap();
+			if (status.id) {
+				setJobID(status.id);
+				persistDailyReportJobID(status.id);
+			}
 		} catch (error) {
 			toast.error(getErrorMessage(error));
 		}
@@ -298,6 +398,31 @@ export default function AlertReportsView() {
 			await deliverRun({ id: selectedRunID, audience }).unwrap();
 			toast.success(t("dailyReportsRedeliveryTriggered"));
 			void refetchRuns();
+		} catch (error) {
+			toast.error(getErrorMessage(error));
+		}
+	}
+
+	async function handleSelectedRunAction() {
+		if (!selectedRun) return;
+		try {
+			if (selectedRun.current_status === "prepared") {
+				const result = await sendDailyReportNow({ business_date: selectedRun.run.business_date }).unwrap();
+				toast.success(t("dailyReportsPreparedSent"));
+				setSelectedRunID(result.run.id);
+				void refetchRuns();
+				return;
+			}
+			const status = await startReportJob({
+				business_date: selectedRun.run.business_date,
+				deliver: true,
+				settings: reportSettingsPayload(form),
+			}).unwrap();
+			if (status.id) {
+				setJobID(status.id);
+				persistDailyReportJobID(status.id);
+				setSelectedRunID(null);
+			}
 		} catch (error) {
 			toast.error(getErrorMessage(error));
 		}
@@ -326,8 +451,7 @@ export default function AlertReportsView() {
 					<Button
 						variant="outline"
 						onClick={() => void handlePreview()}
-						disabled={previewState.isLoading}
-						title={t("dailyReportsManualQueryWarning")}
+						disabled={startJobState.isLoading || jobActive}
 						data-testid="daily-reports-preview"
 					>
 						<Eye className="mr-2 h-4 w-4" />
@@ -335,8 +459,7 @@ export default function AlertReportsView() {
 					</Button>
 					<Button
 						onClick={() => void handleGenerate()}
-						disabled={!canManage || sendState.isLoading}
-						title={t("dailyReportsManualQueryWarning")}
+						disabled={!canManage || sendState.isLoading || startJobState.isLoading || jobActive}
 						data-testid="daily-reports-generate"
 					>
 						<Send className="mr-2 h-4 w-4" />
@@ -344,6 +467,7 @@ export default function AlertReportsView() {
 					</Button>
 				</div>
 			</div>
+			{jobActive && jobStatus ? <ReportJobProgress status={jobStatus} /> : null}
 
 			<div className="grid gap-5 xl:grid-cols-[minmax(0,460px)_minmax(0,1fr)]">
 				<Card>
@@ -372,6 +496,7 @@ export default function AlertReportsView() {
 								/>
 							</div>
 						</div>
+						<ScheduleFlow generateTime={form.generateTime} sendTime={form.sendTime} />
 
 						<div className="space-y-2">
 							<Label>{t("dailyReportsTimezone")}</Label>
@@ -410,8 +535,6 @@ export default function AlertReportsView() {
 								/>
 							</div>
 						</div>
-						<p className="text-muted-foreground text-xs">{t("dailyReportsTwoStageDescription")}</p>
-
 						<div className="space-y-2">
 							<Label>{t("dailyReportsSlowThreshold")}</Label>
 							<div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_120px]">
@@ -583,84 +706,109 @@ export default function AlertReportsView() {
 					</DialogHeader>
 					{selectedRun ? (
 						<div className="space-y-4 overflow-y-auto pr-1">
-							<div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-								<MetricCard
-									icon={Users}
-									label={t("dailyReportsRequests")}
-									value={String(selectedRun.run.snapshot.overview.user_requests)}
-								/>
-								<MetricCard
-									icon={ShieldCheck}
-									label={t("dailyReportsUserSuccessRate")}
-									value={`${selectedRun.run.snapshot.overview.user_success_rate.toFixed(2)}%`}
-								/>
-								<MetricCard
-									icon={RefreshCw}
-									label={t("dailyReportsFallbackRecoveries")}
-									value={String(selectedRun.run.snapshot.overview.fallback_recoveries)}
-								/>
-								<MetricCard icon={CalendarDays} label={t("dailyReportsGeneratedAt")} value={formatDateTime(selectedRun.run.generated_at)} />
-							</div>
-
-							<div className="rounded-sm border">
-								<div className="border-b px-4 py-3 font-medium">{t("dailyReportsDeliveryLog")}</div>
-								<div className="overflow-x-auto">
-									<Table>
-										<TableHeader>
-											<TableRow>
-												<TableHead>{t("channel")}</TableHead>
-												<TableHead>{t("dailyReportsAudience")}</TableHead>
-												<TableHead>{t("status")}</TableHead>
-												<TableHead>{t("time")}</TableHead>
-												<TableHead>{t("detail")}</TableHead>
-											</TableRow>
-										</TableHeader>
-										<TableBody>
-											{selectedRun.deliveries.map((delivery) => (
-												<TableRow key={delivery.id}>
-													<TableCell>{delivery.channel_name || delivery.channel_id}</TableCell>
-													<TableCell>{delivery.audience}</TableCell>
-													<TableCell>
-														<span
-															className={cn(
-																"inline-flex rounded-full px-2 py-0.5 text-xs font-medium",
-																delivery.status === "delivered" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700",
-															)}
-														>
-															{delivery.status}
-														</span>
-													</TableCell>
-													<TableCell>{formatDateTime(delivery.created_at)}</TableCell>
-													<TableCell className="max-w-[320px] truncate" title={delivery.status_detail || undefined}>
-														{delivery.status_detail || "-"}
-													</TableCell>
-												</TableRow>
-											))}
-										</TableBody>
-									</Table>
+							{selectedHasFrozenContent ? (
+								<div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+									<MetricCard
+										icon={Users}
+										label={t("dailyReportsRequests")}
+										value={String(selectedRun.run.snapshot.overview.user_requests)}
+									/>
+									<MetricCard
+										icon={ShieldCheck}
+										label={t("dailyReportsUserSuccessRate")}
+										value={`${selectedRun.run.snapshot.overview.user_success_rate.toFixed(2)}%`}
+									/>
+									<MetricCard
+										icon={RefreshCw}
+										label={t("dailyReportsFallbackRecoveries")}
+										value={String(selectedRun.run.snapshot.overview.fallback_recoveries)}
+									/>
+									<MetricCard
+										icon={CalendarDays}
+										label={t("dailyReportsGeneratedAt")}
+										value={formatDateTime(selectedRun.run.generated_at)}
+									/>
 								</div>
-							</div>
+							) : (
+								<div
+									className="border-destructive/30 bg-destructive/[0.04] rounded-sm border p-4"
+									data-testid="daily-reports-generation-error"
+								>
+									<div className="flex items-start gap-3">
+										<CircleAlert className="text-destructive mt-0.5 h-5 w-5 shrink-0" />
+										<div>
+											<p className="font-medium">{t("dailyReportsGenerationFailedTitle")}</p>
+											<p className="text-muted-foreground mt-1 text-sm">
+												{selectedFailureDetail || t("dailyReportsGenerationFailedDescription")}
+											</p>
+										</div>
+									</div>
+								</div>
+							)}
 
-							<Tabs defaultValue="internal">
-								<TabsList>
-									<TabsTrigger value="internal" data-testid="daily-reports-detail-tab-internal">
-										{t("dailyReportsInternalAudience")}
-									</TabsTrigger>
-									<TabsTrigger value="external" data-testid="daily-reports-detail-tab-external">
-										{t("dailyReportsExternalAudience")}
-									</TabsTrigger>
-								</TabsList>
-								<TabsContent value="internal" className="pt-3">
-									<pre className="bg-muted/30 max-h-[320px] overflow-auto rounded-sm border p-4 text-xs leading-6 whitespace-pre-wrap">
-										{selectedRun.run.internal_content}
-									</pre>
-								</TabsContent>
-								<TabsContent value="external" className="pt-3">
-									<pre className="bg-muted/30 max-h-[320px] overflow-auto rounded-sm border p-4 text-xs leading-6 whitespace-pre-wrap">
-										{selectedRun.run.external_content}
-									</pre>
-								</TabsContent>
-							</Tabs>
+							{selectedRun.deliveries.length > 0 ? (
+								<div className="rounded-sm border">
+									<div className="border-b px-4 py-3 font-medium">{t("dailyReportsDeliveryLog")}</div>
+									<div className="overflow-x-auto">
+										<Table>
+											<TableHeader>
+												<TableRow>
+													<TableHead>{t("channel")}</TableHead>
+													<TableHead>{t("dailyReportsAudience")}</TableHead>
+													<TableHead>{t("status")}</TableHead>
+													<TableHead>{t("time")}</TableHead>
+													<TableHead>{t("detail")}</TableHead>
+												</TableRow>
+											</TableHeader>
+											<TableBody>
+												{selectedRun.deliveries.map((delivery) => (
+													<TableRow key={delivery.id}>
+														<TableCell>{delivery.channel_name || delivery.channel_id}</TableCell>
+														<TableCell>{delivery.audience}</TableCell>
+														<TableCell>
+															<span
+																className={cn(
+																	"inline-flex rounded-full px-2 py-0.5 text-xs font-medium",
+																	delivery.status === "delivered" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700",
+																)}
+															>
+																{delivery.status}
+															</span>
+														</TableCell>
+														<TableCell>{formatDateTime(delivery.created_at)}</TableCell>
+														<TableCell className="max-w-[320px] truncate" title={delivery.status_detail || undefined}>
+															{delivery.status_detail || "-"}
+														</TableCell>
+													</TableRow>
+												))}
+											</TableBody>
+										</Table>
+									</div>
+								</div>
+							) : null}
+
+							{selectedHasFrozenContent ? (
+								<Tabs defaultValue="internal">
+									<TabsList>
+										<TabsTrigger value="internal" data-testid="daily-reports-detail-tab-internal">
+											{t("dailyReportsInternalAudience")}
+										</TabsTrigger>
+										<TabsTrigger value="external" data-testid="daily-reports-detail-tab-external">
+											{t("dailyReportsExternalAudience")}
+										</TabsTrigger>
+									</TabsList>
+									<TabsContent value="internal" className="pt-3">
+										<pre className="bg-muted/30 max-h-[320px] overflow-auto rounded-sm border p-4 text-xs leading-6 whitespace-pre-wrap">
+											{selectedRun.run.internal_content}
+										</pre>
+									</TabsContent>
+									<TabsContent value="external" className="pt-3">
+										<pre className="bg-muted/30 max-h-[320px] overflow-auto rounded-sm border p-4 text-xs leading-6 whitespace-pre-wrap">
+											{selectedRun.run.external_content}
+										</pre>
+									</TabsContent>
+								</Tabs>
+							) : null}
 						</div>
 					) : (
 						<div className="text-muted-foreground py-10 text-center text-sm">{t("dailyReportsLoading")}</div>
@@ -668,29 +816,57 @@ export default function AlertReportsView() {
 					<DialogFooter className="gap-2 sm:justify-between">
 						{canManage && selectedRun ? (
 							<div className="flex flex-wrap gap-2">
-								<Button
-									variant="outline"
-									onClick={() => void handleRedeliver(["internal"])}
-									disabled={deliverState.isLoading}
-									data-testid="daily-reports-resend-internal"
-								>
-									{t("dailyReportsResendInternal")}
-								</Button>
-								<Button
-									variant="outline"
-									onClick={() => void handleRedeliver(["external"])}
-									disabled={deliverState.isLoading}
-									data-testid="daily-reports-resend-external"
-								>
-									{t("dailyReportsResendExternal")}
-								</Button>
-								<Button
-									onClick={() => void handleRedeliver(["internal", "external"])}
-									disabled={deliverState.isLoading}
-									data-testid="daily-reports-resend-both"
-								>
-									{t("dailyReportsResendBoth")}
-								</Button>
+								{!selectedHasFrozenContent ? (
+									<Button
+										onClick={() => void handleSelectedRunAction()}
+										disabled={sendState.isLoading || selectedRun.current_status === "running"}
+										data-testid="daily-reports-regenerate"
+									>
+										<RefreshCw className="mr-2 h-4 w-4" />
+										{selectedRun.current_status === "running" ? t("dailyReportsGenerating") : t("dailyReportsRegenerate")}
+									</Button>
+								) : selectedRun.current_status === "prepared" ? (
+									<Button
+										onClick={() => void handleSelectedRunAction()}
+										disabled={sendState.isLoading}
+										data-testid="daily-reports-send-prepared"
+									>
+										<Send className="mr-2 h-4 w-4" />
+										{t("dailyReportsSendPrepared")}
+									</Button>
+								) : (
+									<>
+										{selectedRun.run.internal_content && selectedRun.run.internal_channel_ids.length > 0 ? (
+											<Button
+												variant="outline"
+												onClick={() => void handleRedeliver(["internal"])}
+												disabled={deliverState.isLoading}
+												data-testid="daily-reports-resend-internal"
+											>
+												{t("dailyReportsResendInternal")}
+											</Button>
+										) : null}
+										{selectedRun.run.external_content && selectedRun.run.external_channel_ids.length > 0 ? (
+											<Button
+												variant="outline"
+												onClick={() => void handleRedeliver(["external"])}
+												disabled={deliverState.isLoading}
+												data-testid="daily-reports-resend-external"
+											>
+												{t("dailyReportsResendExternal")}
+											</Button>
+										) : null}
+										{selectedRun.run.internal_channel_ids.length > 0 && selectedRun.run.external_channel_ids.length > 0 ? (
+											<Button
+												onClick={() => void handleRedeliver(["internal", "external"])}
+												disabled={deliverState.isLoading}
+												data-testid="daily-reports-resend-both"
+											>
+												{t("dailyReportsResendBoth")}
+											</Button>
+										) : null}
+									</>
+								)}
 							</div>
 						) : null}
 					</DialogFooter>

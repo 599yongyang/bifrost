@@ -2,12 +2,15 @@ package alerting
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/bytedance/sonic"
 	"github.com/google/uuid"
 	"github.com/maximhq/bifrost/framework/configstore"
 	"github.com/maximhq/bifrost/framework/configstore/tables"
@@ -15,6 +18,7 @@ import (
 )
 
 const (
+	DailyReportJobKind                = "daily_report.generate"
 	defaultDailyReportTimezone        = "Asia/Shanghai"
 	defaultDailyReportGenerateTime    = "03:00"
 	defaultDailyReportSendTime        = "09:00"
@@ -24,7 +28,6 @@ const (
 )
 
 var ErrDailyReportGenerationInProgress = errors.New("this daily report is already being generated")
-var ErrDailyReportQueryOutsideWindow = errors.New("daily report queries are only allowed during the configured off-peak generation window")
 var ErrDailyReportQueryInProgress = errors.New("another daily report query is already running")
 
 type dailyReportReleaseLockStore interface {
@@ -51,6 +54,18 @@ type DailyReportGenerateResult struct {
 	Run        logstore.DailyReportRun        `json:"run"`
 	Deliveries []logstore.DailyReportDelivery `json:"deliveries"`
 	Created    bool                           `json:"created"`
+}
+
+type DailyReportJobMeta struct {
+	BusinessDate string                          `json:"business_date"`
+	Deliver      bool                            `json:"deliver"`
+	Fingerprint  string                          `json:"fingerprint"`
+	Settings     tables.TableDailyReportSettings `json:"settings"`
+	Stage        string                          `json:"stage"`
+	Processed    int64                           `json:"processed"`
+	Percent      int                             `json:"percent"`
+	RunID        string                          `json:"run_id,omitempty"`
+	Message      string                          `json:"message,omitempty"`
 }
 
 func (m *Manager) GetDailyReportSettings(ctx context.Context) (*tables.TableDailyReportSettings, error) {
@@ -114,11 +129,6 @@ func (m *Manager) PreviewDailyReport(ctx context.Context, settings *tables.Table
 			return nil, findErr
 		}
 	}
-	// Temporary preview form values must not be able to move the safety window.
-	// Heavy-query admission is always based on the persisted operator schedule.
-	if !isDailyReportGenerationWindow(persistedSettings, m.currentTime()) {
-		return nil, ErrDailyReportQueryOutsideWindow
-	}
 	snapshot, err := m.buildDailyReportSnapshot(ctx, activeSettings, resolvedDate)
 	if err != nil {
 		return nil, err
@@ -130,6 +140,125 @@ func (m *Manager) PreviewDailyReport(ctx context.Context, settings *tables.Table
 		InternalContent: renderInternalDailyReport(*snapshot),
 		ExternalContent: renderExternalDailyReport(snapshot.PublicView()),
 	}, nil
+}
+
+func NewDailyReportJobMetadata(
+	businessDate string,
+	deliver bool,
+	settings *tables.TableDailyReportSettings,
+) (metadata string, jobID string, err error) {
+	if settings == nil {
+		return "", "", fmt.Errorf("daily report settings are required")
+	}
+	settingsSnapshot := cloneDailyReportSettings(settings)
+	applyDailyReportDefaults(settingsSnapshot)
+	if err := settingsSnapshot.Validate(); err != nil {
+		return "", "", err
+	}
+	resolvedDate, err := resolveDailyReportBusinessDate(settingsSnapshot, strings.TrimSpace(businessDate), time.Now())
+	if err != nil {
+		return "", "", err
+	}
+	fingerprintInput, err := sonic.Marshal(struct {
+		BusinessDate       string   `json:"business_date"`
+		Deliver            bool     `json:"deliver"`
+		Enabled            bool     `json:"enabled"`
+		Timezone           string   `json:"timezone"`
+		GenerateTime       string   `json:"generate_time"`
+		SendTime           string   `json:"send_time"`
+		SlowThresholdMs    int64    `json:"slow_threshold_ms"`
+		InternalEnabled    bool     `json:"internal_enabled"`
+		InternalChannelIDs []string `json:"internal_channel_ids"`
+		ExternalEnabled    bool     `json:"external_enabled"`
+		ExternalChannelIDs []string `json:"external_channel_ids"`
+	}{
+		BusinessDate:       resolvedDate,
+		Deliver:            deliver,
+		Enabled:            settingsSnapshot.Enabled,
+		Timezone:           settingsSnapshot.Timezone,
+		GenerateTime:       settingsSnapshot.GenerateTime,
+		SendTime:           settingsSnapshot.SendTime,
+		SlowThresholdMs:    settingsSnapshot.SlowThresholdMs,
+		InternalEnabled:    settingsSnapshot.InternalEnabled,
+		InternalChannelIDs: settingsSnapshot.InternalChannelIDs,
+		ExternalEnabled:    settingsSnapshot.ExternalEnabled,
+		ExternalChannelIDs: settingsSnapshot.ExternalChannelIDs,
+	})
+	if err != nil {
+		return "", "", err
+	}
+	digest := sha256.Sum256(fingerprintInput)
+	fingerprint := hex.EncodeToString(digest[:])
+	encoded, err := sonic.Marshal(DailyReportJobMeta{
+		BusinessDate: resolvedDate,
+		Deliver:      deliver,
+		Fingerprint:  fingerprint,
+		Settings:     *settingsSnapshot,
+		Stage:        "pending",
+		Percent:      0,
+		Message:      "Waiting to start",
+	})
+	if err != nil {
+		return "", "", err
+	}
+	return string(encoded), uuid.NewSHA1(uuid.NameSpaceURL, []byte("bifrost:daily-report-job:"+fingerprint)).String(), nil
+}
+
+func (m *Manager) RunDailyReportJob(
+	ctx context.Context,
+	metadata string,
+	updateProgress func(string) error,
+) (string, error) {
+	var meta DailyReportJobMeta
+	if err := sonic.Unmarshal([]byte(metadata), &meta); err != nil {
+		return "", fmt.Errorf("invalid daily report job metadata: %w", err)
+	}
+	settings := cloneDailyReportSettings(&meta.Settings)
+	applyDailyReportDefaults(settings)
+	resolvedDate, err := resolveDailyReportBusinessDate(settings, meta.BusinessDate, m.currentTime())
+	if err != nil {
+		return "", err
+	}
+	meta.BusinessDate = resolvedDate
+	lastProgressAt := time.Time{}
+	reportProgress := func(stage string, processed int64, percent int, message string, force bool) {
+		meta.Stage = stage
+		meta.Processed = processed
+		meta.Percent = percent
+		meta.Message = message
+		if updateProgress == nil || (!force && time.Since(lastProgressAt) < time.Second) {
+			return
+		}
+		lastProgressAt = time.Now()
+		if encoded, marshalErr := sonic.Marshal(meta); marshalErr == nil {
+			_ = updateProgress(string(encoded))
+		}
+	}
+	reportProgress("preparing", 0, 5, "Preparing report query", true)
+	metricsProgress := func(progress logstore.DailyReportMetricsProgress) {
+		switch progress.Stage {
+		case "scanning_logs":
+			reportProgress(progress.Stage, progress.Processed, 55, "Scanning requests and fallback chains", false)
+		case "building_report":
+			reportProgress(progress.Stage, progress.Processed, 90, "Building report content", true)
+		}
+	}
+	result, err := m.generateDailyReportWithProgress(ctx, settings, resolvedDate, "manual", meta.Deliver, metricsProgress)
+	if err != nil {
+		return "", err
+	}
+	if meta.Deliver && result.Run.Status == logstore.DailyReportRunStatusPrepared {
+		deliveries, deliveredRun, deliverErr := m.deliverPreparedDailyReport(ctx, result.Run.ID)
+		if deliverErr != nil {
+			return "", deliverErr
+		}
+		result.Deliveries = deliveries
+		result.Run = *deliveredRun
+	}
+	meta.RunID = result.Run.ID
+	reportProgress("completed", meta.Processed, 100, "Report ready", true)
+	encoded, err := sonic.Marshal(meta)
+	return string(encoded), err
 }
 
 func (m *Manager) GenerateDailyReportNow(ctx context.Context, businessDate string) (*DailyReportGenerateResult, error) {
@@ -160,9 +289,6 @@ func (m *Manager) GenerateDailyReportNow(ctx context.Context, businessDate strin
 		if findErr != nil && !errors.Is(findErr, logstore.ErrNotFound) {
 			return nil, findErr
 		}
-	}
-	if !isDailyReportGenerationWindow(settings, m.currentTime()) {
-		return nil, ErrDailyReportQueryOutsideWindow
 	}
 	result, err := m.generateDailyReport(ctx, settings, resolvedDate, "manual", true)
 	if err != nil || result.Run.Status != logstore.DailyReportRunStatusPrepared {
@@ -370,6 +496,17 @@ func (m *Manager) generateDailyReport(
 	trigger string,
 	deliver bool,
 ) (*DailyReportGenerateResult, error) {
+	return m.generateDailyReportWithProgress(ctx, settings, businessDate, trigger, deliver, nil)
+}
+
+func (m *Manager) generateDailyReportWithProgress(
+	ctx context.Context,
+	settings *tables.TableDailyReportSettings,
+	businessDate string,
+	trigger string,
+	deliver bool,
+	progress func(logstore.DailyReportMetricsProgress),
+) (*DailyReportGenerateResult, error) {
 	if m.dailyReports == nil {
 		return nil, fmt.Errorf("daily reports require the logs store")
 	}
@@ -476,7 +613,7 @@ func (m *Manager) generateDailyReport(
 	} else if err := m.updateDailyReportRun(ctx, run); err != nil {
 		return nil, err
 	}
-	snapshot, err := m.buildDailyReportSnapshot(ctx, activeSettings, businessDate)
+	snapshot, err := m.buildDailyReportSnapshotWithProgress(ctx, activeSettings, businessDate, progress)
 	if err != nil {
 		run.Status = logstore.DailyReportRunStatusFailed
 		run.InternalStatus = collapseDailyPendingStatus(run.InternalStatus)
@@ -603,6 +740,15 @@ func (m *Manager) finalizeDailyReportDeliveryFailure(
 }
 
 func (m *Manager) buildDailyReportSnapshot(ctx context.Context, settings *tables.TableDailyReportSettings, businessDate string) (*logstore.DailyReportSnapshot, error) {
+	return m.buildDailyReportSnapshotWithProgress(ctx, settings, businessDate, nil)
+}
+
+func (m *Manager) buildDailyReportSnapshotWithProgress(
+	ctx context.Context,
+	settings *tables.TableDailyReportSettings,
+	businessDate string,
+	progress func(logstore.DailyReportMetricsProgress),
+) (*logstore.DailyReportSnapshot, error) {
 	if m.dailyReports == nil {
 		return nil, fmt.Errorf("daily reports require the logs store")
 	}
@@ -638,6 +784,7 @@ func (m *Manager) buildDailyReportSnapshot(ctx context.Context, settings *tables
 		WindowEnd:       windowEnd,
 		SlowThresholdMs: settings.SlowThresholdMs,
 		GeneratedAt:     time.Now().UTC(),
+		Progress:        progress,
 	})
 }
 
@@ -1070,23 +1217,6 @@ func resolveDailyReportBusinessDate(settings *tables.TableDailyReportSettings, b
 		return "", err
 	}
 	return now.In(location).AddDate(0, 0, -1).Format("2006-01-02"), nil
-}
-
-func isDailyReportGenerationWindow(settings *tables.TableDailyReportSettings, now time.Time) bool {
-	if settings == nil {
-		return false
-	}
-	location, err := time.LoadLocation(settings.Timezone)
-	if err != nil {
-		return false
-	}
-	hour, minute, err := settings.GenerateHourMinute()
-	if err != nil {
-		return false
-	}
-	localNow := now.In(location)
-	start := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), hour, minute, 0, 0, location)
-	return !localNow.Before(start) && localNow.Before(start.Add(dailyReportGenerationGracePeriod))
 }
 
 func dailyReportRunID(timezone, businessDate string) string {

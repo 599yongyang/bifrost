@@ -1958,6 +1958,9 @@ func (s *BifrostHTTPServer) RegisterAPIRoutes(ctx context.Context, callbacks Ser
 			s.AlertingManager.SetProviderValidator(providerExists)
 			s.AlertingManager.Start(s.Ctx)
 			alertingHandler = handlers.NewAlertingHandler(s.AlertingManager, alertStore)
+			if alertingHandler != nil && s.SidekiqRunner != nil {
+				alertingHandler.SetDailyReportJobBackend(s.SidekiqRunner, s.Config.ConfigStore)
+			}
 		}
 	} else if s.Config != nil && s.Config.AlertingConfig != nil && s.Config.LogsStore == nil {
 		return fmt.Errorf("failed to initialize alerting: logs store is required when alerting is configured")

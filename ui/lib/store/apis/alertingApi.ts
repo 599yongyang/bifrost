@@ -13,6 +13,7 @@ import {
 	DailyReportRunDetail,
 	DailyReportSettings,
 	DailyReportSettingsRequest,
+	DailyReportJobStatus,
 } from "@/lib/types/alerting";
 import { baseApi } from "./baseApi";
 
@@ -97,12 +98,20 @@ export const alertingApi = baseApi.injectEndpoints({
 			transformResponse: (response: { settings: DailyReportSettings }) => response.settings,
 			invalidatesTags: ["DailyReports"],
 		}),
-		previewDailyReport: builder.mutation<
-			DailyReportPreview,
-			{ business_date?: string; settings?: Partial<DailyReportSettingsRequest> }
-		>({
+		previewDailyReport: builder.mutation<DailyReportPreview, { business_date?: string; settings?: Partial<DailyReportSettingsRequest> }>({
 			query: (body) => ({ url: "/alerting/reports/preview", method: "POST", body }),
 			transformResponse: (response: { preview: DailyReportPreview }) => response.preview,
+		}),
+		startDailyReportJob: builder.mutation<
+			DailyReportJobStatus,
+			{ business_date?: string; deliver?: boolean; settings?: Partial<DailyReportSettingsRequest> }
+		>({
+			query: (body) => ({ url: "/alerting/reports/jobs", method: "POST", body }),
+			invalidatesTags: ["DailyReports"],
+		}),
+		getDailyReportJobStatus: builder.query<DailyReportJobStatus, { id?: string } | void>({
+			query: (params) => ({ url: "/alerting/reports/jobs/status", params: { id: params?.id } }),
+			providesTags: ["DailyReports"],
 		}),
 		sendDailyReportNow: builder.mutation<DailyReportRunDetail, { business_date?: string }>({
 			query: (body) => ({ url: "/alerting/reports/generate", method: "POST", body }),
@@ -128,10 +137,7 @@ export const alertingApi = baseApi.injectEndpoints({
 			transformResponse: (response: { run: DailyReportRunDetail }) => response.run,
 			providesTags: ["DailyReports"],
 		}),
-		deliverDailyReportRun: builder.mutation<
-			DailyReportRunDetail,
-			{ id: string; audience: DailyReportAudience[] }
-		>({
+		deliverDailyReportRun: builder.mutation<DailyReportRunDetail, { id: string; audience: DailyReportAudience[] }>({
 			query: ({ id, audience }) => ({
 				url: `/alerting/reports/runs/${id}/deliver`,
 				method: "POST",
@@ -159,6 +165,8 @@ export const {
 	useGetDailyReportSettingsQuery,
 	useUpdateDailyReportSettingsMutation,
 	usePreviewDailyReportMutation,
+	useStartDailyReportJobMutation,
+	useGetDailyReportJobStatusQuery,
 	useSendDailyReportNowMutation,
 	useGetDailyReportHistoryQuery,
 	useGetDailyReportRunQuery,

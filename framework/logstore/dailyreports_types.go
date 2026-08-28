@@ -327,4 +327,10 @@ type DailyReportMetricsQuery struct {
 	WindowEnd       time.Time
 	SlowThresholdMs int64
 	GeneratedAt     time.Time
+	Progress        func(DailyReportMetricsProgress)
+}
+
+type DailyReportMetricsProgress struct {
+	Stage     string `json:"stage"`
+	Processed int64  `json:"processed"`
 }

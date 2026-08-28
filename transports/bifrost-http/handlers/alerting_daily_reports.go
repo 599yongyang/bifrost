@@ -1,12 +1,17 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/bytedance/sonic"
+	"github.com/google/uuid"
+	"github.com/maximhq/bifrost/core/schemas"
 	"github.com/maximhq/bifrost/framework/configstore/tables"
 	"github.com/maximhq/bifrost/framework/logstore"
+	"github.com/maximhq/bifrost/framework/sidekiq"
 	alertengine "github.com/maximhq/bifrost/transports/bifrost-http/alerting"
 	"github.com/valyala/fasthttp"
 )
@@ -21,6 +26,200 @@ type dailyReportSettingsRequest struct {
 	InternalChannelIDs []string `json:"internal_channel_ids,omitempty"`
 	ExternalEnabled    *bool    `json:"external_enabled,omitempty"`
 	ExternalChannelIDs []string `json:"external_channel_ids,omitempty"`
+}
+
+type dailyReportJobStatus struct {
+	ID        string     `json:"id,omitempty"`
+	Status    string     `json:"status"`
+	Stage     string     `json:"stage,omitempty"`
+	Processed int64      `json:"processed,omitempty"`
+	Percent   int        `json:"percent,omitempty"`
+	RunID     string     `json:"run_id,omitempty"`
+	Deliver   bool       `json:"deliver,omitempty"`
+	Message   string     `json:"message,omitempty"`
+	LastError string     `json:"last_error,omitempty"`
+	StartedAt *time.Time `json:"started_at,omitempty"`
+	UpdatedAt *time.Time `json:"updated_at,omitempty"`
+}
+
+type DailyReportJobStore interface {
+	SidekiqJobStore
+	TryAcquireLock(context.Context, *tables.TableDistributedLock) (bool, error)
+	GetLock(context.Context, string) (*tables.TableDistributedLock, error)
+	CleanupExpiredLockByKey(context.Context, string) (bool, error)
+	ReleaseLock(context.Context, string, string) (bool, error)
+}
+
+func (h *AlertingHandler) SetDailyReportJobBackend(runner *sidekiq.Runner, store DailyReportJobStore) {
+	h.dailyReportRunner = runner
+	h.dailyReportJobStore = store
+	runner.Register(alertengine.DailyReportJobKind, func(ctx context.Context, job tables.TableSidekiqJob, progress sidekiq.ProgressFunc) (string, error) {
+		return h.manager.RunDailyReportJob(ctx, job.Metadata, progress)
+	})
+}
+
+func (h *AlertingHandler) startDailyReportJob(ctx *fasthttp.RequestCtx) {
+	if h.dailyReportRunner == nil || h.dailyReportJobStore == nil {
+		SendError(ctx, fasthttp.StatusServiceUnavailable, "Background report runner is not available")
+		return
+	}
+	var request struct {
+		BusinessDate string                      `json:"business_date"`
+		Deliver      bool                        `json:"deliver"`
+		Settings     *dailyReportSettingsRequest `json:"settings,omitempty"`
+	}
+	if len(ctx.PostBody()) > 0 {
+		if err := sonic.Unmarshal(ctx.PostBody(), &request); err != nil {
+			SendError(ctx, fasthttp.StatusBadRequest, "Invalid JSON")
+			return
+		}
+	}
+	settings, err := h.manager.GetDailyReportSettings(ctx)
+	if err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to load report settings")
+		return
+	}
+	if request.Settings != nil {
+		applyDailyReportSettingsRequest(settings, *request.Settings)
+	}
+	metadata, jobID, err := alertengine.NewDailyReportJobMetadata(request.BusinessDate, request.Deliver, settings)
+	if err != nil {
+		SendError(ctx, fasthttp.StatusBadRequest, err.Error())
+		return
+	}
+	var requestedMeta alertengine.DailyReportJobMeta
+	if err := sonic.Unmarshal([]byte(metadata), &requestedMeta); err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to prepare report job")
+		return
+	}
+	releaseEnqueueLock, err := h.acquireDailyReportEnqueueLock(ctx)
+	if err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to coordinate report job")
+		return
+	}
+	if releaseEnqueueLock == nil {
+		SendError(ctx, fasthttp.StatusConflict, "Another report request is being started; retry shortly")
+		return
+	}
+	defer releaseEnqueueLock()
+	if existing, err := h.dailyReportJobStore.GetInFlightSidekiqJobByKind(ctx, alertengine.DailyReportJobKind); err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to check running report jobs")
+		return
+	} else if existing != nil {
+		var existingMeta alertengine.DailyReportJobMeta
+		if err := sonic.Unmarshal([]byte(existing.Metadata), &existingMeta); err == nil && existingMeta.Fingerprint == requestedMeta.Fingerprint {
+			SendJSON(ctx, dailyReportJobStatusFromRow(existing))
+			return
+		}
+		SendError(ctx, fasthttp.StatusConflict, "A different daily report task is already running")
+		return
+	}
+	if existing, err := h.dailyReportJobStore.GetSidekiqJob(ctx, jobID); err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to check existing report job")
+		return
+	} else if existing != nil {
+		if existing.Status != tables.SidekiqStatusFailed {
+			SendJSON(ctx, dailyReportJobStatusFromRow(existing))
+			return
+		}
+		jobID += "-" + uuid.NewString()
+	}
+	createdBy, _ := ctx.UserValue(schemas.BifrostContextKeyUserID).(string)
+	if err := h.dailyReportRunner.Enqueue(ctx, jobID, alertengine.DailyReportJobKind, metadata, createdBy); err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to start report job")
+		return
+	}
+	ctx.SetStatusCode(fasthttp.StatusAccepted)
+	job, err := h.dailyReportJobStore.GetSidekiqJob(ctx, jobID)
+	if err == nil && job != nil {
+		SendJSON(ctx, dailyReportJobStatusFromRow(job))
+		return
+	}
+	SendJSON(ctx, dailyReportJobStatus{ID: jobID, Status: tables.SidekiqStatusPending, Stage: "pending"})
+}
+
+func (h *AlertingHandler) getDailyReportJobStatus(ctx *fasthttp.RequestCtx) {
+	if h.dailyReportJobStore == nil {
+		SendError(ctx, fasthttp.StatusServiceUnavailable, "Background report runner is not available")
+		return
+	}
+	if id := strings.TrimSpace(string(ctx.QueryArgs().Peek("id"))); id != "" {
+		job, err := h.dailyReportJobStore.GetSidekiqJob(ctx, id)
+		if err != nil {
+			SendError(ctx, fasthttp.StatusInternalServerError, "Failed to load report job")
+			return
+		}
+		if job == nil {
+			SendError(ctx, fasthttp.StatusNotFound, "Report job not found")
+			return
+		}
+		SendJSON(ctx, dailyReportJobStatusFromRow(job))
+		return
+	}
+	job, err := h.dailyReportJobStore.GetInFlightSidekiqJobByKind(ctx, alertengine.DailyReportJobKind)
+	if err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to load running report job")
+		return
+	}
+	if job == nil {
+		SendJSON(ctx, dailyReportJobStatus{Status: "idle"})
+		return
+	}
+	SendJSON(ctx, dailyReportJobStatusFromRow(job))
+}
+
+func dailyReportJobStatusFromRow(job *tables.TableSidekiqJob) dailyReportJobStatus {
+	updatedAt := job.UpdatedAt
+	status := dailyReportJobStatus{
+		ID:        job.ID,
+		Status:    job.Status,
+		LastError: job.LastError,
+		StartedAt: job.StartedAt,
+		UpdatedAt: &updatedAt,
+	}
+	if job.Metadata != "" {
+		var metadata alertengine.DailyReportJobMeta
+		if err := sonic.Unmarshal([]byte(job.Metadata), &metadata); err == nil {
+			status.Stage = metadata.Stage
+			status.Processed = metadata.Processed
+			status.Percent = metadata.Percent
+			status.RunID = metadata.RunID
+			status.Deliver = metadata.Deliver
+			status.Message = metadata.Message
+		}
+	}
+	return status
+}
+
+func (h *AlertingHandler) acquireDailyReportEnqueueLock(ctx context.Context) (func(), error) {
+	const lockKey = "bifrost:daily-report:enqueue"
+	now := time.Now().UTC()
+	lock, err := h.dailyReportJobStore.GetLock(ctx, lockKey)
+	if err != nil {
+		return nil, err
+	}
+	if lock != nil && lock.ExpiresAt.After(now) {
+		return nil, nil
+	}
+	if lock != nil {
+		if _, err := h.dailyReportJobStore.CleanupExpiredLockByKey(ctx, lockKey); err != nil {
+			return nil, err
+		}
+	}
+	holderID := uuid.NewString()
+	acquired, err := h.dailyReportJobStore.TryAcquireLock(ctx, &tables.TableDistributedLock{
+		LockKey:   lockKey,
+		HolderID:  holderID,
+		ExpiresAt: now.Add(15 * time.Second),
+	})
+	if err != nil || !acquired {
+		return nil, err
+	}
+	return func() {
+		releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, _ = h.dailyReportJobStore.ReleaseLock(releaseCtx, lockKey, holderID)
+	}, nil
 }
 
 func (h *AlertingHandler) getDailyReportSettings(ctx *fasthttp.RequestCtx) {
