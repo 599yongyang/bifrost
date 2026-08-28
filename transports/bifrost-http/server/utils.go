@@ -10,6 +10,7 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/maximhq/bifrost/core/schemas"
+	"github.com/maximhq/bifrost/transports/bifrost-http/lib"
 )
 
 // GetDefaultConfigDir returns the OS-specific default configuration directory for Bifrost.
@@ -66,17 +67,19 @@ func (s *BifrostHTTPServer) registerPluginWithStatus(ctx context.Context, name s
 	}
 
 	// Ensure plugin is not nil before using it (defensive check)
-	if plugin == nil {
-		logger.Error("plugin %s instantiated but returned nil", name)
+	if _, nameErr := lib.SafePluginName(plugin); nameErr != nil {
+		logger.Error("plugin %s returned an invalid instance: %v", name, nameErr)
 		s.Config.UpdatePluginOverallStatus(name, name, schemas.PluginStatusError,
-			[]string{fmt.Sprintf("plugin %s instantiated but returned nil", name)}, []schemas.PluginType{})
+			[]string{fmt.Sprintf("plugin %s returned an invalid instance", name)}, []schemas.PluginType{})
 		if failOnError {
-			return fmt.Errorf("plugin %s instantiated but returned nil", name)
+			return fmt.Errorf("plugin %s returned an invalid instance", name)
 		}
 		return nil
 	}
 
-	s.Config.ReloadPlugin(plugin)
+	if err := s.Config.ReloadPlugin(plugin); err != nil {
+		return fmt.Errorf("failed to register plugin %s: %w", name, err)
+	}
 	s.Config.UpdatePluginOverallStatus(name, name, schemas.PluginStatusActive,
 		[]string{fmt.Sprintf("%s plugin initialized successfully", name)}, InferPluginTypes(plugin))
 	return nil

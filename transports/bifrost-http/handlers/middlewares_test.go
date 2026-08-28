@@ -2493,6 +2493,93 @@ func (p *fakePreAuthPlugin) HTTPTransportStreamChunkHook(_ *schemas.BifrostConte
 	return chunk, nil
 }
 
+type panickingTransportPlugin struct {
+	name  string
+	phase string
+}
+
+func (p *panickingTransportPlugin) GetName() string {
+	if p.phase == "name" {
+		panic("secret plugin name panic")
+	}
+	return p.name
+}
+func (*panickingTransportPlugin) Cleanup() error { return nil }
+func (p *panickingTransportPlugin) HTTPTransportPreAuthHook(*schemas.BifrostContext, *schemas.HTTPRequest) (*schemas.HTTPResponse, error) {
+	if p.phase == "preauth" {
+		panic("secret preauth panic")
+	}
+	return nil, nil
+}
+func (p *panickingTransportPlugin) HTTPTransportPreHook(*schemas.BifrostContext, *schemas.HTTPRequest) (*schemas.HTTPResponse, error) {
+	if p.phase == "pre" {
+		panic("secret pre panic")
+	}
+	return nil, nil
+}
+func (p *panickingTransportPlugin) HTTPTransportPostHook(*schemas.BifrostContext, *schemas.HTTPRequest, *schemas.HTTPResponse) error {
+	if p.phase == "post" {
+		panic("secret post panic")
+	}
+	return nil
+}
+func (*panickingTransportPlugin) HTTPTransportStreamChunkHook(_ *schemas.BifrostContext, _ *schemas.HTTPRequest, chunk *schemas.BifrostStreamChunk) (*schemas.BifrostStreamChunk, error) {
+	return chunk, nil
+}
+
+func assertSafePluginPanicResponse(t *testing.T, ctx *fasthttp.RequestCtx, secret string) {
+	t.Helper()
+	if ctx.Response.StatusCode() != fasthttp.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500: %s", ctx.Response.StatusCode(), ctx.Response.Body())
+	}
+	body := string(ctx.Response.Body())
+	if strings.Contains(body, secret) || !strings.Contains(strings.ToLower(body), "internal server error") {
+		t.Fatalf("response leaked panic or was not generic: %q", body)
+	}
+}
+
+func TestTransportHookPanicsFailClosed(t *testing.T) {
+	SetLogger(&mockLogger{})
+	for _, phase := range []string{"preauth", "pre", "post", "name"} {
+		t.Run(phase, func(t *testing.T) {
+			plugin := &panickingTransportPlugin{name: "panic-plugin", phase: phase}
+			config := preAuthTestConfig(plugin)
+			nextCalled := false
+			next := func(ctx *fasthttp.RequestCtx) {
+				nextCalled = true
+				ctx.SetStatusCode(fasthttp.StatusOK)
+				ctx.SetBodyString("unsafe original response")
+			}
+			var handler fasthttp.RequestHandler
+			if phase == "preauth" || phase == "name" {
+				handler = TransportPreAuthInterceptorMiddleware(config)(next)
+			} else {
+				handler = TransportInterceptorMiddleware(config)(next)
+			}
+			ctx := preAuthTestCtx()
+			handler(ctx)
+			assertSafePluginPanicResponse(t, ctx, "secret")
+			if phase != "post" && nextCalled {
+				t.Fatal("request continued after pre-phase panic")
+			}
+			if phase == "post" && !nextCalled {
+				t.Fatal("post panic test did not reach handler first")
+			}
+		})
+	}
+}
+
+func TestPanicRecoveryMiddlewareReturnsSafeResponse(t *testing.T) {
+	SetLogger(&mockLogger{})
+	ctx := preAuthTestCtx()
+	ctx.Request.Header.Set("Authorization", "Bearer secret-header")
+	PanicRecoveryMiddleware(func(*fasthttp.RequestCtx) { panic("secret handler panic") })(ctx)
+	assertSafePluginPanicResponse(t, ctx, "secret")
+	if string(ctx.Response.Header.Peek("X-Frame-Options")) != "DENY" {
+		t.Fatal("recovered response must retain security headers")
+	}
+}
+
 // preAuthTestConfig builds a Config whose transport plugin cache holds the given plugins.
 func preAuthTestConfig(plugins ...schemas.HTTPTransportPlugin) *lib.Config {
 	config := &lib.Config{}

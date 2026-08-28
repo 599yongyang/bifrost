@@ -437,6 +437,70 @@ type MockConfigStore struct {
 	markTokensNeedsReauthCalls []string
 }
 
+type panicBoundaryTransportPlugin struct {
+	panicName   bool
+	panicStream bool
+}
+
+func (p *panicBoundaryTransportPlugin) GetName() string {
+	if p.panicName {
+		panic("secret GetName panic")
+	}
+	return "panic-boundary"
+}
+func (*panicBoundaryTransportPlugin) Cleanup() error { return nil }
+func (*panicBoundaryTransportPlugin) HTTPTransportPreAuthHook(*schemas.BifrostContext, *schemas.HTTPRequest) (*schemas.HTTPResponse, error) {
+	return nil, nil
+}
+func (*panicBoundaryTransportPlugin) HTTPTransportPreHook(*schemas.BifrostContext, *schemas.HTTPRequest) (*schemas.HTTPResponse, error) {
+	return nil, nil
+}
+func (*panicBoundaryTransportPlugin) HTTPTransportPostHook(*schemas.BifrostContext, *schemas.HTTPRequest, *schemas.HTTPResponse) error {
+	return nil
+}
+func (p *panicBoundaryTransportPlugin) HTTPTransportStreamChunkHook(*schemas.BifrostContext, *schemas.HTTPRequest, *schemas.BifrostStreamChunk) (*schemas.BifrostStreamChunk, error) {
+	if p.panicStream {
+		panic("secret stream panic")
+	}
+	return nil, nil
+}
+
+func TestStreamChunkPluginPanicFailsClosed(t *testing.T) {
+	SetLogger(&testLogger{})
+	for _, plugin := range []*panicBoundaryTransportPlugin{{panicStream: true}, {panicName: true}} {
+		interceptor := &pluginChunkInterceptor{plugins: []schemas.HTTPTransportPlugin{plugin}}
+		ctx := schemas.NewBifrostContext(context.Background(), schemas.NoDeadline)
+		chunk := &schemas.BifrostStreamChunk{}
+		req := schemas.AcquireHTTPRequest()
+		modified, err := interceptor.InterceptChunk(ctx, req, chunk)
+		schemas.ReleaseHTTPRequest(req)
+		require.Nil(t, modified, "panic must not leave the original chunk eligible for delivery")
+		require.Error(t, err)
+		require.NotContains(t, err.Error(), "secret")
+		var structured *schemas.StreamInterceptionError
+		require.ErrorAs(t, err, &structured)
+		require.NotNil(t, structured.BifrostError)
+		require.NotNil(t, structured.BifrostError.StatusCode)
+		require.Equal(t, 500, *structured.BifrostError.StatusCode)
+		require.Equal(t, ClientSafeInternalErrorMessage, structured.BifrostError.Error.Message)
+	}
+}
+
+func TestPluginGetNamePanicIsContainedAndCorruptedPluginCanBeRemoved(t *testing.T) {
+	SetLogger(&testLogger{})
+	bad := &panicBoundaryTransportPlugin{panicName: true}
+	config := &Config{}
+	require.Error(t, config.ReloadPlugin(bad))
+
+	plugins := []schemas.BasePlugin{bad}
+	config.BasePlugins.Store(&plugins)
+	require.Empty(t, config.GetPluginOrder())
+	require.NoError(t, config.UnregisterPlugin("panic-boundary"), "corrupted entries must be pruned even when their name cannot be read")
+	remaining := config.BasePlugins.Load()
+	require.NotNil(t, remaining)
+	require.Empty(t, *remaining)
+}
+
 // NewMockConfigStore creates a new mock config store
 func NewMockConfigStore() *MockConfigStore {
 	return &MockConfigStore{
