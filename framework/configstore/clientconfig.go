@@ -10,6 +10,7 @@ import (
 	"math"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/bytedance/sonic"
@@ -1400,6 +1401,32 @@ func GenerateRoutingRuleHash(r tables.TableRoutingRule) (string, error) {
 		hash.Write([]byte(*r.Fallbacks))
 	} else if len(r.ParsedFallbacks) > 0 {
 		data, err := sonic.Marshal(r.ParsedFallbacks)
+		if err != nil {
+			return "", err
+		}
+		hash.Write(data)
+	}
+
+	// Hash error-aware fallbacks using a canonical representation. DB-origin
+	// rules carry ErrorFallbacks while config-origin rules carry the parsed
+	// field; normalizing both prevents whitespace or object-key order from
+	// causing perpetual reconciliation updates.
+	var errorFallbacksJSON []byte
+	if r.ErrorFallbacks != nil && strings.TrimSpace(*r.ErrorFallbacks) != "" {
+		errorFallbacksJSON = []byte(*r.ErrorFallbacks)
+	} else if len(r.ParsedErrorFallbacks) > 0 {
+		data, err := sonic.Marshal(r.ParsedErrorFallbacks)
+		if err != nil {
+			return "", err
+		}
+		errorFallbacksJSON = data
+	}
+	if len(errorFallbacksJSON) > 0 {
+		var normalized any
+		if err := sonic.Unmarshal(errorFallbacksJSON, &normalized); err != nil {
+			return "", fmt.Errorf("invalid error_fallbacks JSON: %w", err)
+		}
+		data, err := schemas.MarshalDeeplySorted(normalized)
 		if err != nil {
 			return "", err
 		}

@@ -361,6 +361,7 @@ var configstoreMigrationSteps = []migrationStep{
 	{IDs: []string{"add_open_ai_config_json_column"}, run: migrationAddOpenAIConfigJSONColumn},
 	{IDs: []string{"add_key_blacklisted_models_json_column"}, run: migrationAddKeyBlacklistedModelsJSONColumn},
 	{IDs: []string{"add_chain_rule_column_to_routing_rules"}, run: migrationAddChainRuleColumnToRoutingRules},
+	{IDs: []string{"add_error_fallbacks_column_to_routing_rules"}, run: migrationAddErrorFallbacksColumnToRoutingRules},
 	{IDs: []string{"drop_deployment_columns_and_add_aliases"}, run: migrationDropDeploymentColumnsAndAddAliases},
 	{IDs: []string{"add_replicate_key_config_column"}, run: migrationAddReplicateKeyConfigColumn},
 	{IDs: []string{"add_budget_calendar_aligned_column"}, run: migrationAddBudgetCalendarAlignedColumn},
@@ -7145,6 +7146,69 @@ func migrationAddChainRuleColumnToRoutingRules(ctx context.Context, db *gorm.DB,
 	}})
 	if err := m.Migrate(); err != nil {
 		return fmt.Errorf("error running add_chain_rule_column_to_routing_rules migration: %s", err.Error())
+	}
+	return nil
+}
+
+// refreshRoutingRuleConfigHashes recomputes stored hashes after a routing-rule
+// column is added or removed. Keeping this in the same transaction as the DDL
+// prevents config reconciliation from observing a mixed schema/hash state.
+func refreshRoutingRuleConfigHashes(tx *gorm.DB, logger schemas.Logger, migrationName string) error {
+	var rules []tables.TableRoutingRule
+	if err := tx.Preload("Targets").Find(&rules).Error; err != nil {
+		return fmt.Errorf("failed to load routing rules for config_hash backfill: %w", err)
+	}
+	logger.Info("[configstore] %s: processing %d rules", migrationName, len(rules))
+	for _, rule := range rules {
+		hash, err := GenerateRoutingRuleHash(rule)
+		if err != nil {
+			return fmt.Errorf("failed to generate config_hash for routing rule %s: %w", rule.ID, err)
+		}
+		if err := tx.Model(&tables.TableRoutingRule{}).Where("id = ?", rule.ID).Update("config_hash", hash).Error; err != nil {
+			return fmt.Errorf("failed to update config_hash for routing rule %s: %w", rule.ID, err)
+		}
+	}
+	return nil
+}
+
+func newAddErrorFallbacksColumnToRoutingRulesMigration(ctx context.Context, logger schemas.Logger) *migrator.Migration {
+	const migrationName = "add_error_fallbacks_column_to_routing_rules"
+	return &migrator.Migration{
+		ID: migrationName,
+		Migrate: func(tx *gorm.DB) error {
+			tx = tx.WithContext(ctx)
+			if err := addColumnIfNotExists(tx, logger, &tables.TableRoutingRule{}, "error_fallbacks"); err != nil {
+				return fmt.Errorf("failed to add error_fallbacks column: %w", err)
+			}
+			return refreshRoutingRuleConfigHashes(tx, logger, migrationName)
+		},
+		Rollback: func(tx *gorm.DB) error {
+			tx = tx.WithContext(ctx)
+			if tx.Migrator().HasColumn(&tables.TableRoutingRule{}, "error_fallbacks") {
+				// SQLite's GORM table-rebuild fallback can omit fields from legacy
+				// schemas. Current supported SQLite and PostgreSQL both implement
+				// direct DROP COLUMN, which preserves every untouched column.
+				if err := tx.Exec("ALTER TABLE routing_rules DROP COLUMN error_fallbacks").Error; err != nil {
+					return fmt.Errorf("failed to drop error_fallbacks column: %w", err)
+				}
+			}
+			return refreshRoutingRuleConfigHashes(tx, logger, migrationName+"_rollback")
+		},
+	}
+}
+
+// migrationAddErrorFallbacksColumnToRoutingRules persists error-aware fallback
+// policy JSON alongside each routing rule and refreshes reconciliation hashes.
+func migrationAddErrorFallbacksColumnToRoutingRules(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	const migrationName = "add_error_fallbacks_column_to_routing_rules"
+	logger.Info("[configstore] starting migration %s", migrationName)
+	defer logger.Info("[configstore] finished migration %s", migrationName)
+
+	m := migrator.New(db, migrator.DefaultOptions, []*migrator.Migration{
+		newAddErrorFallbacksColumnToRoutingRulesMigration(ctx, logger),
+	})
+	if err := m.Migrate(); err != nil {
+		return fmt.Errorf("error running add_error_fallbacks_column_to_routing_rules migration: %s", err.Error())
 	}
 	return nil
 }
