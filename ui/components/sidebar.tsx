@@ -68,6 +68,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { HIDDEN_UNTIL_NAV_COOKIE, REMIND_LATER_COOKIE, useOnboardingChecklist } from "@/hooks/useOnboardingChecklist";
+import { alertingCopy } from "@/app/workspace/alerting/components/copy";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { IS_ENTERPRISE } from "@/lib/constants/config";
 import { useBranding } from "@/lib/hooks/useBranding";
@@ -501,6 +502,7 @@ const compareVersions = (v1: string, v2: string): number => {
 };
 
 export default function AppSidebar() {
+	const alertingText = alertingCopy();
 	const pathname = useLocation({ select: (l) => l.pathname });
 	const search = useLocation({ select: (l) => l.searchStr ?? "" });
 	const tsNavigate = useNavigate();
@@ -792,6 +794,13 @@ export default function AppSidebar() {
 						url: "/workspace/alerting/history",
 						icon: History,
 						description: "Review alert delivery history",
+						hasAccess: hasAlertingAccess,
+					},
+					{
+						title: alertingText.dailyReports,
+						url: "/workspace/alerting/reports",
+						icon: ScrollText,
+						description: alertingText.dailyReportsDescription,
 						hasAccess: hasAlertingAccess,
 					},
 				],
