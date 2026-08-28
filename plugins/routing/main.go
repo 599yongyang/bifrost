@@ -375,6 +375,14 @@ func (p *RoutingPlugin) applyRoutingRules(ctx *schemas.BifrostContext, req *sche
 		req.SetFallbacks(resolvedFallbacks)
 	}
 
+	// Error-aware fallback targets inherit the model selected by the routing rule, not
+	// the caller's incoming model. This keeps a provider-only target aligned with the
+	// primary decision after model rewrites and chained rules.
+	_, routedModel, _ := req.GetRequestFields()
+	if resolvedErrorFallbacks := resolveRoutingErrorFallbacks(decision.ErrorFallbacks, routedModel); len(resolvedErrorFallbacks) > 0 {
+		req.SetErrorFallbacks(resolvedErrorFallbacks)
+	}
+
 	// Pin specific API key by ID if the routing rule specifies one. This uses a dedicated,
 	// non-reserved context key (not BifrostContextKeyAPIKeyID): routing runs inside
 	// PreRequestHook, where core blocks writes to reserved key-selection keys, so a write to
@@ -384,8 +392,87 @@ func (p *RoutingPlugin) applyRoutingRules(ctx *schemas.BifrostContext, req *sche
 		ctx.SetValue(schemas.BifrostContextKeyRoutingPinnedAPIKeyID, decision.KeyID)
 	}
 
-	p.logger.Debug("[Routing] Applied routing decision: provider=%s, model=%s, keyID=%s, fallbacks=%v", decision.Provider, decision.Model, decision.KeyID, decision.Fallbacks)
+	p.logger.Debug("[Routing] Applied routing decision: provider=%s, model=%s, keyID=%s, fallbacks=%v, error_fallbacks=%d", decision.Provider, decision.Model, decision.KeyID, decision.Fallbacks, len(decision.ErrorFallbacks))
 	return decision, nil
+}
+
+func resolveRoutingErrorFallbacks(rules []configstoreTables.TableRoutingErrorFallback, defaultModel string) []schemas.ErrorFallbackRule {
+	if len(rules) == 0 {
+		return nil
+	}
+
+	resolved := make([]schemas.ErrorFallbackRule, 0, len(rules))
+	for _, rule := range rules {
+		fallbacks := make([]schemas.Fallback, 0, len(rule.Fallbacks))
+		for _, rawFallback := range rule.Fallbacks {
+			provider, model := parsePersistedRoutingFallback(rawFallback, defaultModel)
+			if provider == "" {
+				continue
+			}
+			fallbacks = append(fallbacks, schemas.Fallback{Provider: provider, Model: model})
+		}
+		if len(fallbacks) == 0 {
+			continue
+		}
+
+		categories := make([]schemas.FailureCategory, 0, len(rule.When.Categories))
+		for _, category := range rule.When.Categories {
+			categories = append(categories, schemas.FailureCategory(category))
+		}
+
+		var supplement *schemas.ErrorFallbackSupplement
+		if rule.Supplement != nil {
+			providers := make([]schemas.ModelProvider, 0, len(rule.Supplement.Providers))
+			for _, provider := range rule.Supplement.Providers {
+				providers = append(providers, schemas.ModelProvider(provider))
+			}
+			supplement = &schemas.ErrorFallbackSupplement{
+				Providers:          providers,
+				ErrorCodes:         append([]string(nil), rule.Supplement.ErrorCodes...),
+				ErrorTypes:         append([]string(nil), rule.Supplement.ErrorTypes...),
+				StatusCodes:        append([]int(nil), rule.Supplement.StatusCodes...),
+				MessageContainsAny: append([]string(nil), rule.Supplement.MessageContainsAny...),
+			}
+		}
+
+		resolved = append(resolved, schemas.ErrorFallbackRule{
+			Name:       rule.Name,
+			Scenario:   schemas.FailureCategory(rule.Scenario),
+			Supplement: supplement,
+			When: schemas.ErrorFallbackCondition{
+				Categories:      categories,
+				ErrorCodes:      append([]string(nil), rule.When.ErrorCodes...),
+				ErrorTypes:      append([]string(nil), rule.When.ErrorTypes...),
+				StatusCodes:     append([]int(nil), rule.When.StatusCodes...),
+				MessageContains: append([]string(nil), rule.When.MessageContains...),
+			},
+			Fallbacks: fallbacks,
+		})
+	}
+	return resolved
+}
+
+// parsePersistedRoutingFallback parses a validated provider/model pair without consulting
+// the mutable known-provider registry. A temporarily unavailable custom provider must stay
+// in the dedicated chain and fail explicitly instead of silently falling through to the
+// ordinary fallback chain.
+func parsePersistedRoutingFallback(raw, defaultModel string) (schemas.ModelProvider, string) {
+	parts := strings.SplitN(strings.TrimSpace(raw), "/", 2)
+	if len(parts) != 2 {
+		return "", ""
+	}
+	provider := strings.TrimSpace(parts[0])
+	model := strings.TrimSpace(parts[1])
+	if provider == "" {
+		return "", ""
+	}
+	if model == "" {
+		model = strings.TrimSpace(defaultModel)
+	}
+	if model == "" {
+		return "", ""
+	}
+	return schemas.ModelProvider(provider), model
 }
 
 // PreLLMHook implements schemas.LLMPlugin (no-op).

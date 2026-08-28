@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/bytedance/sonic"
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types"
 	"github.com/maximhq/bifrost/core/schemas"
@@ -29,12 +30,13 @@ type ScopeLevel struct {
 // Decision is the output of routing rule evaluation
 // Represents which provider/model to route to and fallback chain
 type Decision struct {
-	Provider        string   // Primary provider (e.g., "openai", "azure")
-	Model           string   // Model to use (or empty to use original)
-	KeyID           string   // Optional: pin a specific API key by UUID ("" = no pin)
-	Fallbacks       []string // Fallback chain: ["provider/model", ...]
-	MatchedRuleID   string   // ID of the rule that matched
-	MatchedRuleName string   // Name of the rule that matched
+	Provider        string                                        // Primary provider (e.g., "openai", "azure")
+	Model           string                                        // Model to use (or empty to use original)
+	KeyID           string                                        // Optional: pin a specific API key by UUID ("" = no pin)
+	Fallbacks       []string                                      // Fallback chain: ["provider/model", ...]
+	ErrorFallbacks  []configstoreTables.TableRoutingErrorFallback // Error-aware chains selected for this rule
+	MatchedRuleID   string                                        // ID of the rule that matched
+	MatchedRuleName string                                        // Name of the rule that matched
 }
 
 // EvaluationContext holds all data needed for routing rule evaluation
@@ -270,11 +272,17 @@ func (re *Engine) EvaluateRoutingRules(ctx *schemas.BifrostContext, routingCtx *
 					keyID = *target.KeyID
 				}
 
+				errorFallbacks, err := effectiveRoutingErrorFallbacks(rule)
+				if err != nil {
+					return nil, fmt.Errorf("failed to decode error_fallbacks for routing rule %s: %w", rule.Name, err)
+				}
+
 				stepDecision = &Decision{
 					Provider:        provider,
 					Model:           model,
 					KeyID:           keyID,
 					Fallbacks:       rule.ParsedFallbacks,
+					ErrorFallbacks:  errorFallbacks,
 					MatchedRuleID:   rule.ID,
 					MatchedRuleName: rule.Name,
 				}
@@ -298,8 +306,8 @@ func (re *Engine) EvaluateRoutingRules(ctx *schemas.BifrostContext, routingCtx *
 		if matchedRule.ChainRule {
 			chainSuffix = " [chain_rule=true, continuing]"
 		}
-		re.logger.Debug("[Engine] Rule matched! Selected target (weight=%.2f): provider=%s, model=%s, fallbacks=%v%s", matchedTargetWeight, stepDecision.Provider, stepDecision.Model, stepDecision.Fallbacks, chainSuffix)
-		ctx.AppendRoutingEngineLog(schemas.RoutingEngineRoutingRule, schemas.LogLevelInfo, fmt.Sprintf("Rule '%s' [%s] → matched, selected target (weight=%.2f): provider=%s, model=%s, fallbacks=%v%s", matchedRule.Name, matchedRule.CelExpression, matchedTargetWeight, stepDecision.Provider, stepDecision.Model, stepDecision.Fallbacks, chainSuffix))
+		re.logger.Debug("[Engine] Rule matched! Selected target (weight=%.2f): provider=%s, model=%s, fallbacks=%v, error_fallbacks=%d%s", matchedTargetWeight, stepDecision.Provider, stepDecision.Model, stepDecision.Fallbacks, len(stepDecision.ErrorFallbacks), chainSuffix)
+		ctx.AppendRoutingEngineLog(schemas.RoutingEngineRoutingRule, schemas.LogLevelInfo, fmt.Sprintf("Rule '%s' [%s] → matched, selected target (weight=%.2f): provider=%s, model=%s, fallbacks=%v, error_fallbacks=%d%s", matchedRule.Name, matchedRule.CelExpression, matchedTargetWeight, stepDecision.Provider, stepDecision.Model, stepDecision.Fallbacks, len(stepDecision.ErrorFallbacks), chainSuffix))
 
 		// TERMINATION 2: Rule is terminal (chain_rule=false, the default).
 		if !matchedRule.ChainRule {
@@ -318,6 +326,28 @@ func (re *Engine) EvaluateRoutingRules(ctx *schemas.BifrostContext, routingCtx *
 		re.logger.Debug("[Engine] No routing rule matched, using default routing")
 	}
 	return finalDecision, nil
+}
+
+// effectiveRoutingErrorFallbacks returns the runtime policy regardless of whether the
+// config store populated the parsed convenience field. Raw-only records occur during
+// migration, cache warm-up, and integrations that deliberately keep persistence types
+// opaque until routing evaluation.
+func effectiveRoutingErrorFallbacks(rule *configstoreTables.TableRoutingRule) ([]configstoreTables.TableRoutingErrorFallback, error) {
+	if rule == nil {
+		return nil, nil
+	}
+	if rule.ParsedErrorFallbacks != nil {
+		return rule.ParsedErrorFallbacks, nil
+	}
+	if rule.ErrorFallbacks == nil || strings.TrimSpace(*rule.ErrorFallbacks) == "" {
+		return nil, nil
+	}
+
+	var parsed []configstoreTables.TableRoutingErrorFallback
+	if err := sonic.Unmarshal([]byte(*rule.ErrorFallbacks), &parsed); err != nil {
+		return nil, err
+	}
+	return parsed, nil
 }
 
 // selectWeightedTarget picks one target from the slice using weighted random selection.
