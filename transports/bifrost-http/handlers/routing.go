@@ -96,32 +96,34 @@ type RoutingTarget struct {
 
 // CreateRoutingRuleRequest represents the request body for creating a routing rule
 type CreateRoutingRuleRequest struct {
-	Name          string          `json:"name" validate:"required"`
-	Description   string          `json:"description,omitempty"`
-	Enabled       *bool           `json:"enabled,omitempty"`    // nil = use DB default (true)
-	ChainRule     *bool           `json:"chain_rule,omitempty"` // nil = use DB default (false)
-	CelExpression string          `json:"cel_expression"`
-	Targets       []RoutingTarget `json:"targets"` // Required; weights must sum to 1
-	Fallbacks     []string        `json:"fallbacks,omitempty"`
-	Scope         string          `json:"scope,omitempty"` // Defaults to "global" if not provided
-	ScopeID       *string         `json:"scope_id,omitempty"`
-	Query         map[string]any  `json:"query,omitempty"`
-	Priority      int             `json:"priority,omitempty"` // Defaults to 0 if not provided
+	Name           string                                        `json:"name" validate:"required"`
+	Description    string                                        `json:"description,omitempty"`
+	Enabled        *bool                                         `json:"enabled,omitempty"`    // nil = use DB default (true)
+	ChainRule      *bool                                         `json:"chain_rule,omitempty"` // nil = use DB default (false)
+	CelExpression  string                                        `json:"cel_expression"`
+	Targets        []RoutingTarget                               `json:"targets"` // Required; weights must sum to 1
+	Fallbacks      []string                                      `json:"fallbacks,omitempty"`
+	ErrorFallbacks []configstoreTables.TableRoutingErrorFallback `json:"error_fallbacks,omitempty"`
+	Scope          string                                        `json:"scope,omitempty"` // Defaults to "global" if not provided
+	ScopeID        *string                                       `json:"scope_id,omitempty"`
+	Query          map[string]any                                `json:"query,omitempty"`
+	Priority       int                                           `json:"priority,omitempty"` // Defaults to 0 if not provided
 }
 
 // UpdateRoutingRuleRequest represents the request body for updating a routing rule
 type UpdateRoutingRuleRequest struct {
-	Name          *string         `json:"name,omitempty"`
-	Description   *string         `json:"description,omitempty"`
-	Enabled       *bool           `json:"enabled,omitempty"`
-	ChainRule     *bool           `json:"chain_rule,omitempty"`
-	CelExpression *string         `json:"cel_expression,omitempty"`
-	Targets       []RoutingTarget `json:"targets,omitempty"` // If provided, replaces all existing targets; weights must sum to 1
-	Fallbacks     []string        `json:"fallbacks,omitempty"`
-	Query         map[string]any  `json:"query,omitempty"`
-	Priority      *int            `json:"priority,omitempty"`
-	Scope         *string         `json:"scope,omitempty"`
-	ScopeID       *string         `json:"scope_id,omitempty"`
+	Name           *string                                       `json:"name,omitempty"`
+	Description    *string                                       `json:"description,omitempty"`
+	Enabled        *bool                                         `json:"enabled,omitempty"`
+	ChainRule      *bool                                         `json:"chain_rule,omitempty"`
+	CelExpression  *string                                       `json:"cel_expression,omitempty"`
+	Targets        []RoutingTarget                               `json:"targets,omitempty"` // If provided, replaces all existing targets; weights must sum to 1
+	Fallbacks      []string                                      `json:"fallbacks,omitempty"`
+	ErrorFallbacks []configstoreTables.TableRoutingErrorFallback `json:"error_fallbacks,omitempty"`
+	Query          map[string]any                                `json:"query,omitempty"`
+	Priority       *int                                          `json:"priority,omitempty"`
+	Scope          *string                                       `json:"scope,omitempty"`
+	ScopeID        *string                                       `json:"scope_id,omitempty"`
 }
 
 // validRoutingScopes contains the allowed scope values for routing rules
@@ -131,6 +133,21 @@ var validRoutingScopes = map[string]bool{
 	"customer":    true,
 	"virtual_key": true,
 	"user":        true,
+}
+
+var validRoutingErrorFallbackCategories = map[string]bool{
+	"content_policy":        true,
+	"unsupported_operation": true,
+	"rate_limit":            true,
+	"authentication":        true,
+	"billing":               true,
+	"permission":            true,
+	"timeout":               true,
+	"provider_unavailable":  true,
+	"network":               true,
+	"invalid_request":       true,
+	"internal":              true,
+	"unknown":               true,
 }
 
 // errRoutingScopeIDNotFound marks a validateRoutingScopeID failure as a genuine
@@ -241,16 +258,189 @@ func validateRoutingTargets(targets []RoutingTarget) error {
 // validateRoutingFallbacks ensures each fallback parses to a non-empty known provider via
 // schemas.ParseModelString (e.g. "openai/gpt-4o", or "azure/" to use the incoming model).
 func validateRoutingFallbacks(fallbacks []string) error {
+	seen := make(map[string]struct{}, len(fallbacks))
 	for i, fb := range fallbacks {
-		if strings.TrimSpace(fb) == "" {
-			return fmt.Errorf("fallbacks[%d] must not be empty", i)
-		}
-		provider, _ := schemas.ParseModelString(fb, "")
-		if provider == "" {
+		canonicalKey, err := canonicalRoutingFallbackKey(fb)
+		if err != nil {
+			if strings.TrimSpace(fb) == "" {
+				return fmt.Errorf("fallbacks[%d] must not be empty", i)
+			}
 			return fmt.Errorf("fallbacks[%d] %q is invalid: must use a known provider prefix (e.g. \"openai/gpt-4o\" or \"azure/\" for the incoming model)", i, fb)
 		}
+		if _, exists := seen[canonicalKey]; exists {
+			return fmt.Errorf("fallbacks[%d] %q duplicates an earlier fallback target", i, fb)
+		}
+		seen[canonicalKey] = struct{}{}
 	}
 	return nil
+}
+
+func canonicalRoutingFallbackKey(fallback string) (string, error) {
+	trimmed := strings.TrimSpace(fallback)
+	if trimmed == "" {
+		return "", fmt.Errorf("fallback must not be empty")
+	}
+	provider, model := schemas.ParseModelString(trimmed, "")
+	if provider == "" {
+		return "", fmt.Errorf("fallback must use known provider prefix")
+	}
+	return strings.ToLower(strings.TrimSpace(string(provider))) + "|" + strings.ToLower(strings.TrimSpace(model)), nil
+}
+
+func validateAndNormalizeRoutingErrorFallbacks(errorFallbacks []configstoreTables.TableRoutingErrorFallback) ([]configstoreTables.TableRoutingErrorFallback, error) {
+	if errorFallbacks == nil {
+		return nil, nil
+	}
+
+	normalized := make([]configstoreTables.TableRoutingErrorFallback, 0, len(errorFallbacks))
+	for i, rule := range errorFallbacks {
+		fallbacks, err := normalizeRoutingErrorFallbackTargets(rule.Fallbacks)
+		if err != nil {
+			return nil, fmt.Errorf("error_fallbacks[%d].%w", i, err)
+		}
+		if len(fallbacks) == 0 {
+			return nil, fmt.Errorf("error_fallbacks[%d].fallbacks must contain at least one fallback target", i)
+		}
+
+		scenario := strings.ToLower(strings.TrimSpace(rule.Scenario))
+		hasWhen := !routingErrorFallbackConditionEmpty(rule.When)
+		if scenario != "" && hasWhen {
+			return nil, fmt.Errorf("error_fallbacks[%d] cannot define both scenario and when", i)
+		}
+		if scenario == "" && !hasWhen {
+			return nil, fmt.Errorf("error_fallbacks[%d] must define either scenario or when", i)
+		}
+
+		if scenario != "" {
+			if !validRoutingErrorFallbackCategories[scenario] {
+				return nil, fmt.Errorf("error_fallbacks[%d].scenario %q is invalid", i, rule.Scenario)
+			}
+			supplement, err := normalizeRoutingErrorFallbackSupplement(rule.Supplement)
+			if err != nil {
+				return nil, fmt.Errorf("error_fallbacks[%d].supplement %w", i, err)
+			}
+			normalized = append(normalized, configstoreTables.TableRoutingErrorFallback{
+				Name: strings.TrimSpace(rule.Name), Scenario: scenario, Supplement: supplement, Fallbacks: fallbacks,
+			})
+			continue
+		}
+
+		if rule.Supplement != nil {
+			return nil, fmt.Errorf("error_fallbacks[%d].supplement requires scenario", i)
+		}
+		when, err := normalizeRoutingErrorFallbackCondition(rule.When)
+		if err != nil {
+			return nil, fmt.Errorf("error_fallbacks[%d].when %w", i, err)
+		}
+		normalized = append(normalized, configstoreTables.TableRoutingErrorFallback{
+			Name: strings.TrimSpace(rule.Name), When: when, Fallbacks: fallbacks,
+		})
+	}
+	return normalized, nil
+}
+
+func normalizeRoutingErrorFallbackTargets(fallbacks []string) ([]string, error) {
+	normalized := make([]string, 0, len(fallbacks))
+	seen := make(map[string]struct{}, len(fallbacks))
+	for index, fallback := range fallbacks {
+		parts := strings.SplitN(strings.TrimSpace(fallback), "/", 2)
+		if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" {
+			return nil, fmt.Errorf("fallbacks[%d] %q is invalid: must use provider/model or provider/ for routed-model inheritance", index, fallback)
+		}
+		provider := strings.ToLower(strings.TrimSpace(parts[0]))
+		model := strings.TrimSpace(parts[1])
+		key := provider + "|" + strings.ToLower(model)
+		if _, exists := seen[key]; exists {
+			return nil, fmt.Errorf("fallbacks[%d] %q duplicates an earlier fallback target", index, fallback)
+		}
+		seen[key] = struct{}{}
+		normalized = append(normalized, provider+"/"+model)
+	}
+	return normalized, nil
+}
+
+func normalizeRoutingErrorFallbackCondition(in configstoreTables.TableRoutingErrorFallbackCondition) (configstoreTables.TableRoutingErrorFallbackCondition, error) {
+	out := configstoreTables.TableRoutingErrorFallbackCondition{}
+	for i, category := range in.Categories {
+		value := strings.ToLower(strings.TrimSpace(category))
+		if value == "" {
+			return out, fmt.Errorf("categories[%d] must not be empty", i)
+		}
+		if !validRoutingErrorFallbackCategories[value] {
+			return out, fmt.Errorf("categories[%d] %q is invalid", i, category)
+		}
+		out.Categories = append(out.Categories, value)
+	}
+	var err error
+	if out.ErrorCodes, err = normalizeNonEmptyRoutingStrings("error_codes", in.ErrorCodes); err != nil {
+		return out, err
+	}
+	if out.ErrorTypes, err = normalizeNonEmptyRoutingStrings("error_types", in.ErrorTypes); err != nil {
+		return out, err
+	}
+	if out.MessageContains, err = normalizeNonEmptyRoutingStrings("message_contains", in.MessageContains); err != nil {
+		return out, err
+	}
+	if out.StatusCodes, err = validateRoutingStatusCodes(in.StatusCodes); err != nil {
+		return out, err
+	}
+	return out, nil
+}
+
+func normalizeRoutingErrorFallbackSupplement(in *configstoreTables.TableRoutingErrorFallbackSupplement) (*configstoreTables.TableRoutingErrorFallbackSupplement, error) {
+	if in == nil {
+		return nil, nil
+	}
+	out := &configstoreTables.TableRoutingErrorFallbackSupplement{}
+	var err error
+	if out.Providers, err = normalizeNonEmptyRoutingStrings("providers", in.Providers); err != nil {
+		return nil, err
+	}
+	for i := range out.Providers {
+		out.Providers[i] = strings.ToLower(out.Providers[i])
+	}
+	if out.ErrorCodes, err = normalizeNonEmptyRoutingStrings("error_codes", in.ErrorCodes); err != nil {
+		return nil, err
+	}
+	if out.ErrorTypes, err = normalizeNonEmptyRoutingStrings("error_types", in.ErrorTypes); err != nil {
+		return nil, err
+	}
+	if out.MessageContainsAny, err = normalizeNonEmptyRoutingStrings("message_contains_any", in.MessageContainsAny); err != nil {
+		return nil, err
+	}
+	if out.StatusCodes, err = validateRoutingStatusCodes(in.StatusCodes); err != nil {
+		return nil, err
+	}
+	if len(out.ErrorCodes) == 0 && len(out.ErrorTypes) == 0 && len(out.StatusCodes) == 0 && len(out.MessageContainsAny) == 0 {
+		return nil, fmt.Errorf("must define at least one non-provider matcher")
+	}
+	return out, nil
+}
+
+func normalizeNonEmptyRoutingStrings(field string, values []string) ([]string, error) {
+	out := make([]string, 0, len(values))
+	for i, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			return nil, fmt.Errorf("%s[%d] must not be empty", field, i)
+		}
+		out = append(out, trimmed)
+	}
+	return out, nil
+}
+
+func validateRoutingStatusCodes(values []int) ([]int, error) {
+	for i, value := range values {
+		if value < 100 || value > 599 {
+			return nil, fmt.Errorf("status_codes[%d] must be a valid HTTP status code", i)
+		}
+	}
+	return values, nil
+}
+
+func routingErrorFallbackConditionEmpty(condition configstoreTables.TableRoutingErrorFallbackCondition) bool {
+	return len(condition.Categories) == 0 && len(condition.ErrorCodes) == 0 && len(condition.ErrorTypes) == 0 &&
+		len(condition.StatusCodes) == 0 && len(condition.MessageContains) == 0
 }
 
 func (h *RoutingHandler) getComplexityAnalyzerConfig(ctx *fasthttp.RequestCtx) {
@@ -485,6 +675,11 @@ func (h *RoutingHandler) createRoutingRule(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, 400, err.Error())
 		return
 	}
+	normalizedErrorFallbacks, err := validateAndNormalizeRoutingErrorFallbacks(req.ErrorFallbacks)
+	if err != nil {
+		SendError(ctx, 400, err.Error())
+		return
+	}
 	// Reject malformed CEL at write time instead of it silently failing at first evaluation.
 	if err := rules.ValidateCELExpression(req.CelExpression); err != nil {
 		SendError(ctx, 400, fmt.Sprintf("invalid CEL expression: %s", err.Error()))
@@ -537,18 +732,19 @@ func (h *RoutingHandler) createRoutingRule(ctx *fasthttp.RequestCtx) {
 		chainRule = *req.ChainRule
 	}
 	rule := &configstoreTables.TableRoutingRule{
-		ID:              ruleID,
-		Name:            req.Name,
-		Description:     req.Description,
-		Enabled:         enabled,
-		ChainRule:       chainRule,
-		CelExpression:   req.CelExpression,
-		Targets:         targets,
-		Scope:           scope,
-		ScopeID:         req.ScopeID,
-		Priority:        req.Priority,
-		ParsedFallbacks: req.Fallbacks,
-		ParsedQuery:     req.Query,
+		ID:                   ruleID,
+		Name:                 req.Name,
+		Description:          req.Description,
+		Enabled:              enabled,
+		ChainRule:            chainRule,
+		CelExpression:        req.CelExpression,
+		Targets:              targets,
+		Scope:                scope,
+		ScopeID:              req.ScopeID,
+		Priority:             req.Priority,
+		ParsedFallbacks:      req.Fallbacks,
+		ParsedErrorFallbacks: normalizedErrorFallbacks,
+		ParsedQuery:          req.Query,
 	}
 
 	// Create in database
@@ -645,6 +841,16 @@ func (h *RoutingHandler) updateRoutingRule(ctx *fasthttp.RequestCtx) {
 			return
 		}
 		rule.ParsedFallbacks = req.Fallbacks
+	}
+	if req.ErrorFallbacks != nil {
+		normalizedErrorFallbacks, err := validateAndNormalizeRoutingErrorFallbacks(req.ErrorFallbacks)
+		if err != nil {
+			SendError(ctx, 400, err.Error())
+			return
+		}
+		// A non-nil empty slice is intentional: TableRoutingRule.BeforeSave uses
+		// it to distinguish "clear the policy" from an omitted partial update.
+		rule.ParsedErrorFallbacks = normalizedErrorFallbacks
 	}
 	if req.Scope != nil && *req.Scope != "" {
 		// Validate scope value before updating
