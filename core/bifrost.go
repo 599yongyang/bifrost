@@ -5151,6 +5151,18 @@ func (bifrost *Bifrost) prepareFallbackRequest(req *schemas.BifrostRequest, fall
 		tmp.Model = fallback.Model
 		fallbackReq.ImageGenerationRequest = &tmp
 	}
+	if req.ImageEditRequest != nil {
+		tmp := *req.ImageEditRequest
+		tmp.Provider = fallback.Provider
+		tmp.Model = fallback.Model
+		fallbackReq.ImageEditRequest = &tmp
+	}
+	if req.ImageVariationRequest != nil {
+		tmp := *req.ImageVariationRequest
+		tmp.Provider = fallback.Provider
+		tmp.Model = fallback.Model
+		fallbackReq.ImageVariationRequest = &tmp
+	}
 	if req.VideoGenerationRequest != nil {
 		tmp := *req.VideoGenerationRequest
 		tmp.Provider = fallback.Provider
@@ -5487,6 +5499,45 @@ func (bifrost *Bifrost) handleStreamRequest(ctx *schemas.BifrostContext, req *sc
 	return nil, primaryErr
 }
 
+// validateImageResponse rejects successful-looking image responses that do not
+// contain a usable image. Some OpenAI-compatible providers return HTTP 200 with
+// only revised_prompt or usage metadata when generation failed internally.
+func validateImageResponse(requestType schemas.RequestType, response *schemas.BifrostResponse) *schemas.BifrostError {
+	switch requestType {
+	case schemas.ImageGenerationRequest, schemas.ImageEditRequest, schemas.ImageVariationRequest:
+	default:
+		return nil
+	}
+
+	if response == nil || response.ImageGenerationResponse == nil {
+		return invalidImageResponseError("response contains no image data")
+	}
+	if len(response.ImageGenerationResponse.Data) == 0 {
+		return invalidImageResponseError("response contains no generated images")
+	}
+	for index, image := range response.ImageGenerationResponse.Data {
+		if strings.TrimSpace(image.URL) == "" && strings.TrimSpace(image.B64JSON) == "" {
+			return invalidImageResponseError(fmt.Sprintf("image %d has neither url nor b64_json", index))
+		}
+	}
+	return nil
+}
+
+func invalidImageResponseError(reason string) *schemas.BifrostError {
+	statusCode := fasthttp.StatusBadGateway
+	errorType := "invalid_image_response"
+	allowFallbacks := true
+	return &schemas.BifrostError{
+		StatusCode:     &statusCode,
+		Type:           &errorType,
+		AllowFallbacks: &allowFallbacks,
+		Error: &schemas.ErrorField{
+			Type:    &errorType,
+			Message: "upstream provider returned an invalid image response: " + reason,
+		},
+	}
+}
+
 // tryRequest is a generic function that handles common request processing logic
 // It consolidates queue setup, plugin pipeline execution, enqueue logic, and response handling
 func (bifrost *Bifrost) tryRequest(ctx *schemas.BifrostContext, req *schemas.BifrostRequest) (*schemas.BifrostResponse, *schemas.BifrostError) {
@@ -5664,7 +5715,18 @@ func (bifrost *Bifrost) tryRequest(ctx *schemas.BifrostContext, req *schemas.Bif
 		// Accumulator is complete once the provider returns; stamp before post-hooks
 		// so logging reads it off ExtraFields.
 		populateLatencyExtraFields(msg.Context, result)
-		resp, bifrostErr := pipeline.RunPostLLMHooks(msg.Context, result, nil, pluginCount)
+		providerResultErr := validateImageResponse(req.RequestType, result)
+		postHookResult := result
+		if providerResultErr != nil {
+			// Treat an HTTP-200 response without image bytes as a provider failure,
+			// while preserving the attempt identity already stamped by the worker.
+			providerResultErr.PopulateExtraFields(req.RequestType, provider, model, model)
+			if result != nil {
+				providerResultErr.PopulateRoutingInfo(result.GetExtraFields().RoutingInfo)
+			}
+			postHookResult = nil
+		}
+		resp, bifrostErr := pipeline.RunPostLLMHooks(msg.Context, postHookResult, providerResultErr, pluginCount)
 		if bifrostErr != nil {
 			bifrostErr.PopulateExtraFields(req.RequestType, provider, model, model)
 		} else if resp != nil {
@@ -6459,7 +6521,7 @@ func executeRequestWithRetries[T any](
 		emptyStream := false
 		if bifrostError == nil {
 			if streamChan, ok := any(result).(chan *schemas.BifrostStreamChunk); ok {
-				checkedStream, drainDone, firstChunkErr := providerUtils.CheckFirstStreamChunkForError(ctx, streamChan)
+				checkedStream, drainDone, firstChunkErr := providerUtils.CheckFirstStreamChunkForError(ctx, requestType, streamChan)
 				if firstChunkErr != nil {
 					<-drainDone
 					// The dead stream's teardown (ReleaseStreamingResponse) claimed the

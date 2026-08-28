@@ -2,6 +2,7 @@ package utils
 
 import (
 	"context"
+	"net/http"
 	"testing"
 	"time"
 
@@ -20,7 +21,7 @@ func TestCheckFirstStreamChunk_ErrorInFirstChunk(t *testing.T) {
 	}
 	close(stream)
 
-	_, drainDone, err := CheckFirstStreamChunkForError(context.Background(), stream)
+	_, drainDone, err := CheckFirstStreamChunkForError(context.Background(), schemas.ChatCompletionStreamRequest, stream)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -30,6 +31,76 @@ func TestCheckFirstStreamChunk_ErrorInFirstChunk(t *testing.T) {
 	}
 	if err.Error.Code == nil || *err.Error.Code != "limit_burst_rate" {
 		t.Errorf("unexpected error code: %v", err.Error.Code)
+	}
+}
+
+func TestCheckFirstStreamChunk_RejectsCompletedImageWithoutPayload(t *testing.T) {
+	testCases := []struct {
+		name        string
+		eventType   schemas.ImageEventType
+		requestType schemas.RequestType
+	}{
+		{name: "generation", eventType: schemas.ImageGenerationEventTypeCompleted, requestType: schemas.ImageGenerationStreamRequest},
+		{name: "edit", eventType: schemas.ImageEditEventTypeCompleted, requestType: schemas.ImageEditStreamRequest},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			eventType := testCase.eventType
+			stream := make(chan *schemas.BifrostStreamChunk)
+			producerDone := make(chan struct{})
+			go func() {
+				defer close(producerDone)
+				stream <- &schemas.BifrostStreamChunk{
+					BifrostImageGenerationStreamResponse: &schemas.BifrostImageGenerationStreamResponse{
+						Type:          eventType,
+						RevisedPrompt: "a ceramic coffee cup",
+						URL:           " \t",
+						B64JSON:       "\n",
+					},
+				}
+				stream <- &schemas.BifrostStreamChunk{
+					BifrostImageGenerationStreamResponse: &schemas.BifrostImageGenerationStreamResponse{
+						Type: eventType,
+					},
+				}
+				close(stream)
+			}()
+
+			wrapped, drainDone, err := CheckFirstStreamChunkForError(context.Background(), testCase.requestType, stream)
+			if wrapped != nil {
+				t.Fatal("expected rejected image stream to return nil wrapped channel")
+			}
+			select {
+			case <-drainDone:
+			case <-time.After(time.Second):
+				t.Fatal("source stream was not drained")
+			}
+			select {
+			case <-producerDone:
+			case <-time.After(time.Second):
+				t.Fatal("source producer remained blocked after draining")
+			}
+			assertInvalidImageStreamError(t, err)
+		})
+	}
+}
+
+func assertInvalidImageStreamError(t *testing.T, err *schemas.BifrostError) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("expected image stream to be rejected")
+	}
+	if err.StatusCode == nil || *err.StatusCode != http.StatusBadGateway {
+		t.Fatalf("status code = %v, want %d", err.StatusCode, http.StatusBadGateway)
+	}
+	if err.Type == nil || *err.Type != "invalid_image_response" {
+		t.Fatalf("error type = %v, want invalid_image_response", err.Type)
+	}
+	if err.Error == nil || err.Error.Type == nil || *err.Error.Type != "invalid_image_response" {
+		t.Fatalf("nested error type = %v, want invalid_image_response", err.Error)
+	}
+	if err.AllowFallbacks == nil || !*err.AllowFallbacks {
+		t.Fatal("invalid image response must allow configured fallbacks")
 	}
 }
 
@@ -49,7 +120,7 @@ func TestCheckFirstStreamChunk_ValidFirstChunk(t *testing.T) {
 	stream <- chunk2
 	close(stream)
 
-	wrapped, _, err := CheckFirstStreamChunkForError(context.Background(), stream)
+	wrapped, _, err := CheckFirstStreamChunkForError(context.Background(), schemas.ChatCompletionStreamRequest, stream)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -77,7 +148,7 @@ func TestCheckFirstStreamChunk_EmptyStream(t *testing.T) {
 	stream := make(chan *schemas.BifrostStreamChunk)
 	close(stream)
 
-	wrapped, drainDone, err := CheckFirstStreamChunkForError(context.Background(), stream)
+	wrapped, drainDone, err := CheckFirstStreamChunkForError(context.Background(), schemas.ChatCompletionStreamRequest, stream)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -92,6 +163,29 @@ func TestCheckFirstStreamChunk_EmptyStream(t *testing.T) {
 	case <-drainDone:
 	default:
 		t.Error("expected drainDone to be closed for empty stream")
+	}
+}
+
+func TestCheckFirstStreamChunk_RejectsEmptyImageStream(t *testing.T) {
+	for _, requestType := range []schemas.RequestType{
+		schemas.ImageGenerationStreamRequest,
+		schemas.ImageEditStreamRequest,
+	} {
+		t.Run(string(requestType), func(t *testing.T) {
+			stream := make(chan *schemas.BifrostStreamChunk)
+			close(stream)
+
+			wrapped, drainDone, err := CheckFirstStreamChunkForError(context.Background(), requestType, stream)
+			if wrapped != nil {
+				t.Fatal("expected rejected image stream to return nil wrapped channel")
+			}
+			select {
+			case <-drainDone:
+			default:
+				t.Fatal("expected drainDone to be closed for an empty stream")
+			}
+			assertInvalidImageStreamError(t, err)
+		})
 	}
 }
 
@@ -112,7 +206,7 @@ func TestCheckFirstStreamChunk_ErrorInSecondChunk(t *testing.T) {
 	close(stream)
 
 	// Should NOT return error — only first chunk matters for retry
-	wrapped, _, err := CheckFirstStreamChunkForError(context.Background(), stream)
+	wrapped, _, err := CheckFirstStreamChunkForError(context.Background(), schemas.ChatCompletionStreamRequest, stream)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -151,7 +245,7 @@ func TestCheckFirstStreamChunk_ErrorDrainsSource(t *testing.T) {
 	}
 	close(stream)
 
-	_, drainDone, err := CheckFirstStreamChunkForError(context.Background(), stream)
+	_, drainDone, err := CheckFirstStreamChunkForError(context.Background(), schemas.ChatCompletionStreamRequest, stream)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -178,7 +272,7 @@ func TestCheckFirstStreamChunk_ErrorWithEmptyMessage(t *testing.T) {
 	}
 	close(stream)
 
-	wrapped, _, err := CheckFirstStreamChunkForError(context.Background(), stream)
+	wrapped, _, err := CheckFirstStreamChunkForError(context.Background(), schemas.ChatCompletionStreamRequest, stream)
 	if err != nil {
 		t.Fatalf("unexpected error for empty message: %v", err)
 	}
@@ -197,7 +291,7 @@ func TestCheckFirstStreamChunk_CtxCancelUnblocksWrapper(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	wrapped, drainDone, err := CheckFirstStreamChunkForError(ctx, src)
+	wrapped, drainDone, err := CheckFirstStreamChunkForError(ctx, schemas.ChatCompletionStreamRequest, src)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -306,7 +400,7 @@ func TestCheckFirstStreamChunk_CodeOnlyError(t *testing.T) {
 	}
 	close(stream)
 
-	_, drainDone, err := CheckFirstStreamChunkForError(context.Background(), stream)
+	_, drainDone, err := CheckFirstStreamChunkForError(context.Background(), schemas.ChatCompletionStreamRequest, stream)
 	if err == nil {
 		t.Fatal("expected error for code-only error, got nil")
 	}
