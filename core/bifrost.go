@@ -5034,8 +5034,8 @@ func (bifrost *Bifrost) getProviderByKey(providerKey schemas.ModelProvider) sche
 
 // CORE INTERNAL LOGIC
 
-// shouldTryFallbacks handles the primary error and returns true if we should proceed with fallbacks, false if we should return immediately
-func (bifrost *Bifrost) shouldTryFallbacks(req *schemas.BifrostRequest, primaryErr *schemas.BifrostError) bool {
+// shouldTryFallbacks handles the primary error and selected fallback chain.
+func (bifrost *Bifrost) shouldTryFallbacks(selectedFallbacks []schemas.Fallback, primaryErr *schemas.BifrostError) bool {
 	// If no primary error, we succeeded
 	if primaryErr == nil {
 		bifrost.logger.Debug("no primary error, we should not try fallbacks")
@@ -5055,9 +5055,7 @@ func (bifrost *Bifrost) shouldTryFallbacks(req *schemas.BifrostRequest, primaryE
 		return false
 	}
 
-	// If no fallbacks configured, return primary error
-	_, _, fallbacks := req.GetRequestFields()
-	if len(fallbacks) == 0 {
+	if len(selectedFallbacks) == 0 {
 		bifrost.logger.Debug("no fallbacks configured, we should not try fallbacks")
 		return false
 	}
@@ -5176,7 +5174,10 @@ func (bifrost *Bifrost) prepareFallbackRequest(req *schemas.BifrostRequest, fall
 // shouldContinueWithFallbacks processes errors from fallback attempts
 // Returns true if we should continue with more fallbacks, false if we should stop
 func (bifrost *Bifrost) shouldContinueWithFallbacks(fallback schemas.Fallback, fallbackErr *schemas.BifrostError) bool {
-	if fallbackErr.Error.Type != nil && *fallbackErr.Error.Type == schemas.RequestCancelled {
+	if fallbackErr == nil {
+		return false
+	}
+	if fallbackErr.Error != nil && fallbackErr.Error.Type != nil && *fallbackErr.Error.Type == schemas.RequestCancelled {
 		return false
 	}
 
@@ -5185,7 +5186,7 @@ func (bifrost *Bifrost) shouldContinueWithFallbacks(fallback schemas.Fallback, f
 		return false
 	}
 
-	bifrost.logger.Debug("Fallback provider %s failed: %s", fallback.Provider, fallbackErr.Error.Message)
+	bifrost.logger.Debug("Fallback provider %s failed: %s", fallback.Provider, fallbackErr.GetErrorString())
 	return true
 }
 
@@ -5208,7 +5209,7 @@ func populateLatencyExtraFields(ctx *schemas.BifrostContext, resp *schemas.Bifro
 // It is the wrapper for all non-streaming public API methods.
 func (bifrost *Bifrost) handleRequest(ctx *schemas.BifrostContext, req *schemas.BifrostRequest) (resp *schemas.BifrostResponse, bifrostErr *schemas.BifrostError) {
 	defer bifrost.releaseBifrostRequest(req)
-	provider, model, fallbacks := req.GetRequestFields()
+	provider, model, _ := req.GetRequestFields()
 
 	// Handle nil context early to prevent blocking
 	if ctx == nil {
@@ -5228,6 +5229,7 @@ func (bifrost *Bifrost) handleRequest(ctx *schemas.BifrostContext, req *schemas.
 
 	// Try the primary provider first
 	ctx.SetValue(schemas.BifrostContextKeyFallbackIndex, 0)
+	clearErrorFallbackDecision(ctx)
 	// Ensure request ID is set in context before PreHooks
 	if _, ok := ctx.Value(schemas.BifrostContextKeyRequestID).(string); !ok {
 		requestID := uuid.New().String()
@@ -5250,7 +5252,7 @@ func (bifrost *Bifrost) handleRequest(ctx *schemas.BifrostContext, req *schemas.
 	bifrost.releasePluginPipeline(preReqPipeline)
 	bifrost.endCoreSpan(setupSpan)
 	// Re-read after PreRequestHook — provider/model/fallbacks may have changed.
-	provider, model, fallbacks = req.GetRequestFields()
+	provider, model, _ = req.GetRequestFields()
 	// Empty provider/model after PreRequestHook means no plugin
 	// could pick a provider for this model — the caller's input is unresolvable.
 	if err := validateRequestAfterPreRequestHooks(req); err != nil {
@@ -5261,7 +5263,8 @@ func (bifrost *Bifrost) handleRequest(ctx *schemas.BifrostContext, req *schemas.
 		return nil, err
 	}
 
-	bifrost.logger.Debug("primary provider %s with model %s and %d fallbacks", provider, model, len(fallbacks))
+	_, ordinaryFallbacks, _, _ := bifrost.resolveFallbackChain(req, nil)
+	bifrost.logger.Debug("primary provider %s with model %s and %d fallbacks", provider, model, len(ordinaryFallbacks))
 
 	primaryResult, primaryErr := bifrost.tryRequest(ctx, req)
 	if primaryErr != nil {
@@ -5270,14 +5273,19 @@ func (bifrost *Bifrost) handleRequest(ctx *schemas.BifrostContext, req *schemas.
 		} else {
 			bifrost.logger.Debug("primary provider %s with model %s returned error: %v", provider, model, primaryErr)
 		}
-		if len(fallbacks) > 0 {
-			bifrost.logger.Debug("check if we should try %d fallbacks", len(fallbacks))
+		if len(ordinaryFallbacks) > 0 {
+			bifrost.logger.Debug("check if we should try %d fallbacks", len(ordinaryFallbacks))
 		}
 	}
+	selectedFallbacks, ordinaryFallbacks, matchedRule, matchedFailure := bifrost.resolveFallbackChain(req, primaryErr)
+	recordErrorFallbackDecision(ctx, matchedRule, matchedFailure)
 
 	// Check if we should proceed with fallbacks
-	shouldTryFallbacks := bifrost.shouldTryFallbacks(req, primaryErr)
+	shouldTryFallbacks := bifrost.shouldTryFallbacks(selectedFallbacks, primaryErr)
 	if !shouldTryFallbacks {
+		if matchedRule != nil && len(selectedFallbacks) == 0 {
+			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelWarn, fmt.Sprintf("Primary %s/%s matched error_fallbacks rule %q (category=%s), but its dedicated chain is empty", provider, model, errorFallbackRuleLabel(matchedRule), matchedFailure.category))
+		}
 		return primaryResult, primaryErr
 	}
 
@@ -5285,18 +5293,26 @@ func (bifrost *Bifrost) handleRequest(ctx *schemas.BifrostContext, req *schemas.
 	// — record it on the request's used-engines list so the audit trail closes
 	// the loop on whatever plugin-level engine selected the primary upstream.
 	schemas.AppendToContextList(ctx, schemas.BifrostContextKeyRoutingEnginesUsed, schemas.RoutingEngineCore)
-	ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Primary %s/%s failed (%s); evaluating %d configured fallback(s)", provider, model, routingErrorSummary(primaryErr), len(fallbacks)))
+	if matchedRule != nil {
+		ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Primary %s/%s failed (%s); matched error_fallbacks rule %q (category=%s), using %d dedicated fallback(s) instead of %d ordinary fallback(s)", provider, model, routingErrorSummary(primaryErr), errorFallbackRuleLabel(matchedRule), matchedFailure.category, len(selectedFallbacks), len(ordinaryFallbacks)))
+	} else {
+		ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Primary %s/%s failed (%s); evaluating %d configured fallback(s)", provider, model, routingErrorSummary(primaryErr), len(selectedFallbacks)))
+	}
 
 	// Tracks the most recent failure so each fallback transition log carries
 	// the error that triggered it (primary error for the first iteration, the
 	// prior fallback's error for subsequent iterations).
 	lastErr := primaryErr
+	attemptedTargets := attemptedFallbackTargets(provider, model)
+	dedicatedChainActivated := matchedRule != nil
 
 	// Try fallbacks in order
-	for i, fallback := range fallbacks {
+	for i := 0; i < len(selectedFallbacks); i++ {
+		fallback := selectedFallbacks[i]
+		markFallbackTargetAttempted(attemptedTargets, fallback)
 		ctx.SetValue(schemas.BifrostContextKeyFallbackIndex, i+1)
 		bifrost.logger.Debug("trying fallback provider %s with model %s", fallback.Provider, fallback.Model)
-		ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Trying fallback %d/%d: %s/%s (previous attempt failed: %s)", i+1, len(fallbacks), fallback.Provider, fallback.Model, routingErrorSummary(lastErr)))
+		ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Trying fallback %d/%d: %s/%s (previous attempt failed: %s)", i+1, len(selectedFallbacks), fallback.Provider, fallback.Model, routingErrorSummary(lastErr)))
 		ctx.SetValue(schemas.BifrostContextKeyFallbackRequestID, uuid.New().String())
 		clearCtxForFallback(ctx)
 
@@ -5307,6 +5323,7 @@ func (bifrost *Bifrost) handleRequest(ctx *schemas.BifrostContext, req *schemas.
 		tracer.SetAttribute(handle, schemas.AttrBifrostProviderName, string(fallback.Provider)) // raw Bifrost short name, mirrors canonical gen_ai.provider.name
 		tracer.SetAttribute(handle, schemas.AttrRequestModel, fallback.Model)
 		tracer.SetAttribute(handle, "fallback.index", i+1)
+		setErrorFallbackSpanAttributes(tracer, handle, ctx)
 		ctx.SetValue(schemas.BifrostContextKeySpanID, spanCtx.Value(schemas.BifrostContextKeySpanID))
 
 		fallbackReq := bifrost.prepareFallbackRequest(req, fallback)
@@ -5327,27 +5344,41 @@ func (bifrost *Bifrost) handleRequest(ctx *schemas.BifrostContext, req *schemas.
 		fallbackErr.SetFallbackRoutingInfo(provider, model)
 		if fallbackErr == nil {
 			bifrost.logger.Debug("successfully used fallback provider %s with model %s", fallback.Provider, fallback.Model)
-			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Request served by fallback %s/%s (attempt %d/%d)", fallback.Provider, fallback.Model, i+1, len(fallbacks)))
+			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Request served by fallback %s/%s (attempt %d/%d)", fallback.Provider, fallback.Model, i+1, len(selectedFallbacks)))
 			tracer.EndSpan(handle, schemas.SpanStatusOk, "")
 			return result, nil
 		}
 
-		// End span with error status
 		if fallbackErr.Error != nil {
 			tracer.SetAttribute(handle, "error", fallbackErr.Error.Message)
 		}
-		tracer.EndSpan(handle, schemas.SpanStatusError, "fallback failed")
 
 		// Check if we should continue with more fallbacks
 		if !bifrost.shouldContinueWithFallbacks(fallback, fallbackErr) {
+			tracer.EndSpan(handle, schemas.SpanStatusError, "fallback failed")
 			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelError, fmt.Sprintf("Fallback %s/%s failed (%s); halting further fallbacks", fallback.Provider, fallback.Model, routingErrorSummary(fallbackErr)))
 			return nil, fallbackErr
 		}
 
+		// The first matching error rule replaces all remaining ordinary targets.
+		// Once a dedicated chain is active it remains authoritative even when one
+		// of its own attempts fails.
+		if !dedicatedChainActivated {
+			if rule, failure := firstMatchingErrorFallbackRule(fallbackReq, fallbackErr, req.GetErrorFallbacks()); rule != nil {
+				dedicatedChainActivated = true
+				replacement := sanitizeFallbackChain(rule.Fallbacks, attemptedTargets)
+				selectedFallbacks = append(selectedFallbacks[:i+1], replacement...)
+				recordErrorFallbackDecision(ctx, rule, failure)
+				setErrorFallbackSpanAttributes(tracer, handle, ctx)
+				ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Fallback %s/%s failed (%s); matched error_fallbacks rule %q (category=%s), replacing the remaining ordinary chain with %d dedicated fallback(s)", fallback.Provider, fallback.Model, routingErrorSummary(fallbackErr), errorFallbackRuleLabel(rule), failure.category, len(replacement)))
+			}
+		}
+		tracer.EndSpan(handle, schemas.SpanStatusError, "fallback failed")
+
 		lastErr = fallbackErr
 	}
 
-	ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelError, fmt.Sprintf("All %d fallback(s) exhausted; returning primary error (%s)", len(fallbacks), routingErrorSummary(primaryErr)))
+	ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelError, fmt.Sprintf("All %d fallback(s) exhausted; returning primary error (%s)", len(selectedFallbacks), routingErrorSummary(primaryErr)))
 	// All providers failed, return the original error
 	return nil, primaryErr
 }
@@ -5358,7 +5389,7 @@ func (bifrost *Bifrost) handleRequest(ctx *schemas.BifrostContext, req *schemas.
 // It is the wrapper for all streaming public API methods.
 func (bifrost *Bifrost) handleStreamRequest(ctx *schemas.BifrostContext, req *schemas.BifrostRequest) (chan *schemas.BifrostStreamChunk, *schemas.BifrostError) {
 	defer bifrost.releaseBifrostRequest(req)
-	provider, model, fallbacks := req.GetRequestFields()
+	provider, model, _ := req.GetRequestFields()
 
 	// Handle nil context early to prevent blocking
 	if ctx == nil {
@@ -5373,6 +5404,7 @@ func (bifrost *Bifrost) handleStreamRequest(ctx *schemas.BifrostContext, req *sc
 
 	// Try the primary provider first
 	ctx.SetValue(schemas.BifrostContextKeyFallbackIndex, 0)
+	clearErrorFallbackDecision(ctx)
 	// Ensure request ID is set in context before PreHooks
 	if _, ok := ctx.Value(schemas.BifrostContextKeyRequestID).(string); !ok {
 		requestID := uuid.New().String()
@@ -5387,7 +5419,7 @@ func (bifrost *Bifrost) handleStreamRequest(ctx *schemas.BifrostContext, req *sc
 	preReqPipeline.RunPreRequestHooks(ctx, req)
 	bifrost.releasePluginPipeline(preReqPipeline)
 	// Re-read after PreRequestHook — provider/model/fallbacks may have changed.
-	provider, model, fallbacks = req.GetRequestFields()
+	provider, model, _ = req.GetRequestFields()
 	// Empty provider after PreRequestHook means no plugin
 	// could pick a provider for this model — the caller's input is unresolvable.
 	if err := validateRequestAfterPreRequestHooks(req); err != nil {
@@ -5398,7 +5430,8 @@ func (bifrost *Bifrost) handleStreamRequest(ctx *schemas.BifrostContext, req *sc
 		return nil, err
 	}
 
-	bifrost.logger.Debug("primary provider %s with model %s and %d fallbacks", provider, model, len(fallbacks))
+	_, ordinaryFallbacks, _, _ := bifrost.resolveFallbackChain(req, nil)
+	bifrost.logger.Debug("primary provider %s with model %s and %d fallbacks", provider, model, len(ordinaryFallbacks))
 
 	primaryResult, primaryErr := bifrost.tryStreamRequest(ctx, req)
 	if primaryErr != nil {
@@ -5407,14 +5440,19 @@ func (bifrost *Bifrost) handleStreamRequest(ctx *schemas.BifrostContext, req *sc
 		} else {
 			bifrost.logger.Debug("primary provider %s with model %s returned error: %v", provider, model, primaryErr)
 		}
-		if len(fallbacks) > 0 {
-			bifrost.logger.Debug("check if we should try %d fallbacks", len(fallbacks))
+		if len(ordinaryFallbacks) > 0 {
+			bifrost.logger.Debug("check if we should try %d fallbacks", len(ordinaryFallbacks))
 		}
 	}
+	selectedFallbacks, ordinaryFallbacks, matchedRule, matchedFailure := bifrost.resolveFallbackChain(req, primaryErr)
+	recordErrorFallbackDecision(ctx, matchedRule, matchedFailure)
 
 	// Check if we should proceed with fallbacks
-	shouldTryFallbacks := bifrost.shouldTryFallbacks(req, primaryErr)
+	shouldTryFallbacks := bifrost.shouldTryFallbacks(selectedFallbacks, primaryErr)
 	if !shouldTryFallbacks {
+		if matchedRule != nil && len(selectedFallbacks) == 0 {
+			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelWarn, fmt.Sprintf("Primary %s/%s matched error_fallbacks rule %q (category=%s), but its dedicated chain is empty", provider, model, errorFallbackRuleLabel(matchedRule), matchedFailure.category))
+		}
 		return primaryResult, primaryErr
 	}
 
@@ -5422,14 +5460,22 @@ func (bifrost *Bifrost) handleStreamRequest(ctx *schemas.BifrostContext, req *sc
 	// the primary-failure entry to the routing engine log trail before
 	// iterating fallbacks. See handleRequest for the rationale.
 	schemas.AppendToContextList(ctx, schemas.BifrostContextKeyRoutingEnginesUsed, schemas.RoutingEngineCore)
-	ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Primary %s/%s failed (%s); evaluating %d configured fallback(s)", provider, model, routingErrorSummary(primaryErr), len(fallbacks)))
+	if matchedRule != nil {
+		ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Primary %s/%s failed (%s); matched error_fallbacks rule %q (category=%s), using %d dedicated fallback(s) instead of %d ordinary fallback(s)", provider, model, routingErrorSummary(primaryErr), errorFallbackRuleLabel(matchedRule), matchedFailure.category, len(selectedFallbacks), len(ordinaryFallbacks)))
+	} else {
+		ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Primary %s/%s failed (%s); evaluating %d configured fallback(s)", provider, model, routingErrorSummary(primaryErr), len(selectedFallbacks)))
+	}
 
 	lastErr := primaryErr
+	attemptedTargets := attemptedFallbackTargets(provider, model)
+	dedicatedChainActivated := matchedRule != nil
 
 	// Try fallbacks in order
-	for i, fallback := range fallbacks {
+	for i := 0; i < len(selectedFallbacks); i++ {
+		fallback := selectedFallbacks[i]
+		markFallbackTargetAttempted(attemptedTargets, fallback)
 		ctx.SetValue(schemas.BifrostContextKeyFallbackIndex, i+1)
-		ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Trying fallback %d/%d: %s/%s (previous attempt failed: %s)", i+1, len(fallbacks), fallback.Provider, fallback.Model, routingErrorSummary(lastErr)))
+		ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Trying fallback %d/%d: %s/%s (previous attempt failed: %s)", i+1, len(selectedFallbacks), fallback.Provider, fallback.Model, routingErrorSummary(lastErr)))
 		ctx.SetValue(schemas.BifrostContextKeyFallbackRequestID, uuid.New().String())
 		clearCtxForFallback(ctx)
 
@@ -5440,6 +5486,7 @@ func (bifrost *Bifrost) handleStreamRequest(ctx *schemas.BifrostContext, req *sc
 		tracer.SetAttribute(handle, schemas.AttrBifrostProviderName, string(fallback.Provider)) // raw Bifrost short name, mirrors canonical gen_ai.provider.name
 		tracer.SetAttribute(handle, schemas.AttrRequestModel, fallback.Model)
 		tracer.SetAttribute(handle, "fallback.index", i+1)
+		setErrorFallbackSpanAttributes(tracer, handle, ctx)
 		ctx.SetValue(schemas.BifrostContextKeySpanID, spanCtx.Value(schemas.BifrostContextKeySpanID))
 
 		fallbackReq := bifrost.prepareFallbackRequest(req, fallback)
@@ -5475,27 +5522,41 @@ func (bifrost *Bifrost) handleStreamRequest(ctx *schemas.BifrostContext, req *sc
 				ctx.SetRoutingInfoSnapshot(ri)
 			}
 			bifrost.logger.Debug("successfully used fallback provider %s with model %s", fallback.Provider, fallback.Model)
-			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Request served by fallback %s/%s (attempt %d/%d)", fallback.Provider, fallback.Model, i+1, len(fallbacks)))
+			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Request served by fallback %s/%s (attempt %d/%d)", fallback.Provider, fallback.Model, i+1, len(selectedFallbacks)))
 			tracer.EndSpan(handle, schemas.SpanStatusOk, "")
 			return result, nil
 		}
 
-		// End span with error status
 		if fallbackErr.Error != nil {
 			tracer.SetAttribute(handle, "error", fallbackErr.Error.Message)
 		}
-		tracer.EndSpan(handle, schemas.SpanStatusError, "fallback failed")
 
 		// Check if we should continue with more fallbacks
 		if !bifrost.shouldContinueWithFallbacks(fallback, fallbackErr) {
+			tracer.EndSpan(handle, schemas.SpanStatusError, "fallback failed")
 			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelError, fmt.Sprintf("Fallback %s/%s failed (%s); halting further fallbacks", fallback.Provider, fallback.Model, routingErrorSummary(fallbackErr)))
 			return nil, fallbackErr
 		}
 
+		// Only synchronous setup/first-chunk errors reach this loop. Once a channel
+		// has been returned, core cannot replace it without buffering or replaying
+		// already-visible chunks, so post-return stream errors remain in-band.
+		if !dedicatedChainActivated {
+			if rule, failure := firstMatchingErrorFallbackRule(fallbackReq, fallbackErr, req.GetErrorFallbacks()); rule != nil {
+				dedicatedChainActivated = true
+				replacement := sanitizeFallbackChain(rule.Fallbacks, attemptedTargets)
+				selectedFallbacks = append(selectedFallbacks[:i+1], replacement...)
+				recordErrorFallbackDecision(ctx, rule, failure)
+				setErrorFallbackSpanAttributes(tracer, handle, ctx)
+				ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Fallback %s/%s failed (%s); matched error_fallbacks rule %q (category=%s), replacing the remaining ordinary chain with %d dedicated fallback(s)", fallback.Provider, fallback.Model, routingErrorSummary(fallbackErr), errorFallbackRuleLabel(rule), failure.category, len(replacement)))
+			}
+		}
+		tracer.EndSpan(handle, schemas.SpanStatusError, "fallback failed")
+
 		lastErr = fallbackErr
 	}
 
-	ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelError, fmt.Sprintf("All %d fallback(s) exhausted; returning primary error (%s)", len(fallbacks), routingErrorSummary(primaryErr)))
+	ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelError, fmt.Sprintf("All %d fallback(s) exhausted; returning primary error (%s)", len(selectedFallbacks), routingErrorSummary(primaryErr)))
 	// All providers failed, return the original error
 	return nil, primaryErr
 }
@@ -5790,7 +5851,10 @@ func (bifrost *Bifrost) tryRequest(ctx *schemas.BifrostContext, req *schemas.Bif
 		// Accumulator is complete once the provider returns; stamp before post-hooks
 		// so logging reads it off ExtraFields.
 		populateLatencyExtraFields(msg.Context, result)
-		providerResultErr := validateImageResponse(req.RequestType, result)
+		providerResultErr := successfulContentPolicyError(req, result)
+		if providerResultErr == nil {
+			providerResultErr = validateImageResponse(req.RequestType, result)
+		}
 		attachUpstreamRequestID(msg.Context, providerResultErr)
 		postHookResult := result
 		if providerResultErr != nil {
@@ -5804,6 +5868,10 @@ func (bifrost *Bifrost) tryRequest(ctx *schemas.BifrostContext, req *schemas.Bif
 		}
 		resp, bifrostErr := pipeline.RunPostLLMHooks(msg.Context, postHookResult, providerResultErr, pluginCount)
 		if bifrostErr != nil {
+			if bifrostErr.ExtraFields.BaseProvider == "" {
+				bifrostErr.ExtraFields.BaseProvider = schemas.ResolveBaseProvider(msg.Context, provider)
+			}
+			captureFailureRecognitionSignals(bifrostErr)
 			attachUpstreamRequestID(msg.Context, bifrostErr)
 			bifrostErr.PopulateExtraFields(req.RequestType, provider, model, model)
 		} else if resp != nil {
@@ -5832,6 +5900,11 @@ func (bifrost *Bifrost) tryRequest(ctx *schemas.BifrostContext, req *schemas.Bif
 		return resp, nil
 	case bifrostErrVal := <-msg.Err:
 		bifrostErrPtr := &bifrostErrVal
+		if bifrostErrPtr.ExtraFields.BaseProvider == "" {
+			bifrostErrPtr.ExtraFields.BaseProvider = schemas.ResolveBaseProvider(msg.Context, provider)
+		}
+		captureFailureRecognitionSignals(bifrostErrPtr)
+		providerFailureSignals := bifrostErrPtr.ExtraFields.FailureSignals
 		attachUpstreamRequestID(msg.Context, bifrostErrPtr)
 		// Worker->caller goroutine-hop latency on the error path too.
 		if !msg.sentAt.IsZero() {
@@ -5843,6 +5916,11 @@ func (bifrost *Bifrost) tryRequest(ctx *schemas.BifrostContext, req *schemas.Bif
 		}
 		resp, bifrostErrPtr = pipeline.RunPostLLMHooks(msg.Context, nil, bifrostErrPtr, pluginCount)
 		if bifrostErrPtr != nil {
+			if bifrostErrPtr.ExtraFields.BaseProvider == "" {
+				bifrostErrPtr.ExtraFields.BaseProvider = schemas.ResolveBaseProvider(msg.Context, provider)
+			}
+			bifrostErrPtr.ExtraFields.FailureSignals = schemas.MergeFailureRecognitionSignals(providerFailureSignals, bifrostErrPtr.ExtraFields.FailureSignals)
+			captureFailureRecognitionSignals(bifrostErrPtr)
 			attachUpstreamRequestID(msg.Context, bifrostErrPtr)
 			bifrostErrPtr.PopulateExtraFields(req.RequestType, provider, model, model)
 		} else if resp != nil {
@@ -6159,6 +6237,11 @@ func (bifrost *Bifrost) tryStreamRequest(ctx *schemas.BifrostContext, req *schem
 		bifrost.releaseChannelMessage(msg)
 		return stream, nil
 	case bifrostErrVal := <-msg.Err:
+		if bifrostErrVal.ExtraFields.BaseProvider == "" {
+			bifrostErrVal.ExtraFields.BaseProvider = schemas.ResolveBaseProvider(ctx, provider)
+		}
+		captureFailureRecognitionSignals(&bifrostErrVal)
+		providerFailureSignals := bifrostErrVal.ExtraFields.FailureSignals
 		attachUpstreamRequestID(ctx, &bifrostErrVal)
 		if bifrostErrVal.Error != nil {
 			bifrost.logger.Debug("error while executing stream request: %s", bifrostErrVal.Error.Message)
@@ -6170,6 +6253,11 @@ func (bifrost *Bifrost) tryStreamRequest(ctx *schemas.BifrostContext, req *schem
 		// On error we will complete post-hooks
 		recoveredResp, recoveredErr := pipeline.RunPostLLMHooks(ctx, nil, &bifrostErrVal, len(*bifrost.llmPlugins.Load()))
 		if recoveredErr != nil {
+			if recoveredErr.ExtraFields.BaseProvider == "" {
+				recoveredErr.ExtraFields.BaseProvider = schemas.ResolveBaseProvider(ctx, provider)
+			}
+			recoveredErr.ExtraFields.FailureSignals = schemas.MergeFailureRecognitionSignals(providerFailureSignals, recoveredErr.ExtraFields.FailureSignals)
+			captureFailureRecognitionSignals(recoveredErr)
 			attachUpstreamRequestID(ctx, recoveredErr)
 			recoveredErr.PopulateExtraFields(req.RequestType, provider, model, model)
 		} else if recoveredResp != nil {
