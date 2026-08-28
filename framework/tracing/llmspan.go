@@ -24,8 +24,8 @@ func formatTraceValue(v any) string {
 
 	switch rv.Kind() {
 	case reflect.Map, reflect.Slice, reflect.Array, reflect.Struct:
-		if data, err := schemas.MarshalString(v); err == nil {
-			return data
+		if data, err := schemas.MarshalSorted(v); err == nil {
+			return string(data)
 		}
 	}
 

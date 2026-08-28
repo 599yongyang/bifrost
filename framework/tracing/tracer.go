@@ -425,7 +425,7 @@ func (t *Tracer) PopulateLLMRequestAttributes(handle schemas.SpanHandle, req *sc
 		return
 	}
 
-	attrs := PopulateRequestAttributes(req)
+	attrs := PopulateRequestAttributesWithMedia(req, trace, span.SpanID)
 	span.SetAttributes(attrs)
 
 	// Propagate input messages and request model to root span so observability backends (e.g. Langfuse)
@@ -455,6 +455,9 @@ func (t *Tracer) PopulateLLMRequestAttributes(handle schemas.SpanHandle, req *sc
 		if v, ok := attrs[schemas.AttrProviderName]; ok {
 			rootSpan.SetAttribute(schemas.AttrProviderName, v)
 		}
+		if v, ok := attrs[schemas.AttrBifrostImageInput]; ok {
+			rootSpan.SetAttribute(schemas.AttrBifrostImageInput, v)
+		}
 	}
 }
 
@@ -472,7 +475,7 @@ func (t *Tracer) PopulateLLMResponseAttributes(ctx *schemas.BifrostContext, hand
 	if span == nil {
 		return
 	}
-	respAttrs := PopulateResponseAttributes(resp)
+	respAttrs := PopulateResponseAttributesWithMedia(resp, trace, span.SpanID)
 	for k, v := range respAttrs {
 		if k == schemas.AttrFinishReasons {
 			// Spec: gen_ai.response.finish_reasons (string[]) belongs on the GenAI (llm.call) span.
@@ -486,6 +489,11 @@ func (t *Tracer) PopulateLLMResponseAttributes(ctx *schemas.BifrostContext, hand
 		span.SetAttribute(k, v)
 	}
 	span.SetAttributes(PopulateErrorAttributes(err))
+	if rootSpan := trace.RootSpan; rootSpan != nil && rootSpan.SpanID != span.SpanID {
+		if v, ok := respAttrs[schemas.AttrBifrostImageOutput]; ok {
+			rootSpan.SetAttribute(schemas.AttrBifrostImageOutput, v)
+		}
+	}
 
 	// Enrichment dimensions derivable only post-response, attached here so every
 	// connector reads them from one place (see core/schemas EnrichmentDims):
