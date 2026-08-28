@@ -17,6 +17,7 @@ import type { ColumnOrderState, ColumnPinningState, TableMeta, VisibilityState }
 import { ColumnDef, flexRender, getCoreRowModel, SortingState, useReactTable } from "@tanstack/react-table";
 import { ChevronLeft, ChevronRight, Loader2, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { logsPageCopy } from "../utils/logsPageCopy";
 
 interface DataTableProps {
 	columns: ColumnDef<LogEntry>[];
@@ -59,6 +60,7 @@ export function LogsDataTable({
 	onReorderColumns,
 	tableMeta,
 }: DataTableProps) {
+	const copy = logsPageCopy();
 	const [sorting, setSorting] = useState<SortingState>([{ id: pagination.sort_by, desc: pagination.order === "desc" }]);
 	const [pageSizePref, setPageSizePref, pageSizeHydrated] = useTablePageSizePreference("bifrost.logs.pageSize");
 
@@ -265,7 +267,7 @@ export function LogsDataTable({
 						) : loading ? null : (
 							<TableRow>
 								<TableCell colSpan={columns.length} className="h-24 text-center">
-									No results found. Try adjusting your filters and/or time range.
+									{copy.noResults}
 								</TableCell>
 							</TableRow>
 						)}
@@ -276,12 +278,12 @@ export function LogsDataTable({
 			{/* Pagination Footer */}
 			<div className="flex shrink-0 items-center justify-between text-xs" data-testid="pagination">
 				<div className="text-muted-foreground flex items-center gap-2">
-					{startItem.toLocaleString()}-{endItem.toLocaleString()} of {totalItems.toLocaleString()} entries
+					{copy.entriesRange(startItem.toLocaleString(), endItem.toLocaleString(), totalItems.toLocaleString())}
 				</div>
 
 				<div className="flex items-center gap-3">
 					<div className="flex items-center gap-1.5">
-						<span className="text-muted-foreground">Rows per page</span>
+						<span className="text-muted-foreground">{copy.rowsPerPage}</span>
 						<ComboboxSelect
 							options={pageSizeOptions}
 							value={String(pageSizePref)}
@@ -300,16 +302,12 @@ export function LogsDataTable({
 							onClick={() => goToPage(currentPage - 1)}
 							disabled={currentPage <= 1}
 							data-testid="prev-page"
-							aria-label="Previous page"
+							aria-label={copy.previousPage}
 						>
 							<ChevronLeft className="size-3" />
 						</Button>
 
-						<div className="flex items-center gap-1">
-							<span>Page</span>
-							<span>{currentPage}</span>
-							<span>of {totalPages}</span>
-						</div>
+						<div className="flex items-center gap-1">{copy.pageOf(currentPage, totalPages)}</div>
 
 						<Button
 							variant="ghost"
@@ -317,7 +315,7 @@ export function LogsDataTable({
 							onClick={() => goToPage(currentPage + 1)}
 							disabled={totalPages === 0 || currentPage >= totalPages}
 							data-testid="next-page"
-							aria-label="Next page"
+							aria-label={copy.nextPage}
 						>
 							<ChevronRight className="size-3" />
 						</Button>

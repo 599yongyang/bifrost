@@ -22,8 +22,12 @@ import { observationReasonLabel, observationStatusLabel, observabilityCopy } fro
 import { resolveObservabilityExport } from "../utils/observabilityExport";
 import { ColumnDef } from "@tanstack/react-table";
 import { format, formatDistanceToNow } from "date-fns";
+import { enUS } from "date-fns/locale/en-US";
+import { zhCN } from "date-fns/locale/zh-CN";
 import { ArrowUpDown, ChevronRight, CloudUpload, CornerDownRight, Loader2, MoreHorizontal, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { logsPageCopy } from "../utils/logsPageCopy";
+import { getBifrostLanguage } from "@/lib/i18n/language";
 
 // Passed to useReactTable({ meta }) by the logs page so the expander column can
 // read/toggle chain expansion without threading props through column factories.
@@ -42,7 +46,7 @@ function batchAccountingDisplay(log: LogEntry): { model: string; usage: LLMUsage
 	if (entries.length === 0) {
 		return null;
 	}
-	const model = entries.length === 1 ? entries[0].model : "mixed";
+	const model = entries.length === 1 ? entries[0].model : logsPageCopy().mixed;
 	const usage: LLMUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
 	for (const entry of entries) {
 		usage.prompt_tokens = (usage.prompt_tokens ?? 0) + (entry.usage?.prompt_tokens ?? 0);
@@ -64,6 +68,7 @@ function LogActionsMenu({
 	onDelete?: (log: LogEntry) => void;
 	onManualExport?: (log: LogEntry) => void;
 }) {
+	const copy = logsPageCopy();
 	const [isOpen, setIsOpen] = useState(false);
 	const exportState = resolveObservabilityExport(log);
 	if (!onDelete && (!onManualExport || !exportState.canManualExport)) return null;
@@ -71,7 +76,7 @@ function LogActionsMenu({
 	return (
 		<DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
 			<DropdownMenuTrigger asChild onClick={(event) => event.stopPropagation()}>
-				<Button variant="ghost" size="icon" data-testid="log-actions-btn" aria-label="Log actions" className="h-7 w-7">
+				<Button variant="ghost" size="icon" data-testid="log-actions-btn" aria-label={copy.logActions} className="h-7 w-7">
 					<MoreHorizontal className="h-4 w-4" />
 				</Button>
 			</DropdownMenuTrigger>
@@ -101,7 +106,7 @@ function LogActionsMenu({
 						}}
 					>
 						<Trash2 className="h-4 w-4" />
-						Delete
+						{copy.delete}
 					</DropdownMenuItem>
 				)}
 			</DropdownMenuContent>
@@ -166,7 +171,7 @@ export function getRealtimeTurnMessages(log?: LogEntry): {
 
 export function getMessage(log?: LogEntry) {
 	if (log?.object === "list_models") {
-		return "N/A";
+		return logsPageCopy().notAvailable;
 	}
 	if (log?.object === "realtime.turn") {
 		const messages = getRealtimeTurnMessages(log);
@@ -216,13 +221,13 @@ export function getMessage(log?: LogEntry) {
 	} else if (log?.speech_input) {
 		return log.speech_input.input;
 	} else if (log?.transcription_input) {
-		return "Audio file";
+		return logsPageCopy().audioFile;
 	} else if (log?.image_generation_input?.prompt) {
 		return log.image_generation_input.prompt;
 	}
 	const obj = log?.object as string | undefined;
 	if (obj === "image_edit" || obj === "image_edit_stream" || obj === "image_variation") {
-		return "Image file";
+		return logsPageCopy().imageFile;
 	}
 	if (log?.content_summary) {
 		return log.content_summary;
@@ -231,6 +236,7 @@ export function getMessage(log?: LogEntry) {
 }
 
 export function LogMessageCell({ log, contentClassName = "max-w-full" }: { log: LogEntry; contentClassName?: string }) {
+	const copy = logsPageCopy();
 	const input = getMessage(log);
 	const isLargePayload = log.is_large_payload_request || log.is_large_payload_response;
 	const realtimeMessages = log.object === "realtime.turn" ? getRealtimeTurnMessages(log) : null;
@@ -240,7 +246,7 @@ export function LogMessageCell({ log, contentClassName = "max-w-full" }: { log: 
 			{isLargePayload && (
 				<span
 					className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/50 dark:text-amber-400"
-					title="Large payload - streamed directly to provider"
+					title={copy.largePayloadHint}
 				>
 					LP
 				</span>
@@ -248,18 +254,32 @@ export function LogMessageCell({ log, contentClassName = "max-w-full" }: { log: 
 			{realtimeMessages &&
 			(realtimeMessages.tool || realtimeMessages.user || realtimeMessages.assistantToolCall || realtimeMessages.assistant) ? (
 				<div className={cn(contentClassName, "font-mono text-sm font-normal leading-5")}>
-					{realtimeMessages.tool ? <div className="truncate">Tool Result: {realtimeMessages.tool}</div> : null}
-					{realtimeMessages.user ? <div className="truncate">User: {realtimeMessages.user}</div> : null}
-					{realtimeMessages.assistantToolCall ? (
-						<div className="truncate">Assistant Tool Call: {realtimeMessages.assistantToolCall}</div>
+					{realtimeMessages.tool ? (
+						<div className="truncate">
+							{copy.toolResult}: {realtimeMessages.tool}
+						</div>
 					) : null}
-					{realtimeMessages.assistant ? <div className="truncate">Assistant: {realtimeMessages.assistant}</div> : null}
+					{realtimeMessages.user ? (
+						<div className="truncate">
+							{copy.userRole}: {realtimeMessages.user}
+						</div>
+					) : null}
+					{realtimeMessages.assistantToolCall ? (
+						<div className="truncate">
+							{copy.assistantToolCall}: {realtimeMessages.assistantToolCall}
+						</div>
+					) : null}
+					{realtimeMessages.assistant ? (
+						<div className="truncate">
+							{copy.assistantRole}: {realtimeMessages.assistant}
+						</div>
+					) : null}
 				</div>
 			) : (
 				<div className={cn(contentClassName, "truncate font-mono text-[12px] font-normal")}>
 					{input ||
 						(isLargePayload
-							? `Large payload ${log.is_large_payload_request && log.is_large_payload_response ? "request & response" : log.is_large_payload_request ? "request" : "response"}`
+							? `${copy.largePayload} ${log.is_large_payload_request && log.is_large_payload_response ? copy.requestAndResponse : log.is_large_payload_request ? copy.request : copy.response}`
 							: "-")}
 				</div>
 			)}
@@ -299,7 +319,7 @@ function AttributionCell({ names, name, ids, id }: { names?: string[]; name?: st
 					{value}
 				</span>
 			))}
-			{remaining > 0 && <span className="text-muted-foreground">+{remaining} more</span>}
+			{remaining > 0 && <span className="text-muted-foreground">{logsPageCopy().more(remaining)}</span>}
 		</div>
 	);
 }
@@ -312,6 +332,8 @@ export const createColumns = (
 	groupedView = false,
 	onManualExport?: (log: LogEntry) => void,
 ): ColumnDef<LogEntry>[] => {
+	const copy = logsPageCopy();
+	const dateLocale = getBifrostLanguage() === "zh" ? zhCN : enUS;
 	// Chevron that expands a fallback chain in the grouped view. Child rows get a
 	// corner connector instead so the hierarchy stays readable in any column order.
 	const expandColumn: ColumnDef<LogEntry>[] = groupedView
@@ -334,7 +356,7 @@ export const createColumns = (
 							<button
 								type="button"
 								data-testid="log-chain-expand-btn"
-								aria-label={isExpanded ? "Collapse fallback chain" : `Expand fallback chain (${childCount} attempts)`}
+								aria-label={isExpanded ? copy.collapseFallbackChain : copy.expandFallbackChain(childCount)}
 								aria-expanded={isExpanded}
 								className="text-muted-foreground hover:text-foreground absolute top-1/2 left-1/2 flex -translate-x-1/2 -translate-y-1/2 cursor-pointer items-center justify-center gap-1 rounded-sm transition-colors"
 								onClick={(event) => {
@@ -370,7 +392,7 @@ export const createColumns = (
 			accessorKey: "timestamp",
 			header: ({ column }) => (
 				<Button variant="ghost" data-testid="logs-time-sort-btn" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}>
-					Time
+					{copy.time}
 					<ArrowUpDown className="ml-2 h-4 w-4" />
 				</Button>
 			),
@@ -380,19 +402,21 @@ export const createColumns = (
 				const date = timestamp ? new Date(timestamp) : null;
 				const isValid = date && date.toString() !== "Invalid Date";
 				if (!isValid) {
-					return <div className="truncate text-xs">N/A</div>;
+					return <div className="truncate text-xs">{copy.notAvailable}</div>;
 				}
 				return (
 					<div className="flex flex-col leading-tight">
-						<span className="font-mono text-xs tabular-nums">{format(date, "MMM dd  HH:mm:ss")}</span>
-						<span className="text-muted-foreground text-[10.5px] tabular-nums">{formatDistanceToNow(date, { addSuffix: true })}</span>
+						<span className="font-mono text-xs tabular-nums">{format(date, copy.timestampFormat)}</span>
+						<span className="text-muted-foreground text-[10.5px] tabular-nums">
+							{formatDistanceToNow(date, { addSuffix: true, locale: dateLocale })}
+						</span>
 					</div>
 				);
 			},
 		},
 		{
 			id: "request_type",
-			header: "Type",
+			header: copy.type,
 			size: 150,
 			cell: ({ row }) => {
 				return (
@@ -410,13 +434,13 @@ export const createColumns = (
 		},
 		{
 			accessorKey: "input",
-			header: "Message",
+			header: copy.message,
 			size: 350,
 			cell: ({ row }) => <LogMessageCell log={row.original} />,
 		},
 		{
 			accessorKey: "model",
-			header: "Model",
+			header: copy.model,
 			size: 190,
 			cell: ({ row }) => {
 				const provider = row.original.provider as ProviderName | undefined;
@@ -425,8 +449,10 @@ export const createColumns = (
 					<div className="flex min-w-0 items-center gap-2">
 						{provider ? <RenderProviderIcon provider={provider as ProviderIconType} size="xs" /> : null}
 						<div className="flex min-w-0 flex-col leading-tight">
-							<span className="truncate font-mono text-[12px]">{model || "N/A"}</span>
-							<span className="text-muted-foreground truncate text-[10.5px]">{provider ? getProviderLabel(provider) : "N/A"}</span>
+							<span className="truncate font-mono text-[12px]">{model || copy.notAvailable}</span>
+							<span className="text-muted-foreground truncate text-[10.5px]">
+								{provider ? getProviderLabel(provider) : copy.notAvailable}
+							</span>
 						</div>
 					</div>
 				);
@@ -435,7 +461,7 @@ export const createColumns = (
 		{
 			id: "app",
 			accessorKey: "app",
-			header: "App",
+			header: copy.app,
 			size: 140,
 			cell: ({ row }) => {
 				const app = row.original.app ? mapAppToClientApp(row.original.app) : mapUserAgentToApp(row.original.user_agent);
@@ -453,7 +479,7 @@ export const createColumns = (
 			accessorKey: "latency",
 			header: ({ column }) => (
 				<Button variant="ghost" data-testid="logs-latency-sort-btn" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}>
-					Latency
+					{copy.latency}
 					<ArrowUpDown className="ml-2 h-4 w-4" />
 				</Button>
 			),
@@ -461,7 +487,7 @@ export const createColumns = (
 			cell: ({ row }) => {
 				const latency = row.original.latency;
 				if (latency === undefined || latency === null) {
-					return <div className="pl-4 font-mono text-xs">N/A</div>;
+					return <div className="pl-4 font-mono text-xs">{copy.notAvailable}</div>;
 				}
 				const tone = latency >= 5000 ? "bg-red-500" : latency >= 2000 ? "bg-amber-500" : "bg-emerald-500";
 				const pct = Math.min(100, (latency / 5000) * 100);
@@ -479,7 +505,7 @@ export const createColumns = (
 			accessorKey: "tokens",
 			header: ({ column }) => (
 				<Button variant="ghost" data-testid="logs-tokens-sort-btn" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}>
-					Tokens
+					{copy.tokens}
 					<ArrowUpDown className="ml-2 h-4 w-4" />
 				</Button>
 			),
@@ -487,7 +513,7 @@ export const createColumns = (
 			cell: ({ row }) => {
 				const tokenUsage = row.original.token_usage ?? batchAccountingDisplay(row.original)?.usage;
 				if (!tokenUsage) {
-					return <div className="pl-4 font-mono text-xs">N/A</div>;
+					return <div className="pl-4 font-mono text-xs">{copy.notAvailable}</div>;
 				}
 				const prompt = tokenUsage.prompt_tokens ?? 0;
 				const completion = tokenUsage.completion_tokens ?? 0;
@@ -521,7 +547,7 @@ export const createColumns = (
 			accessorKey: "cost",
 			header: ({ column }) => (
 				<Button variant="ghost" data-testid="logs-cost-sort-btn" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}>
-					Cost
+					{copy.cost}
 					<ArrowUpDown className="ml-2 h-4 w-4" />
 				</Button>
 			),
@@ -535,11 +561,11 @@ export const createColumns = (
 								<TooltipTrigger asChild>
 									<div className="text-muted-foreground pl-4 font-mono text-sm tabular-nums">{formatCost(batchCost)}</div>
 								</TooltipTrigger>
-								<TooltipContent>Settled cost of this batch, billed once.</TooltipContent>
+								<TooltipContent>{copy.batchSettledCost}</TooltipContent>
 							</Tooltip>
 						);
 					}
-					return <div className="pl-4 font-mono text-[12px]">N/A</div>;
+					return <div className="pl-4 font-mono text-[12px]">{copy.notAvailable}</div>;
 				}
 				return <div className="pl-4 font-mono text-sm tabular-nums">{formatCost(row.original.cost)}</div>;
 			},
@@ -549,7 +575,7 @@ export const createColumns = (
 	const attributionColumns: ColumnDef<LogEntry>[] = [
 		{
 			id: "observability_export",
-			header: "Observability",
+			header: copy.observability,
 			size: 130,
 			cell: ({ row }) => {
 				const resolved = resolveObservabilityExport(row.original);
@@ -574,7 +600,7 @@ export const createColumns = (
 		},
 		{
 			id: "service_tier",
-			header: "Service Tier",
+			header: copy.serviceTier,
 			size: 130,
 			cell: ({ row }) => {
 				const tier = row.original.service_tier;
@@ -590,19 +616,19 @@ export const createColumns = (
 		},
 		{
 			id: "virtual_key",
-			header: "Virtual Key",
+			header: copy.virtualKey,
 			size: 170,
 			cell: ({ row }) => <AttributionCell name={row.original.virtual_key_name} id={row.original.virtual_key_id} />,
 		},
 		{
 			id: "routing_rule",
-			header: "Routing Rule",
+			header: copy.routingRule,
 			size: 170,
 			cell: ({ row }) => <AttributionCell name={row.original.routing_rule_name} id={row.original.routing_rule_id} />,
 		},
 		{
 			id: "team",
-			header: "Team",
+			header: copy.team,
 			size: 150,
 			cell: ({ row }) => (
 				<AttributionCell
@@ -615,7 +641,7 @@ export const createColumns = (
 		},
 		{
 			id: "customer",
-			header: "Customer",
+			header: copy.customer,
 			size: 150,
 			cell: ({ row }) => (
 				<AttributionCell
@@ -628,13 +654,13 @@ export const createColumns = (
 		},
 		{
 			id: "user",
-			header: "User",
+			header: copy.user,
 			size: 150,
 			cell: ({ row }) => <AttributionCell name={row.original.user_name} id={row.original.user_id} />,
 		},
 		{
 			id: "business_unit",
-			header: "Business Unit",
+			header: copy.businessUnit,
 			size: 150,
 			cell: ({ row }) => (
 				<AttributionCell
