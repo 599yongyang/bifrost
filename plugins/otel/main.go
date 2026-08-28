@@ -557,7 +557,13 @@ func (p *OtelPlugin) ObservationTargetIDs() []string {
 	return ids
 }
 
-func (p *OtelPlugin) ManualExportAvailable() bool { return p != nil && len(p.manualTargets()) > 0 }
+func (p *OtelPlugin) ManualExportAvailable() bool {
+	if p == nil || len(p.manualTargets()) == 0 {
+		return false
+	}
+	_, repo := p.observationExportStores()
+	return repo != nil
+}
 
 // Init function for the OTEL plugin
 func Init(ctx context.Context, config *Config, _logger schemas.Logger, pricingManager *modelcatalog.ModelCatalog, bifrostVersion string) (*OtelPlugin, error) {

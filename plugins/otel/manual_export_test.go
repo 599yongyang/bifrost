@@ -31,6 +31,18 @@ func TestNilOtelPluginManualExportSurfaceIsSafe(t *testing.T) {
 	}
 }
 
+func TestManualExportAvailabilityRequiresRepositoryAndTarget(t *testing.T) {
+	plugin := &OtelPlugin{targets: []*otelTarget{{client: &countingTestOtelClient{}, mediaUploader: &successfulManualUploader{}}}}
+	if plugin.ManualExportAvailable() {
+		t.Fatal("target without a durable repository must not report manual export availability")
+	}
+	repo := &manualTestRepo{logs: map[string]*logstore.Log{}, states: map[string]logstore.ObservationExport{}}
+	plugin.SetObservationExportStore(repo)
+	if !plugin.ManualExportAvailable() {
+		t.Fatal("target with a durable repository should report manual export availability")
+	}
+}
+
 func manualImageLog(requestType schemas.RequestType) *logstore.Log {
 	latency := 1234.0
 	return &logstore.Log{
