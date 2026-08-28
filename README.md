@@ -1,5 +1,9 @@
 # Bifrost AI Gateway
 
+> Moon deployment note: this fork contains production-specific routing, fallback,
+> observability, alerting, and dynamic-plugin support. Read
+> [docs/MAINTENANCE.md](docs/MAINTENANCE.md) before building or releasing it.
+
 <a href="https://trendshift.io/repositories/14529?utm_source=repository-badge&amp;utm_medium=badge&amp;utm_campaign=badge-repository-14529" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/repositories/14529" alt="maximhq%2Fbifrost | Trendshift" width="250" height="55"/></a>
 
 [![Discord badge](https://img.shields.io/badge/Discord-Join%20Community-5865F2?logo=discord&logoColor=white)](https://discord.gg/exN5KAydbU)
