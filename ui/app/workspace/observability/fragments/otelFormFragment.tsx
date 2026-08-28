@@ -12,9 +12,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { otelFormSchema, type OtelFormSchema, type SecretVar } from "@/lib/types/schemas";
 import { emptySecretVar, toSecretVarFormValue, toSecretVarMapFormValue } from "@/lib/utils/secretVarForm";
+import { selectiveExportCopy } from "@/lib/i18n/selectiveExport";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ChevronDown, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, Info, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useFieldArray, useForm, type Control, type Resolver, type UseFormReturn } from "react-hook-form";
 
@@ -47,7 +48,9 @@ interface StoredOtelProfile {
 
 // StoredOtelConfig is either the canonical { profiles: [...] } wrapper or a legacy single
 // profile object (no "profiles" key).
-type StoredOtelConfig = (StoredOtelProfile & { profiles?: StoredOtelProfile[] }) | undefined;
+type StoredOtelConfig =
+	| (StoredOtelProfile & { profiles?: StoredOtelProfile[]; selective_export?: OtelFormSchema["selective_export"] })
+	| undefined;
 
 interface OtelFormFragmentProps {
 	currentConfig?: {
@@ -113,6 +116,13 @@ const emptyProfile = (): ProfileForm => ({
 	disable_root_span_content: false,
 });
 
+const emptySelectiveExport = (): OtelFormSchema["selective_export"] => ({
+	enabled: false,
+	dry_run: false,
+	max_exports_per_minute: 0,
+	rules: [],
+});
+
 // toProfileForm normalizes a stored profile into the SecretVar-based form representation.
 const toProfileForm = (p?: StoredOtelProfile): ProfileForm => ({
 	enabled: p?.enabled ?? true,
@@ -150,7 +160,7 @@ const buildDefaults = (initial?: OtelFormFragmentProps["currentConfig"]): OtelFo
 		profiles = [];
 	}
 	if (profiles.length === 0) profiles = [emptyProfile()];
-	return { enabled: initial?.enabled ?? true, profiles };
+	return { enabled: initial?.enabled ?? true, profiles, selective_export: cfg?.selective_export ?? emptySelectiveExport() };
 };
 
 export function OtelFormFragment({
@@ -239,6 +249,8 @@ export function OtelFormFragment({
 					<Plus className="size-4" /> Add Profile
 				</Button>
 
+				<SelectiveExportSection form={form} hasOtelAccess={hasOtelAccess} />
+
 				{/* Form Actions */}
 				<div className="flex w-full flex-row items-center border-t pt-4">
 					<FormField
@@ -306,6 +318,274 @@ export function OtelFormFragment({
 				</div>
 			</form>
 		</Form>
+	);
+}
+
+const csv = (value: string) =>
+	value
+		.split(",")
+		.map((item) => item.trim())
+		.filter(Boolean);
+
+function SelectionLabel({ children, description }: { children: string; description: string }) {
+	return (
+		<div className="flex items-center gap-1.5">
+			<FormLabel>{children}</FormLabel>
+			<TooltipProvider delayDuration={200}>
+				<Tooltip>
+					<TooltipTrigger asChild>
+						<button type="button" className="text-muted-foreground hover:text-foreground" aria-label={`About ${children}`}>
+							<Info className="size-3.5" />
+						</button>
+					</TooltipTrigger>
+					<TooltipContent className="max-w-sm">{description}</TooltipContent>
+				</Tooltip>
+			</TooltipProvider>
+		</div>
+	);
+}
+
+function SelectiveExportSection({
+	form,
+	hasOtelAccess,
+}: {
+	form: UseFormReturn<OtelFormSchema, unknown, OtelFormSchema>;
+	hasOtelAccess: boolean;
+}) {
+	const copy = selectiveExportCopy();
+	const enabled = form.watch("selective_export.enabled");
+	const { fields, append, remove } = useFieldArray({ control: form.control, name: "selective_export.rules" });
+	const addRule = () =>
+		append({
+			id: `rule-${fields.length + 1}`,
+			priority: 0,
+			request_types: [],
+			error_categories: [],
+			providers: [],
+			models: [],
+			routing_rules: [],
+			export_rate: 1,
+			max_per_minute: 0,
+		});
+
+	return (
+		<section className="space-y-4 rounded-sm border p-4" data-testid="otel-selective-export-section">
+			<div className="flex items-start justify-between gap-4">
+				<div>
+					<h3 className="font-medium">{copy.title}</h3>
+					<p className="text-muted-foreground text-sm">{copy.description}</p>
+				</div>
+				<FormField
+					control={form.control}
+					name="selective_export.enabled"
+					render={({ field }) => (
+						<Switch
+							checked={field.value}
+							onCheckedChange={field.onChange}
+							disabled={!hasOtelAccess}
+							data-testid="otel-selective-export-toggle"
+						/>
+					)}
+				/>
+			</div>
+			{enabled && (
+				<>
+					<div className="grid gap-4 sm:grid-cols-2">
+						<FormField
+							control={form.control}
+							name="selective_export.dry_run"
+							render={({ field }) => (
+								<FormItem className="flex items-center justify-between rounded-sm border p-3">
+									<div>
+										<FormLabel>Dry run</FormLabel>
+										<FormDescription>Evaluate and annotate decisions without dropping traces.</FormDescription>
+									</div>
+									<Switch checked={field.value} onCheckedChange={field.onChange} disabled={!hasOtelAccess} />
+								</FormItem>
+							)}
+						/>
+						<FormField
+							control={form.control}
+							name="selective_export.max_exports_per_minute"
+							render={({ field }) => (
+								<FormItem>
+									<SelectionLabel description="Process-wide limit across all rules. Zero means unlimited.">
+										Max exports / minute
+									</SelectionLabel>
+									<Input
+										type="number"
+										min={0}
+										max={10000}
+										disabled={!hasOtelAccess}
+										value={field.value}
+										onChange={(e) => field.onChange(Number(e.target.value))}
+									/>
+									<FormMessage />
+								</FormItem>
+							)}
+						/>
+					</div>
+					{fields.map((field, index) => {
+						const base = `selective_export.rules.${index}` as const;
+						return (
+							<div key={field.id} className="space-y-4 rounded-sm border p-4" data-testid={`otel-selective-export-rule-${index}`}>
+								<div className="flex items-center justify-between">
+									<span className="font-medium">Rule {index + 1}</span>
+									<Button
+										type="button"
+										variant="ghost"
+										size="icon"
+										disabled={!hasOtelAccess}
+										onClick={() => remove(index)}
+										data-testid={`otel-selective-export-rule-${index}-remove`}
+									>
+										<Trash2 className="size-4" />
+									</Button>
+								</div>
+								<div className="grid gap-4 md:grid-cols-3">
+									<FormField
+										control={form.control}
+										name={`${base}.id`}
+										render={({ field }) => (
+											<FormItem>
+												<SelectionLabel description="Stable identifier used in status metadata. It has no implicit matching meaning.">
+													Rule ID
+												</SelectionLabel>
+												<Input {...field} disabled={!hasOtelAccess} data-testid={`otel-selective-export-rule-${index}-id`} />
+												<FormMessage />
+											</FormItem>
+										)}
+									/>
+									<FormField
+										control={form.control}
+										name={`${base}.priority`}
+										render={({ field }) => (
+											<FormItem>
+												<SelectionLabel description="Higher values are evaluated first; evaluation stops at the first match.">
+													Priority
+												</SelectionLabel>
+												<Input
+													type="number"
+													min={-1000}
+													max={1000}
+													value={field.value}
+													onChange={(e) => field.onChange(Number(e.target.value))}
+													disabled={!hasOtelAccess}
+												/>
+												<FormMessage />
+											</FormItem>
+										)}
+									/>
+									<FormField
+										control={form.control}
+										name={`${base}.export_rate`}
+										render={({ field }) => (
+											<FormItem>
+												<SelectionLabel description="Deterministic fraction from 0 (drop every match) to 1 (export every match).">
+													Export rate
+												</SelectionLabel>
+												<Input
+													type="number"
+													min={0}
+													max={1}
+													step={0.01}
+													value={field.value}
+													onChange={(e) => field.onChange(Number(e.target.value))}
+													disabled={!hasOtelAccess}
+												/>
+												<FormMessage />
+											</FormItem>
+										)}
+									/>
+									{(["min_latency_ms", "max_latency_ms", "min_cost", "max_per_minute"] as const).map((key) => (
+										<FormField
+											key={key}
+											control={form.control}
+											name={`${base}.${key}`}
+											render={({ field }) => (
+												<FormItem>
+													<FormLabel>{key.replaceAll("_", " ")}</FormLabel>
+													<Input
+														type="number"
+														min={0}
+														value={field.value ?? ""}
+														onChange={(e) => field.onChange(e.target.value === "" ? undefined : Number(e.target.value))}
+														disabled={!hasOtelAccess}
+													/>
+													<FormMessage />
+												</FormItem>
+											)}
+										/>
+									))}
+								</div>
+								<div className="grid gap-4 md:grid-cols-2">
+									{(["request_types", "error_categories", "providers", "models", "routing_rules"] as const).map((key) => (
+										<FormField
+											key={key}
+											control={form.control}
+											name={`${base}.${key}`}
+											render={({ field }) => (
+												<FormItem>
+													<FormLabel>{key.replaceAll("_", " ")}</FormLabel>
+													<Input
+														value={(field.value ?? []).join(", ")}
+														onChange={(e) => field.onChange(csv(e.target.value))}
+														disabled={!hasOtelAccess}
+														placeholder="Comma-separated"
+													/>
+													<FormMessage />
+												</FormItem>
+											)}
+										/>
+									))}
+								</div>
+								<div className="grid gap-4 md:grid-cols-3">
+									{(["require_error", "require_fallback", "require_retry"] as const).map((key) => (
+										<FormField
+											key={key}
+											control={form.control}
+											name={`${base}.${key}`}
+											render={({ field }) => (
+												<FormItem>
+													<FormLabel>{key.replaceAll("_", " ")}</FormLabel>
+													<Select
+														value={field.value === undefined ? "any" : String(field.value)}
+														onValueChange={(value) => field.onChange(value === "any" ? undefined : value === "true")}
+														disabled={!hasOtelAccess}
+													>
+														<FormControl>
+															<SelectTrigger>
+																<SelectValue />
+															</SelectTrigger>
+														</FormControl>
+														<SelectContent>
+															<SelectItem value="any">Any</SelectItem>
+															<SelectItem value="true">Required</SelectItem>
+															<SelectItem value="false">Exclude</SelectItem>
+														</SelectContent>
+													</Select>
+													<FormMessage />
+												</FormItem>
+											)}
+										/>
+									))}
+								</div>
+							</div>
+						);
+					})}
+					<Button
+						type="button"
+						variant="outline"
+						size="sm"
+						onClick={addRule}
+						disabled={!hasOtelAccess || fields.length >= 32}
+						data-testid="otel-selective-export-add-rule"
+					>
+						<Plus className="size-4" /> Add rule
+					</Button>
+				</>
+			)}
+		</section>
 	);
 }
 
@@ -606,60 +886,60 @@ function OtelProfileSection({ form, control, index, hasOtelAccess, canRemove, op
 										)}
 									/>
 									<div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-									<FormField
-										control={control}
-										name={`${base}.trace_type`}
-										render={({ field }) => (
-											<FormItem className="w-full sm:flex-1">
-												<FormLabel>Format</FormLabel>
-												<Select onValueChange={field.onChange} value={field.value ?? traceTypeOptions[0].value} disabled={!hasOtelAccess}>
+										<FormField
+											control={control}
+											name={`${base}.trace_type`}
+											render={({ field }) => (
+												<FormItem className="w-full sm:flex-1">
+													<FormLabel>Format</FormLabel>
+													<Select onValueChange={field.onChange} value={field.value ?? traceTypeOptions[0].value} disabled={!hasOtelAccess}>
+														<FormControl>
+															<SelectTrigger className="w-full">
+																<SelectValue placeholder="Select trace type" />
+															</SelectTrigger>
+														</FormControl>
+														<SelectContent>
+															{traceTypeOptions.map((option) => (
+																<SelectItem
+																	key={option.value}
+																	value={option.value}
+																	disabled={option.disabled}
+																	disabledReason={option.disabledReason}
+																>
+																	{option.label}
+																</SelectItem>
+															))}
+														</SelectContent>
+													</Select>
+													<FormMessage />
+												</FormItem>
+											)}
+										/>
+										<FormField
+											control={control}
+											name={`${base}.export_timeout`}
+											render={({ field }) => (
+												<FormItem className="w-full sm:flex-1">
+													<FormLabel>Export Timeout (seconds)</FormLabel>
 													<FormControl>
-														<SelectTrigger className="w-full">
-															<SelectValue placeholder="Select trace type" />
-														</SelectTrigger>
+														<Input
+															type="number"
+															min={1}
+															max={60}
+															disabled={!hasOtelAccess}
+															{...field}
+															value={field.value ?? ""}
+															onChange={(e) => field.onChange(e.target.value === "" ? null : Number(e.target.value))}
+														/>
 													</FormControl>
-													<SelectContent>
-														{traceTypeOptions.map((option) => (
-															<SelectItem
-																key={option.value}
-																value={option.value}
-																disabled={option.disabled}
-																disabledReason={option.disabledReason}
-															>
-																{option.label}
-															</SelectItem>
-														))}
-													</SelectContent>
-												</Select>
-												<FormMessage />
-											</FormItem>
-										)}
-									/>
-									<FormField
-										control={control}
-										name={`${base}.export_timeout`}
-										render={({ field }) => (
-											<FormItem className="w-full sm:flex-1">
-												<FormLabel>Export Timeout (seconds)</FormLabel>
-												<FormControl>
-													<Input
-														type="number"
-														min={1}
-														max={60}
-														disabled={!hasOtelAccess}
-														{...field}
-														value={field.value ?? ""}
-														onChange={(e) => field.onChange(e.target.value === "" ? null : Number(e.target.value))}
-													/>
-												</FormControl>
-												<FormDescription>
-													Maximum time for a single trace export (1-60 seconds). Traces are dropped rather than retried past this limit, so
-													an unreachable collector cannot slow down request handling.
-												</FormDescription>
-												<FormMessage />
-											</FormItem>
-										)}
-									/>
+													<FormDescription>
+														Maximum time for a single trace export (1-60 seconds). Traces are dropped rather than retried past this limit,
+														so an unreachable collector cannot slow down request handling.
+													</FormDescription>
+													<FormMessage />
+												</FormItem>
+											)}
+										/>
 									</div>
 									<FormField
 										control={control}

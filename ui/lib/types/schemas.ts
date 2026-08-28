@@ -1,5 +1,6 @@
 import { KnownProvidersNames } from "@/lib/constants/logs";
 import { isRedacted } from "@/lib/utils/validation";
+import { selectiveExportCopy } from "@/lib/i18n/selectiveExport";
 import { z } from "zod";
 
 // Global error map - turns Zod's default messages into readable, human-friendly ones.
@@ -1005,11 +1006,60 @@ export const otelConfigSchema = z
 		}
 	});
 
-// OTEL form schema for the OtelFormFragment. The plugin itself is gated by `enabled`;
-// it carries one or more export profiles, each independently enable-able.
+const selectiveCopy = selectiveExportCopy();
+
+export const otelSelectionRuleSchema = z
+	.object({
+		id: z.string().trim().min(1, "Rule ID is required"),
+		priority: z.number().int().min(-1000).max(1000),
+		request_types: z.array(z.string().trim().min(1)).default([]),
+		min_latency_ms: z.number().int().min(0).optional(),
+		max_latency_ms: z.number().int().min(0).optional(),
+		require_error: z.boolean().optional(),
+		require_fallback: z.boolean().optional(),
+		require_retry: z.boolean().optional(),
+		error_categories: z.array(z.enum(["timeout", "connection", "client_error", "server_error", "other"])).default([]),
+		providers: z.array(z.string().trim().min(1)).default([]),
+		models: z.array(z.string().trim().min(1)).default([]),
+		routing_rules: z.array(z.string().trim().min(1)).default([]),
+		min_cost: z.number().min(0).optional(),
+		export_rate: z.number().min(0).max(1),
+		max_per_minute: z.number().int().min(0).max(10000).default(0),
+	})
+	.refine((rule) => rule.min_latency_ms === undefined || rule.max_latency_ms === undefined || rule.min_latency_ms <= rule.max_latency_ms, {
+		message: selectiveCopy.latencyOrder,
+		path: ["min_latency_ms"],
+	})
+	.refine((rule) => rule.require_error !== false || rule.error_categories.length === 0, {
+		message: selectiveCopy.errorConflict,
+		path: ["error_categories"],
+	});
+
+export const otelSelectiveExportSchema = z
+	.object({
+		enabled: z.boolean().default(false),
+		dry_run: z.boolean().default(false),
+		max_exports_per_minute: z.number().int().min(0).max(10000).default(0),
+		rules: z.array(otelSelectionRuleSchema).max(32).default([]),
+	})
+	.superRefine((selection, ctx) => {
+		if (!selection.enabled) return;
+		if (selection.rules.length === 0) {
+			ctx.addIssue({ code: "custom", path: ["rules"], message: selectiveCopy.ruleRequired });
+		}
+		const seen = new Set<string>();
+		selection.rules.forEach((rule, index) => {
+			if (seen.has(rule.id)) ctx.addIssue({ code: "custom", path: ["rules", index, "id"], message: selectiveCopy.uniqueRule });
+			seen.add(rule.id);
+		});
+	});
+
+// OTEL form schema mirrors plugins/otel.Config: selective_export belongs to the
+// wrapper, not an individual profile.
 export const otelFormSchema = z.object({
 	enabled: z.boolean().default(true),
 	profiles: z.array(otelConfigSchema).min(1, "At least one profile is required"),
+	selective_export: otelSelectiveExportSchema.default({ enabled: false, dry_run: false, max_exports_per_minute: 0, rules: [] }),
 });
 
 // Maxim Configuration Schema

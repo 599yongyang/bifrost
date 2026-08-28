@@ -18,9 +18,11 @@ import {
 import { ChatMessageContent, DisplayLogEntry, LLMUsage, LogEntry, ResponsesMessageContentBlock } from "@/lib/types/logs";
 import { cn } from "@/lib/utils";
 import { formatCompactNumber } from "@/lib/utils/numbers";
+import { observationReasonLabel, observationStatusLabel, observabilityCopy } from "../utils/observabilityCopy";
+import { resolveObservabilityExport } from "../utils/observabilityExport";
 import { ColumnDef } from "@tanstack/react-table";
 import { format, formatDistanceToNow } from "date-fns";
-import { ArrowUpDown, ChevronRight, CornerDownRight, Loader2, MoreHorizontal, Trash2 } from "lucide-react";
+import { ArrowUpDown, ChevronRight, CloudUpload, CornerDownRight, Loader2, MoreHorizontal, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 // Passed to useReactTable({ meta }) by the logs page so the expander column can
@@ -53,8 +55,18 @@ function batchAccountingDisplay(log: LogEntry): { model: string; usage: LLMUsage
 	return { model, usage };
 }
 
-function LogActionsMenu({ log, onDelete }: { log: LogEntry; onDelete: (log: LogEntry) => void }) {
+function LogActionsMenu({
+	log,
+	onDelete,
+	onManualExport,
+}: {
+	log: LogEntry;
+	onDelete?: (log: LogEntry) => void;
+	onManualExport?: (log: LogEntry) => void;
+}) {
 	const [isOpen, setIsOpen] = useState(false);
+	const exportState = resolveObservabilityExport(log);
+	if (!onDelete && (!onManualExport || !exportState.canManualExport)) return null;
 
 	return (
 		<DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
@@ -64,19 +76,34 @@ function LogActionsMenu({ log, onDelete }: { log: LogEntry; onDelete: (log: LogE
 				</Button>
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="end">
-				<DropdownMenuItem
-					variant="destructive"
-					className="cursor-pointer"
-					data-testid="log-delete-btn"
-					onSelect={(e) => {
-						e.preventDefault();
-						onDelete(log);
-						setIsOpen(false);
-					}}
-				>
-					<Trash2 className="h-4 w-4" />
-					Delete
-				</DropdownMenuItem>
+				{exportState.canManualExport && onManualExport && (
+					<DropdownMenuItem
+						className="cursor-pointer"
+						data-testid="log-observability-export-btn"
+						onSelect={(event) => {
+							event.preventDefault();
+							onManualExport(log);
+							setIsOpen(false);
+						}}
+					>
+						<CloudUpload className="h-4 w-4" /> {observabilityCopy().export}
+					</DropdownMenuItem>
+				)}
+				{onDelete && (
+					<DropdownMenuItem
+						variant="destructive"
+						className="cursor-pointer"
+						data-testid="log-delete-btn"
+						onSelect={(e) => {
+							e.preventDefault();
+							onDelete(log);
+							setIsOpen(false);
+						}}
+					>
+						<Trash2 className="h-4 w-4" />
+						Delete
+					</DropdownMenuItem>
+				)}
 			</DropdownMenuContent>
 		</DropdownMenu>
 	);
@@ -278,11 +305,12 @@ function AttributionCell({ names, name, ids, id }: { names?: string[]; name?: st
 }
 
 export const createColumns = (
-	onDelete: (log: LogEntry) => void,
+	onDelete: ((log: LogEntry) => void) | undefined,
 	hasDeleteAccess = true,
 	metadataKeys: string[] = [],
 	customAppIcons: Record<string, string> = {},
 	groupedView = false,
+	onManualExport?: (log: LogEntry) => void,
 ): ColumnDef<LogEntry>[] => {
 	// Chevron that expands a fallback chain in the grouped view. Child rows get a
 	// corner connector instead so the hierarchy stays readable in any column order.
@@ -520,6 +548,31 @@ export const createColumns = (
 
 	const attributionColumns: ColumnDef<LogEntry>[] = [
 		{
+			id: "observability_export",
+			header: "Observability",
+			size: 130,
+			cell: ({ row }) => {
+				const resolved = resolveObservabilityExport(row.original);
+				const variants = {
+					exported: "default",
+					pending: "secondary",
+					failed: "destructive",
+					unavailable: "outline",
+					not_exported: "outline",
+					unknown: "outline",
+				} as const;
+				return (
+					<Badge
+						variant={variants[resolved.status]}
+						title={observationReasonLabel(resolved.state?.reason)}
+						data-testid="log-observability-status"
+					>
+						{observationStatusLabel(resolved.status)}
+					</Badge>
+				);
+			},
+		},
+		{
 			id: "service_tier",
 			header: "Service Tier",
 			size: 130,
@@ -529,7 +582,7 @@ export const createColumns = (
 					return <div className="font-mono text-xs">-</div>;
 				}
 				return (
-					<Badge variant="outline" className="font-mono text-[11px] py-0.5 px-1.5 uppercase">
+					<Badge variant="outline" className="px-1.5 py-0.5 font-mono text-[11px] uppercase">
 						{tier}
 					</Badge>
 				);
@@ -604,23 +657,24 @@ export const createColumns = (
 		},
 	}));
 
-	const actionsColumn: ColumnDef<LogEntry>[] = hasDeleteAccess
-		? [
-				{
-					id: "actions",
-					header: "",
-					size: 56,
-					cell: ({ row }) => {
-						const log = row.original;
-						return (
-							<div className="flex justify-center">
-								<LogActionsMenu log={log} onDelete={onDelete} />
-							</div>
-						);
+	const actionsColumn: ColumnDef<LogEntry>[] =
+		hasDeleteAccess || onManualExport
+			? [
+					{
+						id: "actions",
+						header: "",
+						size: 56,
+						cell: ({ row }) => {
+							const log = row.original;
+							return (
+								<div className="flex justify-center">
+									<LogActionsMenu log={log} onDelete={hasDeleteAccess ? onDelete : undefined} onManualExport={onManualExport} />
+								</div>
+							);
+						},
 					},
-				},
-			]
-		: [];
+				]
+			: [];
 
 	return [...expandColumn, ...baseColumns, ...attributionColumns, ...metadataColumns, ...actionsColumn];
 };
