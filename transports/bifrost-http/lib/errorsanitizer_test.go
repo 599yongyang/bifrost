@@ -1,8 +1,11 @@
 package lib
 
 import (
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/maximhq/bifrost/core/schemas"
 	"github.com/valyala/fasthttp"
@@ -126,5 +129,105 @@ func TestSanitizeBifrostTimeoutErrorReplacesUpstreamMessage(t *testing.T) {
 	}
 	if err.Error.Message == sanitized.Error.Message {
 		t.Fatal("sanitizer must not mutate the original error")
+	}
+}
+
+func TestClientErrorResponseOmitsGatewayAndRoutingIdentity(t *testing.T) {
+	err := &schemas.BifrostError{
+		IsBifrostError: true,
+		StatusCode:     schemas.Ptr(504),
+		Error: &schemas.ErrorField{
+			Message: schemas.TimeoutSourceBifrostHTTPClient.SafeMessage(),
+		},
+		ExtraFields: schemas.BifrostErrorExtraFields{
+			RoutingInfo: schemas.RoutingInfo{
+				Provider: schemas.Bedrock,
+				Model:    "internal-model",
+				Key:      "secret-key-name",
+			},
+			Provider:                 schemas.Bedrock,
+			OriginalModelRequested:   "moon1.0",
+			ResolvedModelUsed:        "internal-model",
+			RawRequest:               "secret request",
+			RawResponse:              "secret response",
+			TimeoutSource:            schemas.TimeoutSourceBifrostHTTPClient,
+			ConfiguredTimeoutSeconds: 600,
+			ElapsedMS:                600_000,
+			UpstreamResponseReceived: schemas.Ptr(false),
+		},
+	}
+
+	payload, marshalErr := json.Marshal(ClientErrorResponse(err))
+	if marshalErr != nil {
+		t.Fatalf("marshal client error: %v", marshalErr)
+	}
+	lower := strings.ToLower(string(payload))
+	for _, forbidden := range []string{
+		"bifrost", "is_bifrost_error", "routing_info", "internal-model",
+		"secret-key-name", "secret request", "secret response", `"provider":"bedrock"`,
+	} {
+		if strings.Contains(lower, forbidden) {
+			t.Fatalf("client error leaked %q: %s", forbidden, payload)
+		}
+	}
+	for _, required := range []string{
+		`"status_code":504`, `"timeout_source":"configured_provider_timeout"`,
+		`"configured_timeout_seconds":600`, `"message":"provider request reached the configured timeout"`,
+	} {
+		if !strings.Contains(lower, required) {
+			t.Fatalf("client error lost %q: %s", required, payload)
+		}
+	}
+	if !err.IsBifrostError || err.ExtraFields.RoutingInfo.Key != "secret-key-name" {
+		t.Fatal("client conversion mutated the internal error")
+	}
+}
+
+func TestClientAsyncJobResponseRestoresPublicModelAndRemovesInternalMetadata(t *testing.T) {
+	resp := &schemas.AsyncJobResponse{
+		ID:        "job-1",
+		RequestID: "request-1",
+		Status:    schemas.AsyncJobStatusCompleted,
+		CreatedAt: time.Unix(1_700_000_000, 0).UTC(),
+		Result: map[string]interface{}{
+			"model":              "internal-provider-model",
+			"system_fingerprint": "provider-fingerprint",
+			"extra_fields": map[string]interface{}{
+				"original_model_requested": "moon1.0",
+				"provider":                 "bedrock",
+				"routing_info": map[string]interface{}{
+					"key": "secret-key-name",
+				},
+			},
+			"nested": map[string]interface{}{
+				"model": "internal-nested-model",
+				"extra_fields": map[string]interface{}{
+					"original_model_requested": "moon1.0",
+				},
+			},
+		},
+	}
+
+	payload, err := json.Marshal(ClientAsyncJobResponse(resp))
+	if err != nil {
+		t.Fatalf("marshal async client response: %v", err)
+	}
+	lower := strings.ToLower(string(payload))
+	for _, forbidden := range []string{"extra_fields", "system_fingerprint", "internal-provider-model", "internal-nested-model", "secret-key-name", "bedrock"} {
+		if strings.Contains(lower, forbidden) {
+			t.Fatalf("async response leaked %q: %s", forbidden, payload)
+		}
+	}
+	if strings.Count(lower, `"model":"moon1.0"`) != 2 {
+		t.Fatalf("public model was not restored recursively: %s", payload)
+	}
+}
+
+func TestClientErrorPayloadLeavesProviderNativeShapeUnchanged(t *testing.T) {
+	providerPayload := map[string]interface{}{"error": map[string]interface{}{"type": "validation_error"}}
+	if got := ClientErrorPayload(providerPayload); got == nil {
+		t.Fatal("provider-native error was removed")
+	} else if gotMap, ok := got.(map[string]interface{}); !ok || gotMap["error"] == nil {
+		t.Fatalf("provider-native error shape changed: %#v", got)
 	}
 }

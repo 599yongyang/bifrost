@@ -2669,15 +2669,8 @@ func (g *GenericRouter) handleStreamingRequest(ctx *fasthttp.RequestCtx, config 
 		return
 	}
 
-	// Forward provider response headers stored in context by streaming handlers
-	if headers, ok := bifrostCtx.Value(schemas.BifrostContextKeyProviderResponseHeaders).(map[string]string); ok {
-		for key, value := range headers {
-			ctx.Response.Header.Set(key, value)
-		}
-	}
-
-	// Routed-identity headers from the context snapshot — routing is final once
-	// the stream channel is returned, before any chunk arrives.
+	// Record the v2 response-header phase without exposing provider or routed
+	// identity details.
 	lib.ApplyBifrostStreamResponseHeaders(ctx, bifrostCtx, requestType)
 
 	// Large payload streaming passthrough — bypass SSE event processing, pipe raw upstream
@@ -2877,6 +2870,7 @@ func (g *GenericRouter) handleStreaming(ctx *fasthttp.RequestCtx, bifrostCtx *sc
 					},
 				}
 			}
+			errorResponse = lib.ClientErrorPayload(errorResponse)
 
 			// Check if the error converter returned a raw SSE string or JSON object
 			if sseErrorString, ok := errorResponse.(string); ok {
@@ -3384,15 +3378,9 @@ func (g *GenericRouter) handlePassthroughNonStream(
 	}
 
 	ctx.SetStatusCode(resp.StatusCode)
-	for k, v := range resp.Headers {
-		switch strings.ToLower(k) {
-		case "connection", "transfer-encoding", "set-cookie", "proxy-authenticate", "www-authenticate":
-			// drop
-		default:
-			ctx.Response.Header.Set(k, v)
-		}
-	}
-	// Passthrough forwards provider bytes 1:1, so extra_fields can't ride the body —
+	forwardPublicPassthroughContentHeaders(&ctx.Response.Header, resp.Headers, true)
+	// Passthrough forwards provider bytes 1:1. Keep internal routing metadata for
+	// observability while exposing no provider identity headers.
 	identityFields := resp.ExtraFields
 	identityFields.ProviderResponseHeaders = nil
 	lib.ApplyBifrostResponseHeaders(ctx, bifrostCtx, identityFields)
@@ -3487,18 +3475,9 @@ func (g *GenericRouter) handlePassthroughStream(
 	ctx.Response.Header.Set("Cache-Control", "no-cache")
 	ctx.Response.Header.Set("Connection", "keep-alive")
 	ctx.Response.Header.Set("X-Accel-Buffering", "no")
-	for k, v := range passthroughResp.Headers {
-		switch strings.ToLower(k) {
-		case "connection", "transfer-encoding", "content-length", "content-type",
-			"cache-control", "x-accel-buffering",
-			"set-cookie", "proxy-authenticate", "www-authenticate":
-			// drop — streaming invariants are set explicitly above (Content-Type is set from the
-			// upstream value before this loop); upstream must not override them here
-		default:
-			ctx.Response.Header.Set(k, v)
-		}
-	}
-	// Routed identity via headers (passthrough body is provider bytes 1:1).
+	forwardPublicPassthroughContentHeaders(&ctx.Response.Header, passthroughResp.Headers, false)
+	// Keep internal routing metadata for observability while exposing no provider
+	// identity headers (passthrough body remains provider bytes 1:1).
 	identityFields := passthroughResp.ExtraFields
 	identityFields.ProviderResponseHeaders = nil
 	lib.ApplyBifrostResponseHeaders(ctx, bifrostCtx, identityFields)
@@ -3557,4 +3536,17 @@ func (g *GenericRouter) handlePassthroughStream(
 			}
 		}
 	}()
+}
+
+// forwardPublicPassthroughContentHeaders forwards only response metadata needed
+// to interpret or download the provider body. All provider identity, routing,
+// request-ID, authentication, and arbitrary extension headers remain internal.
+func forwardPublicPassthroughContentHeaders(header *fasthttp.ResponseHeader, headers map[string]string, includeContentType bool) {
+	for key, value := range headers {
+		lowerKey := strings.ToLower(key)
+		if lowerKey == "content-disposition" || lowerKey == "content-range" || lowerKey == "accept-ranges" ||
+			(includeContentType && lowerKey == "content-type") {
+			header.Set(key, value)
+		}
+	}
 }

@@ -120,6 +120,40 @@ func TestRenderPayloadIncludeError(t *testing.T) {
 	assert.Equal(t, true, data["error_omitted"])
 }
 
+func TestRenderPayloadSanitizesInlineResponseAndRestoresPublicModel(t *testing.T) {
+	now := time.Now().UTC()
+	job := testAsyncJob()
+	job.Response = `{"model":"internal-model","system_fingerprint":"provider-fingerprint","extra_fields":{"original_model_requested":"moon1.0","provider":"bedrock","routing_info":{"key":"secret-key"}}}`
+
+	body, err := renderPayload(job, tables.WebhookEventAsyncJobCompleted, true, 256*1024, now)
+	require.NoError(t, err)
+	lower := strings.ToLower(string(body))
+	for _, forbidden := range []string{"internal-model", "system_fingerprint", "extra_fields", "bedrock", "secret-key"} {
+		assert.NotContains(t, lower, forbidden)
+	}
+	assert.Contains(t, lower, `"model":"moon1.0"`)
+}
+
+func TestRenderPayloadSanitizesInlineErrorAndFailsClosedOnInvalidJSON(t *testing.T) {
+	now := time.Now().UTC()
+	job := testFailedAsyncJob()
+	job.Error = `{"is_bifrost_error":true,"status_code":504,"error":{"message":"Bifrost HTTP client reached the configured provider timeout"},"extra_fields":{"timeout_source":"bifrost_http_client_timeout","routing_info":{"key":"secret-key"}}}`
+
+	body, err := renderPayload(job, tables.WebhookEventAsyncJobFailed, true, 256*1024, now)
+	require.NoError(t, err)
+	lower := strings.ToLower(string(body))
+	for _, forbidden := range []string{"bifrost", "is_bifrost_error", "extra_fields", "secret-key"} {
+		assert.NotContains(t, lower, forbidden)
+	}
+	assert.Contains(t, lower, "provider request reached the configured timeout")
+
+	job.Error = `{not-json`
+	body, err = renderPayload(job, tables.WebhookEventAsyncJobFailed, true, 256*1024, now)
+	require.Error(t, err)
+	assert.Nil(t, body)
+	assert.NotContains(t, strings.ToLower(err.Error()), "not-json")
+}
+
 func TestRenderExpiredPayload(t *testing.T) {
 	now := time.Now().UTC()
 	body, err := renderExpiredPayload(&tables.TableWebhookJob{
