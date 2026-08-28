@@ -987,7 +987,10 @@ func (m *AuthMiddleware) APIMiddleware() schemas.BifrostHTTPMiddleware {
 		// it would whitelist /api/oauth/per-user/* (auth-via-temp-token) and
 		// /api/oauth/config/* (admin-only) and bypass the temp-token fallback
 		// in tryTempTokenOrUnauthorized.
-		"/api/dev",
+		// Trailing slash is required: the dev routes live under "/api/dev/pprof".
+		// A bare "/api/dev" prefix also matches "/api/devices" (and any other
+		// "/api/dev*" route), which would silently bypass auth on those routes.
+		"/api/dev/",
 		// Skills serving endpoints are public — marketplace URLs cannot carry
 		// credentials securely. Management endpoints under /api/skills (without
 		// /serve/) remain authenticated.
