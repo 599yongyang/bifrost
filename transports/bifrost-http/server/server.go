@@ -40,6 +40,7 @@ import (
 	"github.com/maximhq/bifrost/plugins/routing/complexity"
 	"github.com/maximhq/bifrost/plugins/semanticcache"
 	"github.com/maximhq/bifrost/plugins/telemetry"
+	alertengine "github.com/maximhq/bifrost/transports/bifrost-http/alerting"
 	"github.com/maximhq/bifrost/transports/bifrost-http/circuitbreaker"
 	"github.com/maximhq/bifrost/transports/bifrost-http/handlers"
 	"github.com/maximhq/bifrost/transports/bifrost-http/integrations"
@@ -232,6 +233,7 @@ type BifrostHTTPServer struct {
 	MCPServerHandler    *handlers.MCPServerHandler
 	devPprofHandler     *handlers.DevPprofHandler
 	IntegrationHandler  *handlers.IntegrationHandler
+	AlertingManager     *alertengine.Manager
 
 	AuthMiddleware       *handlers.AuthMiddleware
 	CORSMiddleware       *handlers.CorsMiddleware
@@ -2197,6 +2199,29 @@ func (s *BifrostHTTPServer) RegisterAPIRoutes(ctx context.Context, callbacks Ser
 			return fmt.Errorf("failed to initialize routing handler: %v", err)
 		}
 	}
+	var alertingHandler *handlers.AlertingHandler
+	if s.Config != nil && s.Config.ConfigStore != nil && s.Config.LogsStore != nil {
+		if alertStore, ok := s.Config.ConfigStore.(configstore.AlertStore); ok {
+			providerExists := func(name string) bool {
+				s.Config.Mu.RLock()
+				defer s.Config.Mu.RUnlock()
+				_, exists := s.Config.Providers[schemas.ModelProvider(name)]
+				return exists
+			}
+			if s.Config.AlertingConfig != nil {
+				s.Config.AlertingConfig.ProviderExists = providerExists
+			}
+			s.AlertingManager, err = alertengine.NewManager(alertStore, callbacks.GetGovernanceData, s.Config.LogsStore, s.Config.LogsStore, logger, s.Config.AlertingConfig)
+			if err != nil {
+				return fmt.Errorf("failed to initialize alerting: %v", err)
+			}
+			s.AlertingManager.SetProviderValidator(providerExists)
+			s.AlertingManager.Start(s.Ctx)
+			alertingHandler = handlers.NewAlertingHandler(s.AlertingManager, alertStore)
+		}
+	} else if s.Config != nil && s.Config.AlertingConfig != nil && s.Config.LogsStore == nil {
+		return fmt.Errorf("failed to initialize alerting: logs store is required when alerting is configured")
+	}
 	// Resolve the semantic_cache plugin per request so plugin reloads via
 	// /api/plugins are honored — the previous boot-time capture left stale
 	// references and (worse) skipped route registration entirely when the
@@ -2289,6 +2314,9 @@ func (s *BifrostHTTPServer) RegisterAPIRoutes(ctx context.Context, callbacks Ser
 	}
 	if routingHandler != nil {
 		routingHandler.RegisterRoutes(s.Router, middlewares...)
+	}
+	if alertingHandler != nil {
+		alertingHandler.RegisterRoutes(s.Router, middlewares...)
 	}
 	if loggingHandler != nil {
 		loggingHandler.RegisterRoutes(s.Router, middlewares...)
@@ -2884,6 +2912,10 @@ func (s *BifrostHTTPServer) Start() error {
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
+			if s.AlertingManager != nil {
+				logger.Info("stopping alerting engine...")
+				s.AlertingManager.Close()
+			}
 			logger.Info("shutting down bifrost client...")
 			s.Client.Shutdown()
 			logger.Info("bifrost client shutdown completed")
@@ -2946,6 +2978,9 @@ func (s *BifrostHTTPServer) Start() error {
 		}
 
 	case err := <-errChan:
+		if s.AlertingManager != nil {
+			s.AlertingManager.Close()
+		}
 		if s.IntegrationHandler != nil {
 			s.IntegrationHandler.Close()
 		}
