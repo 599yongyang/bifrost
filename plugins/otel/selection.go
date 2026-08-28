@@ -162,6 +162,10 @@ func (s *traceSelector) decide(trace *schemas.Trace) selectionDecision {
 		selectionID := firstNonEmpty(trace.InternalID, trace.RequestID, trace.TraceID)
 		selected := stableSelection(selectionID, rule.ID, rule.ExportRate)
 		reason := "sampled_out"
+		if selected && isImageRequestType(facts.requestType) && !traceMediaSummariesComplete(trace) {
+			selected, reason = false, "incomplete_media"
+			return selectionDecision{selected: selected, ruleID: rule.ID, reason: reason}
+		}
 		if selected && !s.dryRun && !s.takeQuota(rule) {
 			selected, reason = false, "quota"
 		} else if selected {
@@ -170,6 +174,54 @@ func (s *traceSelector) decide(trace *schemas.Trace) selectionDecision {
 		return selectionDecision{selected: selected, ruleID: rule.ID, reason: reason}
 	}
 	return selectionDecision{reason: "no_matching_rule"}
+}
+
+func isImageRequestType(requestType schemas.RequestType) bool {
+	switch requestType {
+	case schemas.ImageGenerationRequest, schemas.ImageGenerationStreamRequest,
+		schemas.ImageEditRequest, schemas.ImageEditStreamRequest, schemas.ImageVariationRequest:
+		return true
+	default:
+		return false
+	}
+}
+
+func traceMediaSummariesComplete(trace *schemas.Trace) bool {
+	span := finalSelectionSpan(trace)
+	if span == nil {
+		return false
+	}
+	input := getStringAttr(span.Attributes, schemas.AttrBifrostImageInput)
+	if input == "" {
+		return false
+	}
+	output := getStringAttr(span.Attributes, schemas.AttrBifrostImageOutput)
+	if span.Status != schemas.SpanStatusError && (output == "" || strings.Contains(output, `"image_count":0`)) {
+		return false
+	}
+	for _, raw := range []string{input, output} {
+		for _, incomplete := range []string{"metadata_only", "too_large", "attachment_limit", "trace_byte_limit", "global_byte_limit", "decode_saturated", "unsupported_mime", "invalid_base64", "invalid_url"} {
+			if strings.Contains(raw, `"capture_status":"`+incomplete+`"`) {
+				return false
+			}
+		}
+	}
+	attachments := trace.MediaAttachments()
+	for _, raw := range []string{input, output} {
+		for _, marker := range localMediaReferencePattern.FindAllString(raw, -1) {
+			found := false
+			for _, media := range attachments {
+				if marker == "bifrost-media://"+media.ID {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func (s *traceSelector) takeQuota(rule *SelectionRule) bool {

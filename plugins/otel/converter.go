@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/maximhq/bifrost/core/schemas"
@@ -97,6 +99,10 @@ func hexToBytes(hexStr string, length int) []byte {
 // profile service name. Span filtering and instance attributes are shared across profiles;
 // only the resource service name differs per profile.
 func (p *OtelPlugin) convertTraceToResourceSpan(serviceName string, trace *schemas.Trace, requestHeaders []string, disableContentLogging bool, groupTracesBySession bool, disableRootSpanContent bool) *ResourceSpan {
+	return p.convertTraceToResourceSpanWithMedia(serviceName, trace, requestHeaders, disableContentLogging, groupTracesBySession, disableRootSpanContent, nil)
+}
+
+func (p *OtelPlugin) convertTraceToResourceSpanWithMedia(serviceName string, trace *schemas.Trace, requestHeaders []string, disableContentLogging bool, groupTracesBySession bool, disableRootSpanContent bool, mediaRefs map[string]string) *ResourceSpan {
 	reparent := p.pluginSpanFilter.BuildReparentMap(trace.Spans)
 	filteredHeaders := schemas.FilterHeaders(trace.RequestHeaders, requestHeaders)
 
@@ -126,7 +132,7 @@ func (p *OtelPlugin) convertTraceToResourceSpan(serviceName string, trace *schem
 		// disableRootSpanContent drops content from the root span only (the framework duplicates
 		// input/output onto it for trace-level display); child spans keep their full content.
 		spanDisableContent := disableContentLogging || (disableRootSpanContent && span == trace.RootSpan)
-		otelSpan := convertSpanToOTELSpan(traceID, span, spanDisableContent)
+		otelSpan := convertSpanToOTELSpanWithMedia(traceID, span, spanDisableContent, mediaRefs)
 		// If the span's direct parent was filtered, rewrite its parent ID to the
 		// nearest exported ancestor so the hierarchy stays connected.
 		if effectiveParent, ok := reparent[span.ParentID]; ok {
@@ -171,6 +177,10 @@ func (p *OtelPlugin) convertTraceToResourceSpan(serviceName string, trace *schem
 
 // convertSpanToOTELSpan converts a single Bifrost span to OTEL format
 func convertSpanToOTELSpan(traceID string, span *schemas.Span, disableContentLogging bool) *Span {
+	return convertSpanToOTELSpanWithMedia(traceID, span, disableContentLogging, nil)
+}
+
+func convertSpanToOTELSpanWithMedia(traceID string, span *schemas.Span, disableContentLogging bool, mediaRefs map[string]string) *Span {
 	otelSpan := &Span{
 		TraceId:           hexToBytes(traceID, 16),
 		SpanId:            hexToBytes(span.SpanID, 8),
@@ -178,10 +188,11 @@ func convertSpanToOTELSpan(traceID string, span *schemas.Span, disableContentLog
 		Kind:              convertSpanKind(span.Kind),
 		StartTimeUnixNano: uint64(span.StartTime.UnixNano()),
 		EndTimeUnixNano:   uint64(span.EndTime.UnixNano()),
-		Attributes:        convertAttributesToKeyValues(span.Attributes, disableContentLogging),
+		Attributes:        convertAttributesToKeyValuesWithMedia(span.Attributes, disableContentLogging, mediaRefs),
 		Status:            convertSpanStatus(span.Status, span.StatusMsg),
 		Events:            convertSpanEvents(span.Events, disableContentLogging),
 	}
+	appendImageObservationAttributes(otelSpan, span, disableContentLogging, mediaRefs)
 
 	// Set parent span ID if present
 	if span.ParentID != "" {
@@ -189,6 +200,101 @@ func convertSpanToOTELSpan(traceID string, span *schemas.Span, disableContentLog
 	}
 
 	return otelSpan
+}
+
+var localMediaReferencePattern = regexp.MustCompile(`bifrost-media://[A-Za-z0-9._:-]+`)
+
+func appendImageObservationAttributes(otelSpan *Span, span *schemas.Span, disableContentLogging bool, mediaRefs map[string]string) {
+	if otelSpan == nil || span == nil || span.Attributes == nil {
+		return
+	}
+	requestType := getStringAttr(span.Attributes, schemas.AttrLegacyRequestType)
+	switch schemas.RequestType(requestType) {
+	case schemas.ImageGenerationRequest, schemas.ImageGenerationStreamRequest,
+		schemas.ImageEditRequest, schemas.ImageEditStreamRequest, schemas.ImageVariationRequest:
+	default:
+		return
+	}
+	attrs := span.Attributes
+	otelSpan.Attributes = append(otelSpan.Attributes,
+		kvStr("langfuse.observation.type", "generation"),
+		kvStr("langfuse.observation.metadata.request_type", requestType),
+	)
+	model := firstNonEmpty(getStringAttr(attrs, schemas.AttrResponseModel), getStringAttr(attrs, schemas.AttrRequestModel))
+	if model != "" {
+		otelSpan.Attributes = append(otelSpan.Attributes, kvStr("langfuse.observation.model.name", model))
+	}
+	if provider := firstNonEmpty(getStringAttr(attrs, schemas.AttrBifrostProviderName), getStringAttr(attrs, schemas.AttrProviderName)); provider != "" {
+		otelSpan.Attributes = append(otelSpan.Attributes, kvStr("langfuse.observation.metadata.provider", provider))
+	}
+	if routingRule := firstNonEmpty(getStringAttr(attrs, schemas.AttrBifrostRoutingRuleName), getStringAttr(attrs, schemas.AttrBifrostRoutingRuleID)); routingRule != "" {
+		otelSpan.Attributes = append(otelSpan.Attributes, kvStr("langfuse.observation.metadata.routing_rule", routingRule))
+	}
+	otelSpan.Attributes = append(otelSpan.Attributes, kvStr("langfuse.observation.metadata.fallback_index", strconv.Itoa(getIntAttr(attrs, schemas.AttrBifrostFallbackIndex))))
+	if selectionRule := getStringAttr(attrs, attrSelectionRule); selectionRule != "" {
+		otelSpan.Attributes = append(otelSpan.Attributes, kvStr("langfuse.observation.metadata.selection_rule", selectionRule))
+	}
+	usage := map[string]any{}
+	for key, name := range map[string]string{
+		schemas.AttrInputTokens: "input", schemas.AttrOutputTokens: "output", schemas.AttrTotalTokens: "total",
+		schemas.AttrInputTokenDetailsImage: "input_image", schemas.AttrInputTokenDetailsText: "input_text",
+		schemas.AttrOutputTokenDetailsImage: "output_image", schemas.AttrOutputTokenDetailsText: "output_text",
+	} {
+		if value := getIntAttr(attrs, key); value != 0 {
+			usage[name] = value
+		}
+	}
+	if len(usage) > 0 {
+		otelSpan.Attributes = append(otelSpan.Attributes, kvStr("langfuse.observation.usage_details", mustJSON(usage)))
+	}
+	if cost := numericAttr(attrs, schemas.AttrUsageCost); cost != 0 {
+		otelSpan.Attributes = append(otelSpan.Attributes, kvStr("langfuse.observation.cost_details", mustJSON(map[string]any{"total": cost})))
+	}
+	if span.Status == schemas.SpanStatusError {
+		otelSpan.Attributes = append(otelSpan.Attributes, kvStr("langfuse.observation.level", "ERROR"))
+		if message := getStringAttr(attrs, schemas.AttrError); message != "" {
+			otelSpan.Attributes = append(otelSpan.Attributes, kvStr("langfuse.observation.status_message", message))
+		}
+	}
+	if disableContentLogging {
+		return
+	}
+	if input := getStringAttr(attrs, schemas.AttrBifrostImageInput); input != "" {
+		otelSpan.Attributes = append(otelSpan.Attributes, kvStr("langfuse.observation.input", replaceMediaReferences(input, mediaRefs)))
+	}
+	if output := getStringAttr(attrs, schemas.AttrBifrostImageOutput); output != "" {
+		otelSpan.Attributes = append(otelSpan.Attributes, kvStr("langfuse.observation.output", replaceMediaReferences(output, mediaRefs)))
+	}
+}
+
+func replaceMediaReferences(value string, mediaRefs map[string]string) string {
+	for localRef, token := range mediaRefs {
+		value = strings.ReplaceAll(value, localRef, token)
+	}
+	return localMediaReferencePattern.ReplaceAllString(value, "")
+}
+
+func numericAttr(attrs map[string]any, key string) float64 {
+	switch value := attrs[key].(type) {
+	case float64:
+		return value
+	case float32:
+		return float64(value)
+	case int:
+		return float64(value)
+	case int64:
+		return float64(value)
+	default:
+		return 0
+	}
+}
+
+func mustJSON(value any) string {
+	data, err := schemas.MarshalSorted(value)
+	if err != nil {
+		return "{}"
+	}
+	return string(data)
 }
 
 // getResourceAttributes returns the resource attributes for the OTEL span
@@ -216,6 +322,10 @@ func (p *OtelPlugin) getInstrumentationScope(serviceName string) *commonpb.Instr
 // When disableContentLogging is true, attributes carrying message/input/output content or
 // tool definitions/arguments/results are dropped so only metadata is exported.
 func convertAttributesToKeyValues(attrs map[string]any, disableContentLogging bool) []*KeyValue {
+	return convertAttributesToKeyValuesWithMedia(attrs, disableContentLogging, nil)
+}
+
+func convertAttributesToKeyValuesWithMedia(attrs map[string]any, disableContentLogging bool, mediaRefs map[string]string) []*KeyValue {
 	if attrs == nil {
 		return nil
 	}
@@ -223,6 +333,11 @@ func convertAttributesToKeyValues(attrs map[string]any, disableContentLogging bo
 	for k, v := range attrs {
 		if disableContentLogging && schemas.IsContentAttribute(k) {
 			continue
+		}
+		if k == schemas.AttrBifrostImageInput || k == schemas.AttrBifrostImageOutput {
+			if text, ok := v.(string); ok {
+				v = replaceMediaReferences(text, mediaRefs)
+			}
 		}
 		kv := anyToKeyValue(k, v)
 		if kv != nil {

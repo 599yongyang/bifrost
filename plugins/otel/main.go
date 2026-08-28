@@ -396,6 +396,8 @@ type otelTarget struct {
 	url                    string
 	traceType              TraceType
 	client                 OtelClient
+	mediaUploader          mediaUploader
+	mediaSem               chan struct{}
 	metricsExporter        *MetricsExporter
 	requestHeaders         []string
 	disableContentLogging  bool
@@ -409,10 +411,36 @@ type otelTarget struct {
 	// after breakerFailureThreshold consecutive failures the target stops dialling until
 	// breakerCooldown has elapsed. Without this, a permanently wrong endpoint costs a
 	// full exportTimeout on every single request forever.
-	consecutiveFailures atomic.Int64
-	breakerOpenUntil    atomic.Int64 // UnixNano; exports are skipped until this instant
-	suppressedExports   atomic.Int64
-	failedExports       atomic.Int64
+	consecutiveFailures      atomic.Int64
+	breakerOpenUntil         atomic.Int64 // UnixNano; exports are skipped until this instant
+	suppressedExports        atomic.Int64
+	failedExports            atomic.Int64
+	mediaConsecutiveFailures atomic.Int64
+	mediaBreakerOpenUntil    atomic.Int64
+	failedMediaBatches       atomic.Int64
+}
+
+func (t *otelTarget) tripMediaBreaker() {
+	t.failedMediaBatches.Add(1)
+	if t.mediaConsecutiveFailures.Add(1) >= breakerFailureThreshold {
+		t.mediaBreakerOpenUntil.Store(time.Now().Add(breakerCooldown).UnixNano())
+	}
+}
+
+func (t *otelTarget) resetMediaBreaker() {
+	t.mediaConsecutiveFailures.Store(0)
+	t.mediaBreakerOpenUntil.Store(0)
+}
+
+func (t *otelTarget) mediaBreakerOpen() bool {
+	openUntil := t.mediaBreakerOpenUntil.Load()
+	if openUntil == 0 {
+		return false
+	}
+	if time.Now().UnixNano() >= openUntil {
+		return !t.mediaBreakerOpenUntil.CompareAndSwap(openUntil, time.Now().Add(breakerCooldown).UnixNano())
+	}
+	return true
 }
 
 // tripBreaker records a failed export and opens the circuit once the failure threshold
@@ -617,6 +645,12 @@ func (p *OtelPlugin) buildTarget(index int, profile *Profile) (*otelTarget, erro
 			target.client, err = NewOtelClientGRPC(url, traceHeaders, profile.TLSCACert, profile.Insecure)
 		case ProtocolHTTP:
 			target.client, err = NewOtelClientHTTP(url, traceHeaders, profile.TLSCACert, profile.Insecure, exportTimeout)
+			if err == nil && !profile.DisableContentLogging {
+				target.mediaUploader, err = newLangfuseMediaClient(url, traceHeaders, exportTimeout, profile.TLSCACert, profile.Insecure)
+				if target.mediaUploader != nil {
+					target.mediaSem = make(chan struct{}, 4)
+				}
+			}
 		}
 		if err != nil {
 			return nil, fmt.Errorf("profile %d: %w", index, err)
@@ -867,7 +901,11 @@ func (p *OtelPlugin) Inject(ctx context.Context, trace *schemas.Trace) error {
 			if t.client == nil || t.breakerOpen() {
 				return
 			}
-			resourceSpan := p.convertTraceToResourceSpan(t.serviceName, trace, t.requestHeaders, t.disableContentLogging, t.groupTracesBySession, t.disableRootSpanContent)
+			mediaRefs, mediaOK := uploadTraceMedia(ctx, t, trace)
+			if !mediaOK && p.selector != nil && decision.selected && isImageRequestType(selectionFactsFromTrace(trace).requestType) {
+				return
+			}
+			resourceSpan := p.convertTraceToResourceSpanWithMedia(t.serviceName, trace, t.requestHeaders, t.disableContentLogging, t.groupTracesBySession, t.disableRootSpanContent, mediaRefs)
 			// The caller passes context.Background(), so this deadline is the only bound
 			// on the export — and the only bound at all on the gRPC path.
 			emitCtx, cancel := context.WithTimeout(ctx, t.exportTimeout)
@@ -1325,6 +1363,9 @@ func (p *OtelPlugin) Cleanup() error {
 			if err := t.client.Close(); err != nil && firstErr == nil {
 				firstErr = err
 			}
+		}
+		if t.mediaUploader != nil {
+			t.mediaUploader.Close()
 		}
 	}
 	return firstErr
