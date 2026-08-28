@@ -178,7 +178,8 @@ func (p *Profile) UnmarshalJSON(data []byte) error {
 //   - the canonical wrapper {"profiles": [ ... ], "plugin_span_filter": { ... }}
 //   - a legacy single profile object, which is normalized into a one-element Profiles slice.
 type Config struct {
-	Profiles []*Profile `json:"profiles"`
+	Profiles        []*Profile             `json:"profiles"`
+	SelectiveExport *SelectiveExportConfig `json:"selective_export,omitempty"`
 
 	// PluginSpanFilter is a single policy applied across every profile. In a legacy
 	// single-object config it is read from the object; in a profiles wrapper it is read
@@ -213,6 +214,12 @@ func (c *Config) UnmarshalJSON(data []byte) error {
 	}
 	c.Profiles = []*Profile{&prof}
 	c.PluginSpanFilter = spanFilterFrom(data)
+	var selective struct {
+		SelectiveExport *SelectiveExportConfig `json:"selective_export,omitempty"`
+	}
+	if err := sonic.Unmarshal(data, &selective); err == nil {
+		c.SelectiveExport = selective.SelectiveExport
+	}
 	return nil
 }
 
@@ -274,8 +281,9 @@ type profileForStorage struct {
 
 // configForStorage is the persisted wrapper shape.
 type configForStorage struct {
-	Profiles         []profileForStorage `json:"profiles"`
-	PluginSpanFilter *PluginSpanFilter   `json:"plugin_span_filter,omitempty"`
+	Profiles         []profileForStorage    `json:"profiles"`
+	PluginSpanFilter *PluginSpanFilter      `json:"plugin_span_filter,omitempty"`
+	SelectiveExport  *SelectiveExportConfig `json:"selective_export,omitempty"`
 }
 
 // MarshalForStorage serializes Config to JSON with *SecretVar fields as plain strings
@@ -286,6 +294,7 @@ func (c *Config) MarshalForStorage() ([]byte, error) {
 	out := configForStorage{
 		Profiles:         make([]profileForStorage, 0, len(c.Profiles)),
 		PluginSpanFilter: c.PluginSpanFilter,
+		SelectiveExport:  c.SelectiveExport,
 	}
 	for _, p := range c.Profiles {
 		if p == nil {
@@ -326,7 +335,7 @@ func (c *Config) Redacted() *Config {
 	if c == nil {
 		return nil
 	}
-	redacted := &Config{PluginSpanFilter: c.PluginSpanFilter}
+	redacted := &Config{PluginSpanFilter: c.PluginSpanFilter, SelectiveExport: c.SelectiveExport}
 	if c.Profiles != nil {
 		redacted.Profiles = make([]*Profile, 0, len(c.Profiles))
 		for _, p := range c.Profiles {
@@ -461,6 +470,7 @@ type OtelPlugin struct {
 	pricingManager *modelcatalog.ModelCatalog
 
 	pluginSpanFilter *PluginSpanFilter
+	selector         *traceSelector
 }
 
 // Init function for the OTEL plugin
@@ -476,6 +486,10 @@ func Init(ctx context.Context, config *Config, _logger schemas.Logger, pricingMa
 		return nil, fmt.Errorf("at least one otel profile is required")
 	}
 	if err := config.PluginSpanFilter.Validate(); err != nil {
+		return nil, err
+	}
+	selector, err := newTraceSelector(config.SelectiveExport)
+	if err != nil {
 		return nil, err
 	}
 	// Loading attributes from environment
@@ -511,6 +525,7 @@ func Init(ctx context.Context, config *Config, _logger schemas.Logger, pricingMa
 		attributesFromEnvironment: attributesFromEnvironment,
 		instanceAttrs:             instanceAttrs,
 		pluginSpanFilter:          config.PluginSpanFilter,
+		selector:                  selector,
 	}
 	p.ctx, p.cancel = context.WithCancel(ctx)
 
@@ -829,6 +844,9 @@ func (p *OtelPlugin) Inject(ctx context.Context, trace *schemas.Trace) error {
 	if trace == nil {
 		return nil
 	}
+	decision := p.selector.decide(trace)
+	annotateSelectionDecision(trace, decision, p.selector != nil && p.selector.dryRun)
+	exportTrace := p.selector == nil || p.selector.dryRun || decision.selected
 	// Emit the trace to every configured profile's collector, and record metrics against
 	// each profile's exporter. Conversion is per-target because the resource service name
 	// differs per profile; everything else (filter, instance attrs) is shared.
@@ -842,6 +860,9 @@ func (p *OtelPlugin) Inject(ctx context.Context, trace *schemas.Trace) error {
 			if t.metricsExporter != nil {
 				p.recordMetricsFromTrace(ctx, t.metricsExporter, trace)
 				p.recordMCPMetricsFromTrace(ctx, t.metricsExporter, trace)
+			}
+			if !exportTrace {
+				return
 			}
 			if t.client == nil || t.breakerOpen() {
 				return
