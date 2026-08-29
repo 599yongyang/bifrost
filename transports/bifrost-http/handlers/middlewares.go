@@ -1535,7 +1535,7 @@ func (m *TracingMiddleware) Middleware() schemas.BifrostHTTPMiddleware {
 				headerTraceID = traceID
 			}
 			ctx.Response.Header.Set("x-request-id", requestID)
-			ctx.Response.Header.Set("x-bifrost-trace-id", headerTraceID)
+			ctx.Response.Header.Set("x-moon-trace-id", headerTraceID)
 			// Store dimensions and session ID at the trace level (not as span
 			// attributes) so connectors like BigQuery can export them without
 			// changing the OTEL/Datadog span payloads.
@@ -1554,7 +1554,7 @@ func (m *TracingMiddleware) Middleware() schemas.BifrostHTTPMiddleware {
 			}
 			// Only trace ID goes into context (lightweight, no bloat)
 			ctx.SetUserValue(schemas.BifrostContextKeyTraceID, traceID)
-			// Also expose the W3C trace ID (the value in the x-bifrost-trace-id
+			// Also expose the W3C trace ID (the value in the x-moon-trace-id
 			// response header) so plugins that forward correlation IDs to external
 			// services advertise what Tempo indexes, not the internal store handle.
 			ctx.SetUserValue(schemas.BifrostContextKeyExportTraceID, headerTraceID)

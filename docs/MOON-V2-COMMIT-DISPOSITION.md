@@ -20,7 +20,7 @@ instead of merging the v1 branch.
 | `6332a7991` | LLM-log latency filters | `adapt-to-v2` | `4ed6d53a2`; log handler/model tests |
 | `885423f3a` | Manual Langfuse export | `reimplement` | `585665f5e`, `d2b59e37e`, `47f4a62b4`, `eebbbcde8`, `9f5c0bd8a` |
 | `68127a2c4` | Reduce dynamic-build disk use | `adapt-to-v2` | `0b77aa8c4`, `b000b4b2f`; bounded reusable caches |
-| `a268f3169` | Rebrand response headers | `adapt-to-v2` | `3d66e5d27`; response-header tests |
+| `a268f3169` | Rebrand response headers | `adapt-to-v2` | `3d66e5d27` plus the v2 tracing-middleware regression test; provider/routing headers remain private and the public trace header is `x-moon-trace-id` |
 | `35f0ec65c` | Hide internal routing headers | `adapt-to-v2` | `3d66e5d27`; handler/integration privacy tests |
 | `c5f066071` | Reject image responses without image data | `adapt-to-v2` | `e88e8c975`; image response validation tests |
 | `5937c6d3e` | Reject empty completed image streams | `adapt-to-v2` | `e88e8c975`; stream fallback/truncation tests |
