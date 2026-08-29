@@ -39,9 +39,10 @@ for module_file in "$repo_root"/plugins/*/go.mod; do
   module_dirs+=("$(dirname "$module_file")")
 done
 
-mkdir -p "$cache_root/go-build-host"
+mkdir -p "$cache_root/go-build-host" "$cache_root/go-mod"
 
 export GOCACHE="$cache_root/go-build-host"
+export GOMODCACHE="$cache_root/go-mod"
 export GOTOOLCHAIN=go1.27.0+auto
 
 workspace_needs_refresh=false

@@ -48,6 +48,9 @@ Go 1.27 workspace，正式发布始终使用 Dockerfile 固定的 Go 1.27.0 工�
 开始。发布清单必须记录宿主 commit、插件 commit、镜像 digest、插件 SHA-256、Go 版本、
 架构和构建时间，不能只依赖文件名判断兼容性。
 
+v1.6.10 的全部 Moon 提交及其 v2 处理结果记录在
+[MOON-V2-COMMIT-DISPOSITION.md](MOON-V2-COMMIT-DISPOSITION.md)，新增维护提交必须同步更新该台账。
+
 ## 构建宿主镜像
 
 在本仓库根目录执行：
@@ -91,8 +94,9 @@ scripts/with-moon-v2-cache.sh go test \
 module。包装器会自动发现 `plugins/*/go.mod` 并保证临时 workspace 覆盖全部生产插件模块。
 
 包装器会在该根目录创建并复用一个只包含 v2 模块的 Go 1.27 workspace，并让宿主测试
-使用 `go-build-host`；它不会修改仓库根目录遗留的 v1 `go.work`，也不会创建第二份 module
-cache。插件构建脚本复用同一根目录中的 `go-mod` 和 `go-build-linux-amd64`，避免不同
+使用 `go-build-host`，并固定 `GOMODCACHE` 到同一根目录的 `go-mod`；它不会修改仓库根目录
+遗留的 v1 `go.work`，也不会把 Moon v2 依赖写入用户全局 module cache。插件构建脚本复用
+同一根目录中的 `go-mod` 和 `go-build-linux-amd64`，避免不同
 GOOS/GOARCH 相互污染。可用 `BIFROST_V2_CACHE_ROOT` 覆盖根目录，但同一次升级期间必须
 保持唯一值。
 
