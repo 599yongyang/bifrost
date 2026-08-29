@@ -22,7 +22,8 @@ import {
 } from "@/lib/store";
 import type { DailyReportAudience, DailyReportJobStatus, DailyReportPreview, DailyReportRunDetail } from "@/lib/types/alerting";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
-import { ChevronLeft, ChevronRight, Eye, Play, RefreshCw, Save, Send } from "lucide-react";
+import { localize } from "@/lib/i18n/language";
+import { ArrowRight, ChevronLeft, ChevronRight, CircleAlert, Clock3, Eye, Play, RefreshCw, RotateCcw, Save, Send } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { alertingCopy } from "./copy";
@@ -120,6 +121,19 @@ function PreviewPanels({
 				<TabsTrigger value="external">{copy.external}</TabsTrigger>
 			</TabsList>
 			<TabsContent value="internal" className="space-y-3">
+				<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+					{[
+						[localize("User requests", "用户请求"), preview.snapshot.overview.user_requests.toLocaleString()],
+						[localize("Success rate", "成功率"), formatDailyReportPercent(preview.snapshot.overview.user_success_rate)],
+						[localize("Fallback recoveries", "Fallback 恢复"), preview.snapshot.overview.fallback_recoveries.toLocaleString()],
+						[localize("Slow requests", "慢请求"), preview.snapshot.overview.slow_requests.toLocaleString()],
+					].map(([label, value]) => (
+						<div key={label} className="bg-muted/30 rounded-sm border p-3">
+							<p className="text-muted-foreground text-xs">{label}</p>
+							<p className="mt-1 text-lg font-semibold tabular-nums">{value}</p>
+						</div>
+					))}
+				</div>
 				<pre className="bg-muted max-h-80 overflow-auto rounded p-4 text-xs whitespace-pre-wrap">{preview.internal_content}</pre>
 				<div className="grid gap-2 sm:grid-cols-3">
 					{preview.snapshot.providers.map((provider) => (
@@ -156,11 +170,12 @@ export function DailyReportsView() {
 	const previousJobStatus = useRef(job?.status);
 	const [saveSettings, saving] = useUpdateDailyReportSettingsMutation();
 	const [requestPreview, previewing] = usePreviewDailyReportMutation();
-	const [startJob] = useStartDailyReportJobMutation();
+	const [startJob, startingJob] = useStartDailyReportJobMutation();
 	const { data: jobStatus } = useGetDailyReportJobStatusQuery(job?.id ? { id: job.id } : undefined, {
 		skip: !job?.id,
 		pollingInterval: shouldPollDailyReportJob(job ?? undefined) ? 1500 : 0,
 	});
+	const jobActive = shouldPollDailyReportJob(job ?? undefined);
 	useEffect(() => {
 		if (settingsData?.settings) setForm(settingsToForm(settingsData.settings));
 	}, [settingsData]);
@@ -245,6 +260,34 @@ export function DailyReportsView() {
 					<TabsTrigger value="history">{copy.reportHistory}</TabsTrigger>
 				</TabsList>
 				<TabsContent value="settings" className="space-y-4">
+					<div className="bg-muted/20 grid gap-3 rounded-sm border p-4 md:grid-cols-[1fr_auto_1fr_auto_1fr] md:items-center">
+						<div>
+							<div className="flex items-center gap-2 text-sm font-medium">
+								<Clock3 className="size-4" /> {copy.generateTime}
+							</div>
+							<p className="text-muted-foreground mt-1 text-xs">
+								{form.generate_time} · {form.timezone}
+							</p>
+						</div>
+						<ArrowRight className="text-muted-foreground hidden size-4 md:block" />
+						<div>
+							<div className="flex items-center gap-2 text-sm font-medium">
+								<Save className="size-4" /> {copy.generateReport}
+							</div>
+							<p className="text-muted-foreground mt-1 text-xs">
+								{copy.slowThreshold}: {form.slow_threshold_ms} ms
+							</p>
+						</div>
+						<ArrowRight className="text-muted-foreground hidden size-4 md:block" />
+						<div>
+							<div className="flex items-center gap-2 text-sm font-medium">
+								<Send className="size-4" /> {copy.sendTime}
+							</div>
+							<p className="text-muted-foreground mt-1 text-xs">
+								{form.send_time} · {copy.internal}/{copy.external}
+							</p>
+						</div>
+					</div>
 					<div className="grid gap-4 md:grid-cols-2">
 						<label className="flex items-center justify-between rounded border p-3">
 							<span>{copy.enabled}</span>
@@ -312,9 +355,19 @@ export function DailyReportsView() {
 						onIDs={(external_channel_ids) => setForm({ ...form, external_channel_ids })}
 					/>
 					{permissions.canUpdate && (
-						<Button data-testid="daily-report-save-settings" disabled={saving.isLoading} onClick={save}>
-							<Save className="size-4" /> {copy.saveSettings}
-						</Button>
+						<div className="flex justify-end gap-2 border-t pt-4">
+							<Button
+								variant="outline"
+								disabled={!settingsData?.settings || saving.isLoading}
+								onClick={() => settingsData?.settings && setForm(settingsToForm(settingsData.settings))}
+								data-testid="daily-report-reset-settings"
+							>
+								<RotateCcw className="size-4" /> {localize("Reset", "重置")}
+							</Button>
+							<Button data-testid="daily-report-save-settings" disabled={saving.isLoading} onClick={save} isLoading={saving.isLoading}>
+								<Save className="size-4" /> {copy.saveSettings}
+							</Button>
+						</div>
 					)}
 				</TabsContent>
 				<TabsContent value="preview" className="space-y-4">
@@ -329,29 +382,50 @@ export function DailyReportsView() {
 							/>
 						</div>
 						{permissions.canPreview && (
-							<Button data-testid="daily-report-preview" disabled={previewing.isLoading} onClick={doPreview}>
+							<Button
+								data-testid="daily-report-preview"
+								disabled={previewing.isLoading || jobActive}
+								onClick={doPreview}
+								isLoading={previewing.isLoading}
+							>
 								<Eye className="size-4" /> {copy.previewReport}
 							</Button>
 						)}
 						{permissions.canGenerate && (
 							<>
-								<Button variant="outline" data-testid="daily-report-generate" onClick={() => run(false)}>
+								<Button
+									variant="outline"
+									data-testid="daily-report-generate"
+									disabled={jobActive || startingJob.isLoading}
+									onClick={() => run(false)}
+								>
 									<Play className="size-4" /> {copy.generateReport}
 								</Button>
-								<Button data-testid="daily-report-generate-send" onClick={() => run(true)}>
+								<Button
+									data-testid="daily-report-generate-send"
+									disabled={jobActive || startingJob.isLoading}
+									onClick={() => run(true)}
+									isLoading={startingJob.isLoading}
+								>
 									<Send className="size-4" /> {copy.generateAndSend}
 								</Button>
 							</>
 						)}
 					</div>
 					{job && (
-						<div className="space-y-2 rounded border p-3" data-testid="daily-report-job-status">
-							<div className="flex justify-between">
-								<span>{job.stage || job.status}</span>
-								<span>{job.percent ?? 0}%</span>
+						<div className="space-y-3 rounded-sm border p-4" data-testid="daily-report-job-status" aria-live="polite">
+							<div className="flex items-center justify-between gap-3">
+								<div className="flex items-center gap-2">
+									{job.status === "failed" && <CircleAlert className="text-destructive size-4" />}
+									<span className="font-medium">{job.stage || job.status}</span>
+									<Badge variant={job.status === "failed" ? "destructive" : "outline"}>{job.status}</Badge>
+								</div>
+								<span className="font-mono text-sm tabular-nums">{job.percent ?? 0}%</span>
 							</div>
 							<Progress value={job.percent ?? 0} />
-							<p className="text-muted-foreground text-xs">{job.message}</p>
+							<p className={job.status === "failed" ? "text-destructive text-xs" : "text-muted-foreground text-xs"}>
+								{job.last_error || job.message}
+							</p>
 						</div>
 					)}
 					{preview && <PreviewPanels preview={preview} />}
@@ -444,7 +518,7 @@ function DailyReportHistory({ canResend, refreshKey }: { canResend: boolean; ref
 				</Button>
 			</div>
 			<Dialog open={Boolean(selectedID)} onOpenChange={(open) => !open && setSelectedID(null)}>
-				<DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
+				<DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
 					<DialogHeader>
 						<DialogTitle>{detail?.run.business_date}</DialogTitle>
 						<DialogDescription>{copy.dailyReportsDescription}</DialogDescription>
