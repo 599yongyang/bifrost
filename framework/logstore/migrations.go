@@ -295,6 +295,9 @@ var logstoreMigrationSteps = []migrationStep{
 	{IDs: []string{"logs_recreate_matviews_with_cost_breakdown"}, run: migrationRecreateMatViewsWithCostBreakdown},
 	{IDs: []string{"logs_add_overhead_breakdown_column"}, run: migrationAddOverheadBreakdownColumn},
 	{IDs: []string{"observability_exports_init"}, run: migrationCreateObservationExportsTable},
+	{IDs: []string{"enterprise_alert_history_init"}, run: migrationCreateAlertHistoryTable},
+	{IDs: []string{"daily_report_runs_init"}, run: migrationCreateDailyReportRunsTable},
+	{IDs: []string{"daily_report_deliveries_init"}, run: migrationCreateDailyReportDeliveriesTable},
 }
 
 func migrationCreateObservationExportsTable(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
@@ -322,6 +325,51 @@ func migrationCreateObservationExportsTable(ctx context.Context, db *gorm.DB, lo
 		return fmt.Errorf("error while creating observability exports table: %w", err)
 	}
 	return nil
+}
+
+func migrationCreateAlertHistoryTable(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	migrationName := "enterprise_alert_history_init"
+	m := migrator.New(db, migrator.DefaultOptions, []*migrator.Migration{{
+		ID:       migrationName,
+		Migrate:  func(tx *gorm.DB) error { return tx.WithContext(ctx).AutoMigrate(&AlertHistory{}) },
+		Rollback: func(tx *gorm.DB) error { return tx.WithContext(ctx).Migrator().DropTable(&AlertHistory{}) },
+	}})
+	if err := m.Migrate(); err != nil {
+		return fmt.Errorf("error creating alert history table: %w", err)
+	}
+	return nil
+}
+
+func migrationCreateDailyReportRunsTable(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	migrationName := "daily_report_runs_init"
+	logger.Info("[logstore] starting migration %s", migrationName)
+	defer logger.Info("[logstore] finished migration %s", migrationName)
+	m := migrator.New(db, migrator.DefaultOptions, []*migrator.Migration{{
+		ID: migrationName,
+		Migrate: func(tx *gorm.DB) error {
+			return tx.WithContext(ctx).AutoMigrate(&DailyReportRun{})
+		},
+		Rollback: func(tx *gorm.DB) error {
+			return tx.WithContext(ctx).Migrator().DropTable(&DailyReportRun{})
+		},
+	}})
+	return m.Migrate()
+}
+
+func migrationCreateDailyReportDeliveriesTable(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	migrationName := "daily_report_deliveries_init"
+	logger.Info("[logstore] starting migration %s", migrationName)
+	defer logger.Info("[logstore] finished migration %s", migrationName)
+	m := migrator.New(db, migrator.DefaultOptions, []*migrator.Migration{{
+		ID: migrationName,
+		Migrate: func(tx *gorm.DB) error {
+			return tx.WithContext(ctx).AutoMigrate(&DailyReportDelivery{})
+		},
+		Rollback: func(tx *gorm.DB) error {
+			return tx.WithContext(ctx).Migrator().DropTable(&DailyReportDelivery{})
+		},
+	}})
+	return m.Migrate()
 }
 
 // areThereAnyPendingMigrations returns true if there are any pending migrations to be applied.

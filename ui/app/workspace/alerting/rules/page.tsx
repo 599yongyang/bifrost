@@ -1,4 +1,4 @@
-import AlertRulesView from "@enterprise/components/alerting/alertRulesView";
+import { AlertRulesView } from "../components/AlertingViews";
 
 export default function AlertRulesPage() {
 	return <AlertRulesView />;

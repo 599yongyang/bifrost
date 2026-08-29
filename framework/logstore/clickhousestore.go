@@ -610,3 +610,12 @@ func (s *ClickHouseLogStore) UpdateAsyncJob(ctx context.Context, id string, upda
 	}
 	return s.chReinsert(ctx, &existing)
 }
+
+func (s *ClickHouseLogStore) UpdateDailyReportRun(ctx context.Context, id string, updates map[string]interface{}) error {
+	row := make(map[string]interface{}, len(updates)+1)
+	for key, value := range updates {
+		row[key] = value
+	}
+	row["id"] = id
+	return s.db.WithContext(ctx).Table((DailyReportRun{}).TableName()).Create(row).Error
+}

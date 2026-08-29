@@ -476,6 +476,13 @@ var configstoreMigrationSteps = []migrationStep{
 	{IDs: []string{"add_ultrafast_pricing_columns"}, run: migrationAddUltrafastPricingColumns},
 	{IDs: []string{"add_image_size_quality_pricing_columns"}, run: migrationAddImageSizeQualityPricingColumns},
 	{IDs: []string{"add_batch_jobs_attribution_columns"}, run: migrationAddBatchJobsAttributionColumns},
+	{IDs: []string{"add_alerting_tables"}, run: migrationAddAlertingTables},
+	{IDs: []string{"add_provider_error_alert_fields"}, run: migrationAddProviderErrorAlertFields},
+	{IDs: []string{"add_alert_cooldowns_table"}, run: migrationAddAlertCooldownsTable},
+	{IDs: []string{"add_alert_notify_once_field"}, run: migrationAddAlertNotifyOnceField},
+	{IDs: []string{"add_alert_config_managed_fields"}, run: migrationAddAlertConfigManagedFields},
+	{IDs: []string{"add_daily_report_settings_table"}, run: migrationAddDailyReportSettingsTable},
+	{IDs: []string{"add_daily_report_generate_time"}, run: migrationAddDailyReportGenerateTime},
 }
 
 // migrationAddBatchJobsAttributionColumns adds the requester-identity columns to
@@ -522,6 +529,64 @@ func migrationAddBatchJobsAttributionColumns(ctx context.Context, db *gorm.DB, l
 	}})
 	if err := m.Migrate(); err != nil {
 		return fmt.Errorf("error running %s migration: %s", migrationName, err.Error())
+	}
+	return nil
+}
+
+func migrationAddAlertingTables(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	return runAlertingMigration(ctx, db, logger, "add_alerting_tables", func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&tables.TableAlertChannel{}, &tables.TableAlertRule{}, &tables.TableAlertCooldown{})
+	}, func(tx *gorm.DB) error {
+		return tx.Migrator().DropTable(&tables.TableAlertCooldown{}, &tables.TableAlertRule{}, &tables.TableAlertChannel{})
+	})
+}
+
+func migrationAddAlertCooldownsTable(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	return runAlertingMigration(ctx, db, logger, "add_alert_cooldowns_table", func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&tables.TableAlertCooldown{})
+	}, func(tx *gorm.DB) error { return tx.Migrator().DropTable(&tables.TableAlertCooldown{}) })
+}
+
+func migrationAddProviderErrorAlertFields(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	return runAlertingMigration(ctx, db, logger, "add_provider_error_alert_fields", func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&tables.TableAlertRule{})
+	}, func(*gorm.DB) error { return fmt.Errorf("provider alert fields are non-rollbackable") })
+}
+
+func migrationAddAlertNotifyOnceField(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	return runAlertingMigration(ctx, db, logger, "add_alert_notify_once_field", func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&tables.TableAlertRule{})
+	}, func(*gorm.DB) error { return fmt.Errorf("notify-once field is non-rollbackable") })
+}
+
+func migrationAddAlertConfigManagedFields(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	return runAlertingMigration(ctx, db, logger, "add_alert_config_managed_fields", func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&tables.TableAlertChannel{}, &tables.TableAlertRule{})
+	}, func(*gorm.DB) error { return fmt.Errorf("managed fields are non-rollbackable") })
+}
+
+func migrationAddDailyReportSettingsTable(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	return runAlertingMigration(ctx, db, logger, "add_daily_report_settings_table", func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&tables.TableDailyReportSettings{})
+	}, func(tx *gorm.DB) error { return tx.Migrator().DropTable(&tables.TableDailyReportSettings{}) })
+}
+
+func migrationAddDailyReportGenerateTime(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	return runAlertingMigration(ctx, db, logger, "add_daily_report_generate_time", func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&tables.TableDailyReportSettings{})
+	}, func(*gorm.DB) error { return fmt.Errorf("generate_time is non-rollbackable") })
+}
+
+func runAlertingMigration(ctx context.Context, db *gorm.DB, logger schemas.Logger, id string, migrate, rollback func(*gorm.DB) error) error {
+	logger.Info("[configstore] starting migration %s", id)
+	defer logger.Info("[configstore] finished migration %s", id)
+	m := migrator.New(db, migrator.DefaultOptions, []*migrator.Migration{{
+		ID:       id,
+		Migrate:  func(tx *gorm.DB) error { return migrate(tx.WithContext(ctx)) },
+		Rollback: func(tx *gorm.DB) error { return rollback(tx.WithContext(ctx)) },
+	}})
+	if err := m.Migrate(); err != nil {
+		return fmt.Errorf("error running %s migration: %w", id, err)
 	}
 	return nil
 }

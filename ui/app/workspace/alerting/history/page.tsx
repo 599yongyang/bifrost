@@ -1,4 +1,4 @@
-import AlertHistoryView from "@enterprise/components/alerting/alertHistoryView";
+import { AlertHistoryView } from "../components/AlertingViews";
 
 export default function AlertHistoryPage() {
 	return <AlertHistoryView />;

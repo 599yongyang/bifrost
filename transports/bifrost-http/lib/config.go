@@ -52,6 +52,7 @@ import (
 	"github.com/maximhq/bifrost/plugins/routing/rules"
 	"github.com/maximhq/bifrost/plugins/semanticcache"
 	"github.com/maximhq/bifrost/plugins/telemetry"
+	alertengine "github.com/maximhq/bifrost/transports/bifrost-http/alerting"
 	"github.com/maximhq/bifrost/transports/bifrost-http/circuitbreaker"
 	"gorm.io/gorm"
 )
@@ -199,6 +200,7 @@ type ConfigData struct {
 	WebSocket         *schemas.WebSocketConfig              `json:"websocket,omitempty"`
 	FeatureFlags      *FeatureFlagsFileConfig               `json:"feature_flags,omitempty"`
 	CircuitBreaker    *circuitbreaker.Config                `json:"circuit_breaker_config,omitempty"`
+	Alerting          *alertengine.Config                   `json:"alerting,omitempty"`
 
 	presentSections           map[string]bool
 	presentGovernanceSections map[string]bool
@@ -460,6 +462,7 @@ func (cd *ConfigData) UnmarshalJSON(data []byte) error {
 		WebSocket         *schemas.WebSocketConfig              `json:"websocket,omitempty"`
 		FeatureFlags      *FeatureFlagsFileConfig               `json:"feature_flags,omitempty"`
 		CircuitBreaker    *circuitbreaker.Config                `json:"circuit_breaker_config,omitempty"`
+		Alerting          *alertengine.Config                   `json:"alerting,omitempty"`
 		SkillsRegistry    *SkillsRegistryConfig                 `json:"skills_registry,omitempty"`
 	}
 
@@ -485,6 +488,7 @@ func (cd *ConfigData) UnmarshalJSON(data []byte) error {
 	cd.WebSocket = temp.WebSocket
 	cd.FeatureFlags = temp.FeatureFlags
 	cd.CircuitBreaker = temp.CircuitBreaker
+	cd.Alerting = temp.Alerting
 	cd.presentGovernanceSections = nil
 	if rawGovernance, ok := raw["governance"]; ok && len(rawGovernance) > 0 {
 		var rawGovernanceFields map[string]json.RawMessage
@@ -637,7 +641,8 @@ type Config struct {
 	// featureflags.Register; this struct holds the effective state with
 	// layered overrides (DB then file). May be wired with a SyncDelegate
 	// by enterprise for cluster-wide gossip.
-	FeatureFlags *featureflags.Store
+	FeatureFlags   *featureflags.Store
+	AlertingConfig *alertengine.Config
 	// CircuitBreakerConfig is the root-level file configuration. Runtime
 	// state belongs to the plugin instance, while this value records the
 	// startup source-of-truth used to seed the durable plugin row.
@@ -955,6 +960,7 @@ func LoadConfig(ctx context.Context, configDirPath string) (*Config, error) {
 		}
 	}
 	config.CircuitBreakerConfig = configData.CircuitBreaker
+	config.AlertingConfig = configData.Alerting
 	// Promote the root block into the ordinary plugin pipeline before stores
 	// are initialized. The persisted plugin row remains the dashboard/API
 	// representation, while applyCircuitBreakerFileConfig below makes an

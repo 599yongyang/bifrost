@@ -1094,13 +1094,20 @@
     },
     "alerting": {
       "type": "object",
-      "description": "Enterprise alerting configuration for governance-backed alert channels, rules, history retention, and outbound webhook URL validation.",
+      "description": "OSS alerting configuration for governance and provider reliability rules, delivery channels, history retention, and outbound URL validation.",
       "properties": {
         "history_retention_days": {
           "type": "integer",
           "minimum": 0,
           "default": 365,
           "description": "Number of days to retain alert history. Omit to use the default. Set to 0 to disable retention pruning."
+        },
+        "evaluation_interval_seconds": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 3600,
+          "default": 60,
+          "description": "Seconds between alert rule evaluation sweeps."
         },
         "webhook_network": {
           "type": "object",
@@ -1115,6 +1122,44 @@
               "type": "boolean",
               "default": false,
               "description": "Allow alert webhooks to target private or loopback network addresses. Useful for local testing."
+            }
+          },
+          "additionalProperties": false
+        },
+        "daily_report": {
+          "type": "object",
+          "description": "Optional daily service-quality report built for the previous complete business day and delivered through existing alert channels.",
+          "properties": {
+            "enabled": { "type": "boolean", "default": false },
+            "timezone": {
+              "type": "string",
+              "default": "Asia/Shanghai",
+              "description": "IANA timezone defining business-day boundaries and schedule times."
+            },
+            "generate_time": {
+              "type": "string",
+              "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$",
+              "default": "03:00"
+            },
+            "send_time": {
+              "type": "string",
+              "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$",
+              "default": "09:00"
+            },
+            "slow_threshold_ms": { "type": "integer", "minimum": 0, "default": 10000 },
+            "internal_enabled": { "type": "boolean", "default": true },
+            "internal_channel_ids": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1 },
+              "default": []
+            },
+            "external_enabled": { "type": "boolean", "default": false },
+            "external_channel_ids": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1 },
+              "default": []
             }
           },
           "additionalProperties": false
@@ -1139,17 +1184,12 @@
               },
               "type": {
                 "type": "string",
-                "enum": ["slack", "microsoft_teams", "pagerduty", "webhook"],
+                "enum": ["slack", "microsoft_teams", "wecom", "pagerduty", "webhook"],
                 "description": "Alert channel type."
               },
               "enabled": {
                 "type": "boolean",
                 "description": "Whether this alert channel can receive notifications."
-              },
-              "cooldown_seconds": {
-                "type": "integer",
-                "minimum": 0,
-                "description": "Minimum seconds between sends for this channel. Set to 0 for no channel-level cooldown."
               },
               "config": {
                 "type": "object",
@@ -1159,6 +1199,26 @@
             },
             "required": ["id", "name", "type", "enabled"],
             "allOf": [
+              {
+                "if": {
+                  "properties": { "type": { "const": "wecom" } },
+                  "required": ["type"]
+                },
+                "then": {
+                  "properties": {
+                    "config": {
+                      "type": "object",
+                      "properties": {
+                        "webhook_url": { "type": "string", "minLength": 1, "anyOf": [{ "format": "uri" }, { "pattern": "^env\\.[A-Za-z_][A-Za-z0-9_]*$" }] },
+                        "url": { "type": "string", "minLength": 1, "anyOf": [{ "format": "uri" }, { "pattern": "^env\\.[A-Za-z_][A-Za-z0-9_]*$" }] }
+                      },
+                      "oneOf": [{ "required": ["webhook_url"] }, { "required": ["url"] }],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": ["config"]
+                }
+              },
               {
                 "if": {
                   "properties": { "type": { "const": "slack" } },
@@ -1310,8 +1370,8 @@
               },
               "scope_type": {
                 "type": "string",
-                "enum": ["virtual_key", "team", "customer"],
-                "description": "Governance owner scope to evaluate."
+                "enum": ["virtual_key", "team", "customer", "provider"],
+                "description": "Governance owner or provider scope to evaluate."
               },
               "scope_id": {
                 "type": "string",
@@ -1332,6 +1392,19 @@
                 "default": 60,
                 "description": "Minimum seconds between notifications for this rule. Omit to use the default. Set to 0 for no rule cooldown."
               },
+              "window_seconds": {
+                "type": "integer",
+                "minimum": 60,
+                "maximum": 2592000,
+                "default": 300,
+                "description": "Rolling logs window used by provider reliability rules."
+              },
+              "min_requests": {
+                "type": "integer",
+                "minimum": 1,
+                "default": 1,
+                "description": "Minimum completed requests required before a provider rule may trigger."
+              },
               "notify_once_per_reset_cycle": {
                 "type": "boolean",
                 "default": false,
@@ -1341,12 +1414,13 @@
                 "type": "array",
                 "description": "IDs of alert channels to notify when this rule matches.",
                 "items": { "type": "string", "minLength": 1 },
-                "minItems": 1
+                "minItems": 1,
+                "uniqueItems": true
               },
               "target_type": {
                 "type": "string",
-                "enum": ["budget"],
-                "description": "Optional explicit target type. Use budget with target_id to evaluate one specific budget; omit to evaluate all budgets for the scope."
+                "enum": ["budget", "model"],
+                "description": "Governance scopes support budget targets; provider scopes support model targets."
               },
               "target_id": {
                 "type": "string",
@@ -1355,6 +1429,11 @@
             },
             "required": ["id", "name", "enabled", "scope_type", "scope_id", "cel_expression", "channel_ids"],
             "allOf": [
+              {
+                "if": { "properties": { "scope_type": { "const": "provider" } }, "required": ["scope_type"] },
+                "then": { "properties": { "target_type": { "const": "model" } } },
+                "else": { "properties": { "target_type": { "const": "budget" } } }
+              },
               {
                 "if": {
                   "required": ["target_type"]

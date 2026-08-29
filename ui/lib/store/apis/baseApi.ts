@@ -203,6 +203,7 @@ export const baseApi = createApi({
 		"AlertChannels",
 		"AlertRules",
 		"AlertHistory",
+		"DailyReports",
 		"WebhookEndpoints",
 		"WebhookDeliveries",
 		"EdgeApps",
