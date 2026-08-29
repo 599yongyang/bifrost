@@ -649,7 +649,7 @@ export function AlertRulesView() {
 			<Dialog open={Boolean(evaluation)} onOpenChange={(v) => !v && setEvaluation(null)}>
 				<DialogContent>
 					<DialogHeader>
-						<DialogTitle>Evaluate {evaluation?.name}</DialogTitle>
+					<DialogTitle>{copy.evaluate} {evaluation?.name}</DialogTitle>
 						<DialogDescription>{copy.evaluateDescription}</DialogDescription>
 					</DialogHeader>
 					<label className="flex items-center justify-between">

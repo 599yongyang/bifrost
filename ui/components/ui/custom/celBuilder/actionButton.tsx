@@ -10,9 +10,10 @@ import { ActionProps } from "react-querybuilder";
 export function ActionButton({ handleOnClick, label, className, title }: ActionProps) {
 	const labelStr = typeof label === "string" ? label : "";
 	const labelLower = labelStr.toLowerCase();
-	const isAddButton = labelLower.includes("add");
+	const isAddButton = labelLower.includes("add") || labelStr.includes("添加");
 	const isRemoveButton =
 		labelLower.includes("remove") ||
+		labelStr.includes("删除") ||
 		labelLower === "x" ||
 		labelStr === "x" ||
 		label?.toString().toLowerCase() === "x" ||

@@ -4,6 +4,7 @@
  */
 
 import { getProviderLabel } from "@/lib/constants/logs";
+import { localize } from "@/lib/i18n/language";
 import { COMPLEXITY_TIER_VALUES } from "@/lib/types/complexityRouter";
 
 export interface CELFieldDefinition {
@@ -30,8 +31,8 @@ export interface CELFieldDefinition {
 export const baseRoutingFields: CELFieldDefinition[] = [
 	{
 		name: "model",
-		label: "Model",
-		placeholder: "e.g., gpt-4, claude-3-sonnet",
+		label: localize("Model", "模型"),
+		placeholder: localize("e.g., gpt-4, claude-3-sonnet", "例如：gpt-4、claude-3-sonnet"),
 		inputType: "text",
 		valueEditorType: (operator: string) =>
 			operator === "=" || operator === "!=" ? "select" : operator === "in" || operator === "notIn" ? "select" : "text",
@@ -40,8 +41,8 @@ export const baseRoutingFields: CELFieldDefinition[] = [
 	},
 	{
 		name: "provider",
-		label: "Provider",
-		placeholder: "Select provider",
+		label: localize("Provider", "供应商"),
+		placeholder: localize("Select provider", "选择供应商"),
 		inputType: "select",
 		valueEditorType: (operator: string) =>
 			operator === "matches" ? "text" : operator === "in" || operator === "notIn" ? "select" : "select",
@@ -50,41 +51,43 @@ export const baseRoutingFields: CELFieldDefinition[] = [
 	},
 	{
 		name: "request_type",
-		label: "Request Type",
-		placeholder: "Select request type",
+		label: localize("Request Type", "请求类型"),
+		placeholder: localize("Select request type", "选择请求类型"),
 		inputType: "select",
 		valueEditorType: (operator: string) =>
 			operator === "matches" ? "text" : operator === "in" || operator === "notIn" ? "select" : "select",
 		operators: ["=", "!=", "in", "notIn", "matches"],
 		defaultOperator: "=",
 		values: [
-			{ name: "text_completion", label: "Text Completion" },
-			{ name: "text_completion_stream", label: "Text Completion (Streaming)" },
-			{ name: "chat_completion", label: "Chat Completion" },
-			{ name: "chat_completion_stream", label: "Chat Completion (Streaming)" },
+			{ name: "text_completion", label: localize("Text Completion", "文本补全") },
+			{ name: "text_completion_stream", label: localize("Text Completion (Streaming)", "文本补全（流式）") },
+			{ name: "chat_completion", label: localize("Chat Completion", "对话补全") },
+			{ name: "chat_completion_stream", label: localize("Chat Completion (Streaming)", "对话补全（流式）") },
 			{ name: "responses", label: "Responses" },
-			{ name: "responses_stream", label: "Responses (Streaming)" },
-			{ name: "embedding", label: "Embeddings" },
-			{ name: "image_generation", label: "Image Generation" },
-			{ name: "image_generation_stream", label: "Image Generation (Streaming)" },
-			{ name: "image_edit", label: "Image Edit" },
-			{ name: "image_edit_stream", label: "Image Edit (Streaming)" },
-			{ name: "image_variation", label: "Image Variation" },
-			{ name: "speech", label: "Speech" },
-			{ name: "speech_stream", label: "Speech (Streaming)" },
-			{ name: "transcription", label: "Transcription" },
-			{ name: "transcription_stream", label: "Transcription (Streaming)" },
-			{ name: "count_tokens", label: "Count Tokens" },
-			{ name: "rerank", label: "Rerank" },
-			{ name: "video_generation", label: "Video Generation" },
+			{ name: "responses_stream", label: localize("Responses (Streaming)", "Responses（流式）") },
+			{ name: "embedding", label: localize("Embeddings", "向量嵌入") },
+			{ name: "image_generation", label: localize("Image Generation", "图片生成") },
+			{ name: "image_generation_stream", label: localize("Image Generation (Streaming)", "图片生成（流式）") },
+			{ name: "image_edit", label: localize("Image Edit", "图片编辑") },
+			{ name: "image_edit_stream", label: localize("Image Edit (Streaming)", "图片编辑（流式）") },
+			{ name: "image_variation", label: localize("Image Variation", "图片变体") },
+			{ name: "speech", label: localize("Speech", "语音生成") },
+			{ name: "speech_stream", label: localize("Speech (Streaming)", "语音生成（流式）") },
+			{ name: "transcription", label: localize("Transcription", "语音转写") },
+			{ name: "transcription_stream", label: localize("Transcription (Streaming)", "语音转写（流式）") },
+			{ name: "count_tokens", label: localize("Count Tokens", "Token 计数") },
+			{ name: "rerank", label: localize("Rerank", "重排序") },
+			{ name: "video_generation", label: localize("Video Generation", "视频生成") },
 		],
-		description:
+		description: localize(
 			"Filter rules by the type of API request (chat, text, embeddings, images, audio, etc.). Streaming and non-streaming requests are distinct types: select both to cover all requests of a kind.",
+			"按 API 请求类型筛选规则（对话、文本、向量、图片、音频等）。流式和非流式请求是不同类型；如需覆盖同类全部请求，请同时选择两者。",
+		),
 	},
 	{
 		name: "headers",
-		label: "Header",
-		placeholder: "e.g., authorization, x-custom-header (use lowercase)",
+		label: localize("Header", "请求头"),
+		placeholder: localize("e.g., authorization, x-custom-header (use lowercase)", "例如：authorization、x-custom-header（使用小写）"),
 		inputType: "keyValue",
 		valueEditorType: "keyValue",
 		operators: ["=", "!=", "contains", "beginsWith", "endsWith", "matches", "null", "notNull"],
@@ -92,38 +95,38 @@ export const baseRoutingFields: CELFieldDefinition[] = [
 	},
 	{
 		name: "tokens_used",
-		label: "Tokens Used (%)",
+		label: localize("Tokens Used (%)", "Token 使用率（%）"),
 		placeholder: "e.g., 80",
 		inputType: "text",
 		valueEditorType: "number",
 		operators: ["=", "!=", ">", "<", ">=", "<="],
 		defaultOperator: ">=",
-		description: "Check token usage as percentage. Checked against max of model and provider configs.",
+		description: localize("Check token usage as percentage. Checked against max of model and provider configs.", "按百分比检查 Token 使用量，并与模型和供应商配置中的最大值比较。"),
 	},
 	{
 		name: "request",
-		label: "Request (%)",
+		label: localize("Request (%)", "请求使用率（%）"),
 		placeholder: "e.g., 80",
 		inputType: "text",
 		valueEditorType: "number",
 		operators: ["=", "!=", ">", "<", ">=", "<="],
 		defaultOperator: ">=",
-		description: "Check request usage as percentage. Checked against max of model and provider configs.",
+		description: localize("Check request usage as percentage. Checked against max of model and provider configs.", "按百分比检查请求使用量，并与模型和供应商配置中的最大值比较。"),
 	},
 	{
 		name: "budget_used",
-		label: "Budget Used (%)",
+		label: localize("Budget Used (%)", "预算使用率（%）"),
 		placeholder: "e.g., 50",
 		inputType: "text",
 		valueEditorType: "number",
 		operators: ["=", "!=", ">", "<", ">=", "<="],
 		defaultOperator: ">=",
-		description: "Check budget usage as percentage. Checked against max of model and provider configs.",
+		description: localize("Check budget usage as percentage. Checked against max of model and provider configs.", "按百分比检查预算使用量，并与模型和供应商配置中的最大值比较。"),
 	},
 	{
 		name: "complexity_tier",
-		label: "Complexity Tier",
-		placeholder: "Select complexity tier",
+		label: localize("Complexity Tier", "复杂度等级"),
+		placeholder: localize("Select complexity tier", "选择复杂度等级"),
 		inputType: "select",
 		valueEditorType: "select",
 		operators: ["=", "!=", "in", "notIn"],
@@ -132,8 +135,8 @@ export const baseRoutingFields: CELFieldDefinition[] = [
 	},
 	{
 		name: "params",
-		label: "Query Parameter",
-		placeholder: "e.g., api_key, user_id",
+		label: localize("Query Parameter", "请求参数"),
+		placeholder: localize("e.g., api_key, user_id", "例如：api_key、user_id"),
 		inputType: "keyValue",
 		valueEditorType: "keyValue",
 		operators: ["=", "!=", "contains", "beginsWith", "endsWith", "matches", "null", "notNull"],
@@ -154,7 +157,7 @@ export function getRoutingFields(providers: string[] = [], models: string[] = []
 					name: provider,
 					label: getProviderLabel(provider),
 				}))
-			: [{ name: "_no_providers", label: "No providers configured", disabled: true }];
+			: [{ name: "_no_providers", label: localize("No providers configured", "未配置供应商"), disabled: true }];
 
 	// Create model field values
 	const modelValues =
@@ -167,14 +170,14 @@ export function getRoutingFields(providers: string[] = [], models: string[] = []
 
 	// Create metric options for scope input: providers + models
 	const scopeOptions = [
-		{ name: "", label: "(provider-level)" }, // Empty scope for provider-level
+		{ name: "", label: localize("(provider-level)", "（供应商级）") }, // Empty scope for provider-level
 		...providers.map((provider) => ({
 			name: provider,
-			label: `${provider} (provider)`,
+			label: localize(`${provider} (provider)`, `${provider}（供应商）`),
 		})),
 		...models.map((model) => ({
 			name: model,
-			label: `${model} (model)`,
+			label: localize(`${model} (model)`, `${model}（模型）`),
 		})),
 	];
 

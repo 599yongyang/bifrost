@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { getCachedBrandingAssets } from "@/lib/hooks/useBranding";
+import { localize } from "@/lib/i18n/language";
 import { getEndpointUrl } from "@/lib/utils/port";
 import { consumeAutoReload, startVersionPoll } from "@/lib/utils/versionSkew";
 import { Loader2, RefreshCw, Sparkles } from "lucide-react";
@@ -19,8 +20,8 @@ export function UpdatingBanner() {
 					<span className="bg-primary relative size-2 rounded-full" aria-hidden="true" />
 				</div>
 				<div className="min-w-0 flex-1">
-					<p className="text-foreground text-sm font-medium">Bifrost is upgrading</p>
-					<p className="text-muted-foreground truncate text-xs">You can keep working and reload when the upgrade is complete.</p>
+					<p className="text-foreground text-sm font-medium">{localize("Bifrost is upgrading", "Bifrost 正在升级")}</p>
+					<p className="text-muted-foreground truncate text-xs">{localize("You can keep working and reload when the upgrade is complete.", "你可以继续工作，升级完成后再重新加载。")}</p>
 				</div>
 				<Button
 					variant="outline"
@@ -30,7 +31,7 @@ export function UpdatingBanner() {
 					onClick={() => window.location.reload()}
 				>
 					<RefreshCw aria-hidden="true" />
-					<span className="hidden sm:inline">Reload</span>
+					<span className="hidden sm:inline">{localize("Reload", "重新加载")}</span>
 				</Button>
 			</div>
 		</div>
@@ -88,12 +89,12 @@ export function UpdatingScreen() {
 						<Sparkles className="size-5" aria-hidden="true" />
 					</div>
 					<h1 id="updating-title" className="text-foreground mt-5 text-2xl font-semibold tracking-tight">
-						Bifrost is upgrading
+						{localize("Bifrost is upgrading", "Bifrost 正在升级")}
 					</h1>
 					<p id="updating-description" className="text-muted-foreground mt-2 max-w-md text-sm leading-6">
 						{autoReloadExhausted
-							? "Bifrost is still upgrading. If this is taking longer than expected, reach out to your administrator for more information."
-							: "A new version of Bifrost is being rolled out. Keep this page open and it will reload automatically when the upgrade is complete."}
+							? localize("Bifrost is still upgrading. If this is taking longer than expected, reach out to your administrator for more information.", "Bifrost 仍在升级。如果等待时间过长，请联系管理员了解详情。")
+							: localize("A new version of Bifrost is being rolled out. Keep this page open and it will reload automatically when the upgrade is complete.", "Bifrost 新版本正在发布。请保持此页面打开，升级完成后页面会自动重新加载。")}
 					</p>
 
 					<div className="bg-muted mt-7 h-1.5 overflow-hidden rounded-full" aria-hidden="true">
@@ -107,11 +108,11 @@ export function UpdatingScreen() {
 					<div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 						<div className="text-muted-foreground flex items-center gap-2 text-xs">
 							{autoReloadExhausted ? (
-								<span>Automatic reload paused</span>
+								<span>{localize("Automatic reload paused", "自动重新加载已暂停")}</span>
 							) : (
 								<>
 									<Loader2 className="size-3.5 motion-safe:animate-spin" aria-hidden="true" />
-									<span>Waiting for the upgrade to complete</span>
+									<span>{localize("Waiting for the upgrade to complete", "正在等待升级完成")}</span>
 								</>
 							)}
 						</div>
@@ -123,7 +124,7 @@ export function UpdatingScreen() {
 							onClick={() => window.location.reload()}
 						>
 							<RefreshCw aria-hidden="true" />
-							Reload now
+							{localize("Reload now", "立即重新加载")}
 						</Button>
 					</div>
 				</div>

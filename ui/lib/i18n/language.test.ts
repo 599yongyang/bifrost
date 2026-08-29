@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { sidebarLabel } from "@/components/sidebarCopy";
 import { topbarCopy } from "@/components/topbarCopy";
 import { getBifrostLanguage, initializeBifrostLanguage, localize, setBifrostLanguage } from "./language";
@@ -52,5 +52,20 @@ describe("Bifrost language", () => {
 		setBifrostLanguage("zh");
 		expect(sidebarLabel("Dashboard")).toBe("仪表盘");
 		expect(topbarCopy().signOut).toBe("退出登录");
+	});
+
+	it("localizes routing builder metadata loaded for the active language", async () => {
+		installBrowser("en-US");
+		setBifrostLanguage("zh");
+		vi.resetModules();
+
+		const [{ baseRoutingFields }, { getOperatorLabel }, { routingRulesCopy }] = await Promise.all([
+			import("@/lib/config/celFieldsRouting"),
+			import("@/lib/config/celOperatorsRouting"),
+			import("@/app/workspace/routing-rules/routingRulesCopy"),
+		]);
+		expect(baseRoutingFields.find((field) => field.name === "provider")?.label).toBe("供应商");
+		expect(getOperatorLabel("contains")).toBe("包含");
+		expect(routingRulesCopy.createRule).toBe("新建路由规则");
 	});
 });

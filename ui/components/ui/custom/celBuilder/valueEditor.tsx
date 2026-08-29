@@ -9,6 +9,7 @@ import { ModelMultiselect } from "@/components/ui/modelMultiselect";
 import { Textarea } from "@/components/ui/textarea";
 import { ProviderIconType, RenderProviderIcon } from "@/lib/constants/icons";
 import { getProviderLabel } from "@/lib/constants/logs";
+import { localize } from "@/lib/i18n/language";
 import { useEffect, useState } from "react";
 import { ValueEditorProps, ValueEditorType } from "react-querybuilder";
 
@@ -121,7 +122,7 @@ export function ValueEditor({
 				<ModelMultiselect
 					value={selectedModels}
 					onChange={handleMultiModelChange}
-					placeholder="Select models..."
+					placeholder={localize("Select models...", "选择模型…")}
 					loadModelsOnEmptyProvider
 					className="!min-h-9 w-[360px]"
 					menuPosition={menuPosition}
@@ -148,7 +149,7 @@ export function ValueEditor({
 			<ModelMultiselect
 				value={valueToUse || ""}
 				onChange={handleOnChange}
-				placeholder="Search for a model..."
+				placeholder={localize("Search for a model...", "搜索模型…")}
 				isSingleSelect
 				clearable={true}
 				loadModelsOnEmptyProvider
@@ -206,7 +207,7 @@ export function ValueEditor({
 					value={selectedValues}
 					onValueChange={handleMultiselectChange}
 					options={options}
-					placeholder="Select providers..."
+					placeholder={localize("Select providers...", "选择供应商…")}
 					className="h-10 w-[360px]"
 					noPortal
 				/>
@@ -218,7 +219,7 @@ export function ValueEditor({
 				value={value || null}
 				onValueChange={(newValue) => handleOnChange(newValue ?? "")}
 				options={options}
-				placeholder={fieldData.placeholder || "Select..."}
+				placeholder={fieldData.placeholder || localize("Select...", "请选择…")}
 				className="h-10 w-[360px]"
 				noPortal
 			/>
@@ -233,7 +234,7 @@ export function ValueEditor({
 				type="text"
 				value={keyValuePair.value}
 				onChange={(e) => handleKeyValueValueChange(e.target.value)}
-				placeholder="Value"
+				placeholder={localize("Value", "值")}
 				className="w-[180px]"
 				data-testid="cel-builder-keyvalue-value-input"
 			/>
@@ -241,10 +242,10 @@ export function ValueEditor({
 	}
 
 	const placeholder = isArrayOperator
-		? "Enter comma-separated values or JSON array"
+		? localize("Enter comma-separated values or JSON array", "输入逗号分隔值或 JSON 数组")
 		: isRegexOperator
-			? "e.g., .* (any), openai|anthropic (multiple), ^gpt.* (prefix)"
-			: fieldData?.placeholder || "Enter value...";
+			? localize("e.g., .* (any), openai|anthropic (multiple), ^gpt.* (prefix)", "例如：.*（任意）、openai|anthropic（多个）、^gpt.*（前缀）")
+			: fieldData?.placeholder || localize("Enter value...", "输入值…");
 
 	// Use textarea for array inputs
 	if (isArrayOperator) {

@@ -4,13 +4,14 @@
  */
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { localize } from "@/lib/i18n/language";
 import { OperatorSelectorProps } from "react-querybuilder";
 
 export function OperatorSelector({ value, handleOnChange, options }: OperatorSelectorProps) {
 	return (
 		<Select value={value || ""} onValueChange={handleOnChange}>
 			<SelectTrigger className="w-[160px]">
-				<SelectValue placeholder="Select operator..." />
+				<SelectValue placeholder={localize("Select operator...", "选择运算符…")} />
 			</SelectTrigger>
 			<SelectContent>
 				{options.map((option) => {

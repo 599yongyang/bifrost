@@ -1,4 +1,5 @@
 import type { RoutingErrorFallback, RoutingErrorFallbackFormData } from "@/lib/types/routingRules";
+import { localize } from "@/lib/i18n/language";
 
 const emptySupplement = () => ({ providers: [], error_codes: [], error_types: [], status_codes: [], message_contains_any: [] });
 const emptyWhen = () => ({ categories: [], error_codes: [], error_types: [], status_codes: [], message_contains: [] });
@@ -134,9 +135,9 @@ export function switchErrorFallbackMode(
 export function validateErrorFallbackForms(rules: RoutingErrorFallbackFormData[]): string[] {
 	const errors: string[] = [];
 	rules.forEach((rule, index) => {
-		const label = `Error rule ${index + 1}`;
+		const label = localize(`Error rule ${index + 1}`, `错误规则 ${index + 1}`);
 		if (rule.mode === "legacy" && Object.values(rule.when).every((values) => values.length === 0)) {
-			errors.push(`${label} needs at least one matcher`);
+			errors.push(localize(`${label} needs at least one matcher`, `${label}至少需要一个匹配条件`));
 		}
 		const supplementSignals = [
 			...rule.supplement.error_codes,
@@ -150,12 +151,13 @@ export function validateErrorFallbackForms(rules: RoutingErrorFallbackFormData[]
 			rule.supplement.providers.length > 0 &&
 			supplementSignals.length === 0
 		) {
-			errors.push(`${label} limits providers but has no supplemental recognition clue`);
+			errors.push(localize(`${label} limits providers but has no supplemental recognition clue`, `${label}限制了供应商，但没有补充识别条件`));
 		}
 
 		const fallbacks = rule.fallbacks.map(normalizeFallbackString).filter(hasFallbackProvider);
-		if (fallbacks.length === 0) errors.push(`${label} needs at least one fallback target`);
-		if (new Set(fallbacks).size !== fallbacks.length) errors.push(`${label} contains duplicate fallback targets`);
+		if (fallbacks.length === 0) errors.push(localize(`${label} needs at least one fallback target`, `${label}至少需要一个备用目标`));
+		if (new Set(fallbacks).size !== fallbacks.length)
+			errors.push(localize(`${label} contains duplicate fallback targets`, `${label}包含重复的备用目标`));
 	});
 	return errors;
 }

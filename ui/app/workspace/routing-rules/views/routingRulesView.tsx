@@ -16,6 +16,7 @@ import { RoutingRuleInfoSheet } from "./routingRuleInfoSheet";
 import { RoutingRuleSheet } from "./routingRuleSheet";
 import { RoutingRulesEmptyState } from "./routingRulesEmptyState";
 import { RoutingRulesTable } from "./routingRulesTable";
+import { routingRulesCopy as copy } from "../routingRulesCopy";
 
 const POLLING_INTERVAL = 5000;
 const PAGE_SIZE = 25;
@@ -115,7 +116,7 @@ export function RoutingRulesView() {
 
 	return (
 		<div className="flex flex-col overflow-y-auto">
-			<PageTitle>Manage CEL-based routing rules for intelligent request routing across providers</PageTitle>
+			<PageTitle>{copy.manageDescription}</PageTitle>
 
 			<RoutingRulesTable
 				rules={rules}
@@ -135,9 +136,9 @@ export function RoutingRulesView() {
 						{/* The labels are hidden below sm, leaving an icon with no
 						    accessible name, so the name is carried on the control itself. */}
 						<Button variant="outline" size="sm" asChild className="gap-2">
-							<Link to="/workspace/routing-rules/tree" aria-label="View routing rules tree">
+							<Link to="/workspace/routing-rules/tree" aria-label={copy.viewTreeTitle}>
 								<GitBranch className="h-4 w-4" />
-								<span className="hidden sm:inline">View Tree</span>
+								<span className="hidden sm:inline">{copy.viewTree}</span>
 							</Link>
 						</Button>
 						{canCreate && (
@@ -146,10 +147,10 @@ export function RoutingRulesView() {
 								onClick={handleCreateNew}
 								disabled={isLoading}
 								className="gap-2"
-								aria-label="New routing rule"
+								aria-label={copy.newRuleTitle}
 							>
 								<Plus className="h-4 w-4" />
-								<span className="hidden sm:inline">New Rule</span>
+								<span className="hidden sm:inline">{copy.newRule}</span>
 							</Button>
 						)}
 					</>
