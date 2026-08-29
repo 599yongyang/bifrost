@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Link } from "@tanstack/react-router";
 import { ArrowUpRight, Boxes, Server } from "lucide-react";
+import i18n from "@/lib/i18n";
 
 const MCP_SERVERS_DOCS_URL = "https://docs.getbifrost.ai/features/mcp/overview";
 
@@ -30,7 +31,7 @@ export function MCPServersEmptyState({ onAddClick, canCreate = true }: MCPServer
 							window.open(`${MCP_SERVERS_DOCS_URL}?utm_source=bfd`, "_blank", "noopener,noreferrer");
 						}}
 					>
-						Read more <ArrowUpRight className="text-muted-foreground h-3 w-3" />
+						{i18n.t("common.readMore")} <ArrowUpRight className="text-muted-foreground h-3 w-3" />
 					</Button>
 					<Button aria-label="Add your first MCP server" onClick={onAddClick} disabled={!canCreate} data-testid="create-mcp-client-btn">
 						Add MCP Server

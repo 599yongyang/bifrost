@@ -17,6 +17,7 @@ import { useQueryStates } from "nuqs";
 import { useEffect, useMemo, useState } from "react";
 import AttributeSheet from "./attributeSheet";
 import OverriddenPrice from "./overriddenPrice";
+import i18n from "@/lib/i18n";
 
 const PAGE_SIZE = 25;
 
@@ -111,9 +112,9 @@ export default function AttributesTab({ hasAccess }: AttributesTabProps) {
 	if (error) {
 		return (
 			<div className="flex h-full flex-col items-center justify-center gap-4 text-center">
-				<p className="text-muted-foreground text-sm">Failed to load models</p>
+				<p className="text-muted-foreground text-sm">{i18n.t("supplemental.failedLoadModels")}</p>
 				<button type="button" onClick={refetch} className="text-sm underline" data-testid="model-catalog-retry-button">
-					Retry
+					{i18n.t("workspace.modelCatalog.attributes.retry")}
 				</button>
 			</div>
 		);
@@ -126,8 +127,8 @@ export default function AttributesTab({ hasAccess }: AttributesTabProps) {
 			<div className="flex min-h-0 w-full grow flex-col overflow-hidden">
 				<div className="mb-4 flex shrink-0 flex-wrap items-center justify-between gap-2">
 					<div>
-						<h2 className="text-lg font-semibold">Models</h2>
-						<p className="text-muted-foreground text-sm">Attach descriptions and tags to specific models.</p>
+						<h2 className="text-lg font-semibold">{i18n.t("workspace.modelCatalog.attributes.models")}</h2>
+						<p className="text-muted-foreground text-sm">{i18n.t("supplemental.attachModelMetadata")}</p>
 					</div>
 				</div>
 
@@ -135,8 +136,8 @@ export default function AttributesTab({ hasAccess }: AttributesTabProps) {
 					<div className="relative w-full max-w-sm flex-1 basis-full sm:basis-auto">
 						<Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
 						<Input
-							aria-label="Search models"
-							placeholder="Search by model name..."
+							aria-label={i18n.t("supplemental.searchModels")}
+							placeholder={i18n.t("workspace.modelLimits.searchPlaceholder")}
 							value={search}
 							onChange={(e) => setUrlState({ search: e.target.value || null })}
 							className="pl-9"
@@ -145,10 +146,10 @@ export default function AttributesTab({ hasAccess }: AttributesTabProps) {
 					</div>
 					<Select value={providerFilter || "__all__"} onValueChange={(v) => setUrlState({ provider: v === "__all__" ? null : v })}>
 						<SelectTrigger className="w-full sm:w-[200px]" data-testid="model-catalog-provider-filter">
-							<SelectValue placeholder="All providers" />
+							<SelectValue placeholder={i18n.t("workspace.customPricing.overrideSheet.allProviders")} />
 						</SelectTrigger>
 						<SelectContent>
-							<SelectItem value="__all__">All providers</SelectItem>
+							<SelectItem value="__all__">{i18n.t("workspace.customPricing.overrideSheet.allProviders")}</SelectItem>
 							{providerOptions.map((p) => (
 								<SelectItem key={p} value={p}>
 									{ProviderLabels[p as ProviderName] || p}
@@ -162,14 +163,16 @@ export default function AttributesTab({ hasAccess }: AttributesTabProps) {
 					<Table containerClassName="h-full overflow-y-auto overflow-x-auto" className="table-fixed">
 						<TableHeader className="bg-muted sticky top-0 z-20">
 							<TableRow className="hover:bg-transparent">
-								<TableHead className="w-[116px] font-medium">Provider</TableHead>
-								<TableHead className="font-medium">Model</TableHead>
-								<TableHead className="w-[104px] px-2 text-right font-medium">Input</TableHead>
-								<TableHead className="w-[104px] px-2 text-right font-medium">Output</TableHead>
-								<TableHead className="w-[112px] px-2 text-right font-medium">Cache Write</TableHead>
-								<TableHead className="w-[108px] px-2 text-right font-medium">Cache Read</TableHead>
-								<TableHead className="font-medium">Description</TableHead>
-								<TableHead className="w-[68px] font-medium">Other</TableHead>
+								<TableHead className="w-[116px] font-medium">{i18n.t("workspace.modelCatalog.attributes.provider")}</TableHead>
+								<TableHead className="font-medium">{i18n.t("workspace.modelCatalog.attributes.model")}</TableHead>
+								<TableHead className="w-[104px] px-2 text-right font-medium">{i18n.t("workspace.modelCatalog.attributes.input")}</TableHead>
+								<TableHead className="w-[104px] px-2 text-right font-medium">
+									{i18n.t("workspace.modelCatalog.attributes.output")}
+								</TableHead>
+								<TableHead className="w-[112px] px-2 text-right font-medium">{i18n.t("supplemental.cacheWrite")}</TableHead>
+								<TableHead className="w-[108px] px-2 text-right font-medium">{i18n.t("supplemental.cacheRead")}</TableHead>
+								<TableHead className="font-medium">{i18n.t("workspace.modelCatalog.attributes.description")}</TableHead>
+								<TableHead className="w-[68px] font-medium">{i18n.t("supplemental.other")}</TableHead>
 								<TableHead className="w-[80px] px-1"></TableHead>
 							</TableRow>
 						</TableHeader>
@@ -178,7 +181,9 @@ export default function AttributesTab({ hasAccess }: AttributesTabProps) {
 								<TableRow>
 									<TableCell colSpan={9} className="h-24 text-center">
 										<span className="text-muted-foreground text-sm">
-											{!debouncedSearch && !providerFilter ? "No models loaded yet." : "No matching models."}
+											{!debouncedSearch && !providerFilter
+												? i18n.t("workspace.modelCatalog.attributes.noModelsLoaded")
+												: i18n.t("workspace.modelCatalog.attributes.noMatchingModels")}
 										</span>
 									</TableCell>
 								</TableRow>
@@ -242,12 +247,12 @@ export default function AttributesTab({ hasAccess }: AttributesTabProps) {
 													<div className="flex flex-wrap gap-1 pr-4">
 														{extraKeys.length > 0 && (
 															<Badge variant="secondary">
-																{extraKeys.length} {extraKeys.length === 1 ? "attribute" : "attributes"}
+																{i18n.t("workspace.modelCatalog.attributes.attributeCount", { count: extraKeys.length })}
 															</Badge>
 														)}
 														{overrideCount > 0 && (
 															<Badge variant="outline" data-testid={`model-catalog-override-badge-${testKey}`}>
-																{overrideCount} {overrideCount === 1 ? "override" : "overrides"}
+																{i18n.t("workspace.modelCatalog.attributes.overrideCount", { count: overrideCount })}
 															</Badge>
 														)}
 													</div>
@@ -277,8 +282,8 @@ export default function AttributesTab({ hasAccess }: AttributesTabProps) {
 				{totalCount > 0 && (
 					<div className="flex shrink-0 items-center justify-between text-xs" data-testid="model-catalog-pagination">
 						<div className="text-muted-foreground">
-							{(offset + 1).toLocaleString()}–{Math.min(offset + PAGE_SIZE, totalCount).toLocaleString()} of {totalCount.toLocaleString()}{" "}
-							entries
+							{(offset + 1).toLocaleString()}–{Math.min(offset + PAGE_SIZE, totalCount).toLocaleString()} {i18n.t("supplemental.of")}{" "}
+							{totalCount.toLocaleString()} {i18n.t("workspace.virtualKeys.entries")}
 						</div>
 						<div className="flex items-center gap-2">
 							<Button
@@ -287,14 +292,16 @@ export default function AttributesTab({ hasAccess }: AttributesTabProps) {
 								onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
 								disabled={offset === 0}
 								data-testid="model-catalog-pagination-prev-btn"
-								aria-label="Previous page"
+								aria-label={i18n.t("supplemental.previousPage")}
 							>
 								<ChevronLeft className="size-3" />
 							</Button>
 							<div className="flex items-center gap-1">
-								<span>Page</span>
+								<span>{i18n.t("supplemental.page")}</span>
 								<span>{Math.floor(offset / PAGE_SIZE) + 1}</span>
-								<span>of {Math.ceil(totalCount / PAGE_SIZE)}</span>
+								<span>
+									{i18n.t("supplemental.of")} {Math.ceil(totalCount / PAGE_SIZE)}
+								</span>
 							</div>
 							<Button
 								variant="ghost"
@@ -302,7 +309,7 @@ export default function AttributesTab({ hasAccess }: AttributesTabProps) {
 								onClick={() => setOffset(offset + PAGE_SIZE)}
 								disabled={offset + PAGE_SIZE >= totalCount}
 								data-testid="model-catalog-pagination-next-btn"
-								aria-label="Next page"
+								aria-label={i18n.t("supplemental.nextPage")}
 							>
 								<ChevronRight className="size-3" />
 							</Button>

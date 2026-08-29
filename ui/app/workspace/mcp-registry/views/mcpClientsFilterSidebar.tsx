@@ -9,6 +9,7 @@ import { useGetVirtualKeysQuery } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { ChevronDown, LoaderCircle, PanelLeftClose, RotateCcw, Search } from "lucide-react";
 import { type Ref, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import i18n from "@/lib/i18n";
 
 const COLLAPSE_STORAGE_KEY = "mcp-clients-filter-sidebar-collapsed";
 const VK_PAGE_SIZE = 25;
@@ -150,7 +151,7 @@ export function MCPClientsFilterSidebar({ filters, onFiltersChange }: SidebarPro
 							data-testid="mcpClientsFilterSidebar-reset-button"
 						>
 							<RotateCcw className="size-3" />
-							Reset
+							{i18n.t("workspace.plugins.reset")}
 						</Button>
 					)}
 					<Button
@@ -170,7 +171,7 @@ export function MCPClientsFilterSidebar({ filters, onFiltersChange }: SidebarPro
 			<ScrollArea className="flex flex-1 overflow-y-auto p-2 pb-0" viewportClassName="no-table">
 				<div className="flex grow flex-col gap-1">
 					<CheckboxFilterSection
-						title="Connection Type"
+						title={i18n.t("workspace.mcp.connectionType")}
 						options={CONNECTION_TYPE_OPTIONS}
 						selected={filters.connection_types}
 						defaultOpen
@@ -178,28 +179,28 @@ export function MCPClientsFilterSidebar({ filters, onFiltersChange }: SidebarPro
 						testIdPrefix="mcp-clients-filter-connection-type"
 					/>
 					<CheckboxFilterSection
-						title="Auth Type"
+						title={i18n.t("supplemental.authType")}
 						options={AUTH_TYPE_OPTIONS}
 						selected={filters.auth_types}
 						onChange={(auth_types) => onFiltersChange({ ...filters, auth_types })}
 						testIdPrefix="mcp-clients-filter-auth-type"
 					/>
 					<CheckboxFilterSection
-						title="State"
+						title={i18n.t("workspace.mcp.state")}
 						options={STATE_OPTIONS}
 						selected={filters.states}
 						onChange={(states) => onFiltersChange({ ...filters, states })}
 						testIdPrefix="mcp-clients-filter-state"
 					/>
 					<CheckboxFilterSection
-						title="Code Mode"
+						title={i18n.t("workspace.mcp.codeMode")}
 						options={CODE_MODE_OPTIONS}
 						selected={filters.code_mode}
 						onChange={(code_mode) => onFiltersChange({ ...filters, code_mode })}
 						testIdPrefix="mcp-clients-filter-code-mode"
 					/>
 					<CheckboxFilterSection
-						title="Status"
+						title={i18n.t("workspace.virtualKeys.status")}
 						options={STATUS_OPTIONS}
 						selected={filters.status}
 						onChange={(status) => onFiltersChange({ ...filters, status })}
@@ -442,7 +443,12 @@ function VKAccessFilterSection({ filters, onFiltersChange }: SidebarProps) {
 	};
 
 	return (
-		<FilterSection title="VK Access" defaultOpen={hasActive} onOpenChange={setOpened} testId="mcp-clients-filter-vk-access-toggle">
+		<FilterSection
+			title={i18n.t("supplemental.vkAccess")}
+			defaultOpen={hasActive}
+			onOpenChange={setOpened}
+			testId="mcp-clients-filter-vk-access-toggle"
+		>
 			<SearchableCheckboxList
 				inputRef={searchInputRef}
 				placeholder="Search virtual keys"

@@ -1,4 +1,5 @@
 import { CheckCircle2, CircleAlert } from "lucide-react";
+import i18n from "@/lib/i18n";
 
 export default function AgentHandoverView() {
 	const status = new URLSearchParams(window.location.search).get("status");
@@ -11,9 +12,13 @@ export default function AgentHandoverView() {
 				<div className="bg-primary/10 mx-auto mb-5 flex size-12 items-center justify-center rounded-full">
 					<Icon className="text-primary size-6" />
 				</div>
-				<h1 className="text-xl font-semibold tracking-tight">{isComplete ? "Bifrost Agent sign-in complete" : "Bifrost Agent sign-in"}</h1>
+				<h1 className="text-xl font-semibold tracking-tight">
+					{isComplete ? i18n.t("workspace.enterpriseFallbacks.agentCompleteTitle") : i18n.t("workspace.enterpriseFallbacks.agentTitle")}
+				</h1>
 				<p className="text-muted-foreground mt-2 text-sm">
-					{isComplete ? "You can close this window and return to the Bifrost Agent." : `Sign-in status: ${status}`}
+					{isComplete
+						? i18n.t("workspace.enterpriseFallbacks.agentCompleteDescription")
+						: i18n.t("workspace.enterpriseFallbacks.agentStatus", { status })}
 				</p>
 			</section>
 		</main>

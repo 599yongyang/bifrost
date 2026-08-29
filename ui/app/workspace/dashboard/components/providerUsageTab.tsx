@@ -26,6 +26,7 @@ import { ProviderFilterSelect } from "./charts/providerFilterSelect";
 import { ProviderLatencyChart } from "./charts/providerLatencyChart";
 import { ProviderThroughputChart } from "./charts/providerThroughputChart";
 import { ProviderTokenChart } from "./charts/providerTokenChart";
+import i18n from "@/lib/i18n";
 
 export interface ProviderUsageTabProps {
 	// Data
@@ -169,10 +170,10 @@ function ProviderUsageTabImpl({
 		<div className="grid grid-cols-1 gap-2 lg:grid-cols-2 2xl:grid-cols-3">
 			{/* Provider Cost Chart */}
 			<ChartCard
-				title="Provider Cost"
+				title={i18n.t("supplemental.providerCost")}
 				loading={loadingProviderCost}
 				testId="chart-provider-cost"
-				totalLabel="Total"
+				totalLabel={i18n.t("workspace.dashboard.total")}
 				total={
 					providerCostTotal !== null ? (
 						<NumberFlow value={providerCostTotal} format={{ ...COMPACT_NUMBER_FORMAT, style: "currency", currency: "USD" }} />
@@ -205,7 +206,7 @@ function ProviderUsageTabImpl({
 													data-testid="provider-cost-legend-more-trigger"
 													className="text-muted-foreground cursor-default"
 												>
-													+{providerCostProviders.length - 1} more
+													+{providerCostProviders.length - 1} {i18n.t("workspace.dashboard.more")}
 												</button>
 											</TooltipTrigger>
 											<TooltipContent>
@@ -265,10 +266,10 @@ function ProviderUsageTabImpl({
 
 			{/* Provider Token Usage Chart */}
 			<ChartCard
-				title="Provider Token Usage"
+				title={i18n.t("supplemental.providerTokenUsage")}
 				loading={loadingProviderTokens}
 				testId="chart-provider-tokens"
-				totalLabel="Total"
+				totalLabel={i18n.t("workspace.dashboard.total")}
 				total={providerTokenTotal !== null ? <NumberFlow value={providerTokenTotal} format={COMPACT_NUMBER_FORMAT} /> : undefined}
 				totalTooltip={providerTokenTotal !== null ? providerTokenTotal.toLocaleString("en-US") : undefined}
 				legend={
@@ -293,7 +294,7 @@ function ProviderUsageTabImpl({
 													data-testid="provider-token-legend-more-trigger"
 													className="text-muted-foreground cursor-default"
 												>
-													+{providerTokenProviders.length - 1} more
+													+{providerTokenProviders.length - 1} {i18n.t("workspace.dashboard.more")}
 												</button>
 											</TooltipTrigger>
 											<TooltipContent>
@@ -317,11 +318,11 @@ function ProviderUsageTabImpl({
 							<>
 								<span className="flex items-center gap-1">
 									<span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: CHART_COLORS.promptTokens }} />
-									<span className="text-muted-foreground">Input</span>
+									<span className="text-muted-foreground">{i18n.t("workspace.dashboard.input")}</span>
 								</span>
 								<span className="flex items-center gap-1">
 									<span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: CHART_COLORS.completionTokens }} />
-									<span className="text-muted-foreground">Output</span>
+									<span className="text-muted-foreground">{i18n.t("workspace.dashboard.output")}</span>
 								</span>
 							</>
 						)}
@@ -354,10 +355,10 @@ function ProviderUsageTabImpl({
 
 			{/* Provider Latency Chart */}
 			<ChartCard
-				title="Provider Latency"
+				title={i18n.t("supplemental.providerLatency")}
 				loading={loadingProviderLatency}
 				testId="chart-provider-latency"
-				totalLabel="Avg"
+				totalLabel={i18n.t("workspace.dashboard.avg")}
 				total={
 					providerLatencyAvg !== null ? (
 						<NumberFlow value={providerLatencyAvg} format={{ minimumFractionDigits: 2, maximumFractionDigits: 2 }} suffix="ms" />
@@ -388,7 +389,7 @@ function ProviderUsageTabImpl({
 													data-testid="provider-latency-legend-more-trigger"
 													className="text-muted-foreground cursor-default"
 												>
-													+{providerLatencyProviders.length - 1} more
+													+{providerLatencyProviders.length - 1} {i18n.t("workspace.dashboard.more")}
 												</button>
 											</TooltipTrigger>
 											<TooltipContent>
@@ -409,7 +410,7 @@ function ProviderUsageTabImpl({
 							<>
 								<span className="flex items-center gap-1">
 									<span className="h-2 w-2 rounded-full" style={{ backgroundColor: LATENCY_COLORS.avg }} />
-									<span className="text-muted-foreground">Avg</span>
+									<span className="text-muted-foreground">{i18n.t("workspace.dashboard.avg")}</span>
 								</span>
 								<span className="flex items-center gap-1">
 									<span className="h-2 w-2 rounded-full" style={{ backgroundColor: LATENCY_COLORS.p90 }} />
@@ -454,10 +455,10 @@ function ProviderUsageTabImpl({
 
 			{/* Provider Throughput (tokens/sec) Chart */}
 			<ChartCard
-				title="Provider Throughput"
+				title={i18n.t("supplemental.providerThroughput")}
 				loading={loadingProviderThroughput}
 				testId="chart-provider-throughput"
-				totalLabel="Avg"
+				totalLabel={i18n.t("workspace.dashboard.avg")}
 				total={
 					providerThroughputAvg !== null ? (
 						<span className="truncate whitespace-nowrap">{formatTokensPerSecond(providerThroughputAvg)}</span>
@@ -490,7 +491,7 @@ function ProviderUsageTabImpl({
 													data-testid="provider-throughput-legend-more-trigger"
 													className="text-muted-foreground cursor-default"
 												>
-													+{providerThroughputProviders.length - 1} more
+													+{providerThroughputProviders.length - 1} {i18n.t("workspace.dashboard.more")}
 												</button>
 											</TooltipTrigger>
 											<TooltipContent>

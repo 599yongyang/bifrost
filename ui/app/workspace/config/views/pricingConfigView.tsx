@@ -7,6 +7,7 @@ import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
+import i18n from "@/lib/i18n";
 
 interface PricingFormData {
 	pricing_datasheet_url: string;
@@ -71,7 +72,7 @@ export default function PricingConfigView() {
 					model_parameters_url: data.model_parameters_url,
 				},
 			}).unwrap();
-			toast.success("Pricing configuration updated successfully.");
+			toast.success(i18n.t("workspace.config.pricing.updated"));
 			reset(data);
 		} catch (error) {
 			toast.error(getErrorMessage(error));
@@ -81,7 +82,7 @@ export default function PricingConfigView() {
 	const handleForceSync = async () => {
 		try {
 			await forcePricingSync().unwrap();
-			toast.success("Pricing synced successfully.");
+			toast.success(i18n.t("workspace.config.modelSettings.pricingSynced"));
 		} catch (error) {
 			toast.error(getErrorMessage(error));
 		}
@@ -90,19 +91,19 @@ export default function PricingConfigView() {
 	return (
 		<div className="mx-auto w-full max-w-7xl space-y-4" data-testid="pricing-config-view">
 			<form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-				<PageTitle title="Pricing Configuration">Configure custom pricing datasheet and sync intervals.</PageTitle>
+				<PageTitle title={i18n.t("workspace.config.pricing.title")}>{i18n.t("workspace.config.pricing.description")}</PageTitle>
 
 				<div className="space-y-4">
 					{/* Pricing Datasheet URL */}
 					<div className="space-y-2 rounded-sm border p-4">
 						<div className="space-y-0.5">
-							<Label htmlFor="pricing-datasheet-url">Pricing Datasheet URL</Label>
-							<p className="text-muted-foreground text-sm">URL to a custom pricing datasheet. Leave empty to use default pricing.</p>
+							<Label htmlFor="pricing-datasheet-url">{i18n.t("workspace.customPricing.modelSettings.pricingDatasheetUrl")}</Label>
+							<p className="text-muted-foreground text-sm">{i18n.t("workspace.customPricing.modelSettings.pricingDatasheetUrlDesc")}</p>
 						</div>
 						<Input
 							id="pricing-datasheet-url"
 							type="text"
-							placeholder="https://example.com/pricing.json"
+							placeholder={i18n.t("workspace.customPricing.modelSettings.pricingDatasheetUrlPlaceholder")}
 							data-testid="pricing-datasheet-url-input"
 							{...register("pricing_datasheet_url", {
 								pattern: {
@@ -124,8 +125,8 @@ export default function PricingConfigView() {
 					{/* Model Parameters URL */}
 					<div className="space-y-2 rounded-sm border p-4">
 						<div className="space-y-0.5">
-							<Label htmlFor="model-parameters-url">Model Parameters URL</Label>
-							<p className="text-muted-foreground text-sm">URL to a custom model parameters datasheet. Leave empty to use default.</p>
+							<Label htmlFor="model-parameters-url">{i18n.t("workspace.config.modelSettings.parametersUrl")}</Label>
+							<p className="text-muted-foreground text-sm">{i18n.t("workspace.config.modelSettings.parametersUrlDescription")}</p>
 						</div>
 						<Input
 							id="model-parameters-url"
@@ -153,8 +154,8 @@ export default function PricingConfigView() {
 					<div className="space-y-2 rounded-sm border p-4">
 						<div className="space-y-2">
 							<div className="space-y-0.5">
-								<Label htmlFor="pricing-sync-interval">Pricing Sync Interval (hours)</Label>
-								<p className="text-muted-foreground text-sm">How often to sync pricing data from the datasheet URL.</p>
+								<Label htmlFor="pricing-sync-interval">{i18n.t("workspace.customPricing.modelSettings.pricingSyncInterval")}</Label>
+								<p className="text-muted-foreground text-sm">{i18n.t("workspace.customPricing.modelSettings.pricingSyncIntervalDesc")}</p>
 							</div>
 							<Input
 								id="pricing-sync-interval"
@@ -187,10 +188,10 @@ export default function PricingConfigView() {
 						disabled={isForceSyncing || !hasSettingsUpdateAccess}
 						data-testid="pricing-force-sync-btn"
 					>
-						{isForceSyncing ? "Syncing..." : "Force Sync Now"}
+						{isForceSyncing ? i18n.t("workspace.config.modelSettings.syncing") : i18n.t("workspace.config.modelSettings.forceSync")}
 					</Button>
 					<Button type="submit" disabled={!hasChanges || isLoading || !hasSettingsUpdateAccess} data-testid="pricing-save-btn">
-						{isLoading ? "Saving..." : "Save Changes"}
+						{isLoading ? i18n.t("common.saving") : i18n.t("workspace.config.saveChanges")}
 					</Button>
 				</div>
 			</form>

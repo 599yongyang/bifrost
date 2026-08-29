@@ -21,6 +21,7 @@ import {
 	SectionHeader,
 	StdioRuntimeNotice,
 } from "../../views/mcpClientFormFields";
+import i18n from "@/lib/i18n";
 
 interface MCPLibraryAddServerFormData {
 	name: string;
@@ -172,9 +173,9 @@ export function MCPLibraryAddServerSheet({ open, onClose }: MCPLibraryAddServerS
 								<div className="flex items-start gap-2">
 									<Info className="mt-0.5 h-4 w-4 flex-shrink-0 text-blue-700" />
 									<p className="text-xs text-blue-900">
-										This listing stays in your organization&apos;s library. It is not published to the global Bifrost MCP catalog. It is also a
-										catalog entry, not a live MCP connection: credentials are never stored on the listing, each person who installs it
-										supplies their own.
+										This listing stays in your organization&apos;s library. It is not published to the global Bifrost MCP catalog. It is
+										also a catalog entry, not a live MCP connection: credentials are never stored on the listing, each person who installs
+										it supplies their own.
 									</p>
 								</div>
 							</div>
@@ -192,9 +193,9 @@ export function MCPLibraryAddServerSheet({ open, onClose }: MCPLibraryAddServerS
 										}}
 										render={({ field }) => (
 											<FormItem>
-												<FormLabel>Name</FormLabel>
+												<FormLabel>{i18n.t("workspace.mcp.name")}</FormLabel>
 												<FormControl>
-													<Input {...field} placeholder="My Internal Server" data-testid="mcp-add-name-input" />
+													<Input {...field} placeholder={i18n.t("workspace.mcpLibrary.namePlaceholder")} data-testid="mcp-add-name-input" />
 												</FormControl>
 												<FormMessage />
 											</FormItem>
@@ -207,7 +208,11 @@ export function MCPLibraryAddServerSheet({ open, onClose }: MCPLibraryAddServerS
 											<FormItem>
 												<FormLabel>Description</FormLabel>
 												<FormControl>
-													<Textarea {...field} placeholder="What this server does..." data-testid="mcp-add-description-input" />
+													<Textarea
+														{...field}
+														placeholder={i18n.t("workspace.mcpLibrary.descriptionPlaceholder")}
+														data-testid="mcp-add-description-input"
+													/>
 												</FormControl>
 												<FormMessage />
 											</FormItem>
@@ -220,7 +225,10 @@ export function MCPLibraryAddServerSheet({ open, onClose }: MCPLibraryAddServerS
 
 							{/* Connection */}
 							<div className="space-y-4">
-								<SectionHeader title="Connection" description="How Bifrost will reach this server once a member installs the listing." />
+								<SectionHeader
+									title={i18n.t("workspace.mcpClientSheet.connection")}
+									description="How Bifrost will reach this server once a member installs the listing."
+								/>
 								<div className="space-y-4 rounded-md border p-4">
 									<FormField
 										control={control}
@@ -243,8 +251,8 @@ export function MCPLibraryAddServerSheet({ open, onClose }: MCPLibraryAddServerS
 														</SelectTrigger>
 													</FormControl>
 													<SelectContent>
-														<SelectItem value="http">HTTP (Streamable)</SelectItem>
-														<SelectItem value="sse">Server-Sent Events (SSE)</SelectItem>
+														<SelectItem value="http">{i18n.t("workspace.mcpForm.httpStreamable")}</SelectItem>
+														<SelectItem value="sse">{i18n.t("workspace.mcpForm.sseLong")}</SelectItem>
 														<SelectItem value="stdio">STDIO</SelectItem>
 													</SelectContent>
 												</Select>
@@ -262,7 +270,7 @@ export function MCPLibraryAddServerSheet({ open, onClose }: MCPLibraryAddServerS
 											}}
 											render={({ field }) => (
 												<FormItem>
-													<FormLabel>Connection URL</FormLabel>
+													<FormLabel>{i18n.t("workspace.mcpForm.connectionUrl")}</FormLabel>
 													<FormControl>
 														<Input {...field} placeholder="https://my-server.internal/mcp" data-testid="mcp-add-url-input" />
 													</FormControl>
@@ -283,9 +291,13 @@ export function MCPLibraryAddServerSheet({ open, onClose }: MCPLibraryAddServerS
 												}}
 												render={({ field }) => (
 													<FormItem>
-														<FormLabel>Command</FormLabel>
+														<FormLabel>{i18n.t("workspace.mcpForm.command")}</FormLabel>
 														<FormControl>
-															<Input {...field} placeholder="npx" data-testid="mcp-add-command-input" />
+															<Input
+																{...field}
+																placeholder={i18n.t("workspace.mcpLibrary.commandPlaceholder")}
+																data-testid="mcp-add-command-input"
+															/>
 														</FormControl>
 														<FormMessage />
 													</FormItem>
@@ -296,7 +308,7 @@ export function MCPLibraryAddServerSheet({ open, onClose }: MCPLibraryAddServerS
 												name="args"
 												render={({ field }) => (
 													<FormItem>
-														<FormLabel>Arguments (comma-separated)</FormLabel>
+														<FormLabel>{i18n.t("workspace.mcpForm.argumentsCommaSeparated")}</FormLabel>
 														<FormControl>
 															<Input {...field} placeholder="-y, my-package" data-testid="mcp-add-args-input" />
 														</FormControl>
@@ -330,12 +342,12 @@ export function MCPLibraryAddServerSheet({ open, onClose }: MCPLibraryAddServerS
 									{/* Authentication */}
 									<div className="space-y-4">
 										<SectionHeader
-											title="Authentication"
+											title={i18n.t("supplemental.authentication")}
 											description="The scheme this server expects. It prefills the install form; no secrets are stored on the listing."
 										/>
 										<div className="space-y-4 rounded-md border p-4">
 											<FormItem className="w-full">
-												<FormLabel>Authentication Type</FormLabel>
+												<FormLabel>{i18n.t("workspace.mcpForm.authType")}</FormLabel>
 												<Select value={authKind} onValueChange={(value: MCPAuthKind) => applyAuthKind(value)}>
 													<FormControl>
 														<SelectTrigger className="w-full" data-testid="mcp-add-auth-type">
@@ -345,7 +357,7 @@ export function MCPLibraryAddServerSheet({ open, onClose }: MCPLibraryAddServerS
 													<SelectContent>
 														<SelectItem value="none">None</SelectItem>
 														<SelectItem value="headers">Headers</SelectItem>
-														<SelectItem value="oauth">OAuth 2.0</SelectItem>
+														<SelectItem value="oauth">{i18n.t("workspace.mcpForm.oauth")}</SelectItem>
 														{IS_ENTERPRISE && idpConfigured && (
 															<SelectItem value="token_exchange">Token Exchange (On-Behalf-Of)</SelectItem>
 														)}
@@ -355,7 +367,7 @@ export function MCPLibraryAddServerSheet({ open, onClose }: MCPLibraryAddServerS
 
 											{authKind !== "none" && authKind !== "token_exchange" && (
 												<FormItem className="w-full">
-													<FormLabel>Auth Scope</FormLabel>
+													<FormLabel>{i18n.t("supplemental.authScope")}</FormLabel>
 													<Select value={authScope} onValueChange={(value: MCPAuthScope) => applyAuthScope(value)}>
 														<FormControl>
 															<SelectTrigger className="w-full" data-testid="mcp-add-auth-scope">
@@ -363,8 +375,8 @@ export function MCPLibraryAddServerSheet({ open, onClose }: MCPLibraryAddServerS
 															</SelectTrigger>
 														</FormControl>
 														<SelectContent>
-															<SelectItem value="shared">Shared</SelectItem>
-															<SelectItem value="per_user">Per-User</SelectItem>
+															<SelectItem value="shared">{i18n.t("supplemental.shared")}</SelectItem>
+															<SelectItem value="per_user">{i18n.t("supplemental.perUser")}</SelectItem>
 														</SelectContent>
 													</Select>
 												</FormItem>
@@ -403,9 +415,13 @@ export function MCPLibraryAddServerSheet({ open, onClose }: MCPLibraryAddServerS
 											name="category"
 											render={({ field }) => (
 												<FormItem>
-													<FormLabel>Category</FormLabel>
+													<FormLabel>{i18n.t("workspace.mcpLibrary.category")}</FormLabel>
 													<FormControl>
-														<Input {...field} placeholder="e.g. Database" data-testid="mcp-add-category-input" />
+														<Input
+															{...field}
+															placeholder={i18n.t("workspace.mcpLibrary.categoryPlaceholder")}
+															data-testid="mcp-add-category-input"
+														/>
 													</FormControl>
 													<FormMessage />
 												</FormItem>
@@ -444,7 +460,7 @@ export function MCPLibraryAddServerSheet({ open, onClose }: MCPLibraryAddServerS
 											name="icon_url"
 											render={({ field }) => (
 												<FormItem>
-													<FormLabel>Icon URL</FormLabel>
+													<FormLabel>{i18n.t("workspace.mcpLibrary.iconUrl")}</FormLabel>
 													<FormControl>
 														<Input {...field} placeholder="https://..." data-testid="mcp-add-icon-input" />
 													</FormControl>
@@ -457,7 +473,7 @@ export function MCPLibraryAddServerSheet({ open, onClose }: MCPLibraryAddServerS
 											name="docs_url"
 											render={({ field }) => (
 												<FormItem>
-													<FormLabel>Docs URL</FormLabel>
+													<FormLabel>{i18n.t("workspace.mcpLibrary.docsUrl")}</FormLabel>
 													<FormControl>
 														<Input {...field} placeholder="https://..." data-testid="mcp-add-docs-input" />
 													</FormControl>

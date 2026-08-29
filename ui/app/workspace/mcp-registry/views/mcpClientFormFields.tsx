@@ -19,6 +19,7 @@ import { OAuthAdvancedFields } from "./oauthAdvancedFields";
 import { SectionHeader } from "./sectionHeader";
 import { TLSConfigFields } from "./tlsConfigFields";
 import { TokenExchangeFields } from "./tokenExchangeFields";
+import i18n from "@/lib/i18n";
 
 /**
  * Shared configuration body for creating an MCP client. Rendered identically by
@@ -336,7 +337,7 @@ export function StdioRuntimeNotice() {
 			<div className="flex items-start gap-2">
 				<Info className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-700" />
 				<div className="flex-1">
-					<p className="text-xs font-medium text-amber-900">Docker Notice</p>
+					<p className="text-xs font-medium text-amber-900">{i18n.t("workspace.mcpForm.dockerNoticeTitle")}</p>
 					<p className="mt-0.5 text-xs text-amber-800">
 						If not using the official Bifrost Docker image, STDIO connections may not work if required commands (npx, python, etc.)
 						aren&apos;t installed. You can safely ignore this if running locally or using a custom image with the necessary dependencies.
@@ -440,7 +441,7 @@ export function MCPClientFormFields({ form, satellites, headersValidationError, 
 						render={({ field }) => (
 							<FormItem className="flex flex-row items-center justify-between gap-4 px-4 py-3">
 								<div className="flex items-center gap-2">
-									<FormLabel htmlFor="code-mode">Code Mode Server</FormLabel>
+									<FormLabel htmlFor="code-mode">{i18n.t("workspace.mcpForm.codeModeServer")}</FormLabel>
 									<TooltipProvider>
 										<Tooltip>
 											<TooltipTrigger asChild>
@@ -450,13 +451,13 @@ export function MCPClientFormFields({ form, satellites, headersValidationError, 
 													rel="noopener noreferrer"
 													data-testid="code-mode-link-help"
 													className="text-muted-foreground hover:text-foreground focus-visible:ring-ring rounded focus-visible:ring-2 focus-visible:outline-none"
-													aria-label="Learn more about Code Mode"
+													aria-label={i18n.t("workspace.mcpForm.learnMoreCodeMode")}
 												>
 													<Info className="h-4 w-4 cursor-help" />
 												</a>
 											</TooltipTrigger>
 											<TooltipContent>
-												<p>Click to learn more about Code Mode</p>
+												<p>{i18n.t("workspace.mcpClientSheet.codeModeLearnMore")}</p>
 											</TooltipContent>
 										</Tooltip>
 									</TooltipProvider>
@@ -473,7 +474,7 @@ export function MCPClientFormFields({ form, satellites, headersValidationError, 
 						render={({ field }) => (
 							<FormItem className="flex flex-row items-center justify-between gap-4 px-4 py-3">
 								<div className="flex items-center gap-2">
-									<FormLabel htmlFor="ping-available">Ping Available for Health Check</FormLabel>
+									<FormLabel htmlFor="ping-available">{i18n.t("workspace.mcpClientSheet.pingAvailableForHealthCheck")}</FormLabel>
 									<TooltipProvider>
 										<Tooltip>
 											<TooltipTrigger asChild>
@@ -586,10 +587,10 @@ export function MCPClientFormFields({ form, satellites, headersValidationError, 
 									</FormControl>
 									<SelectContent>
 										<SelectItem value="http" data-testid="connection-type-http">
-											HTTP (Streamable)
+											{i18n.t("workspace.mcpForm.httpStreamable")}
 										</SelectItem>
 										<SelectItem value="sse" data-testid="connection-type-sse">
-											Server-Sent Events (SSE)
+											{i18n.t("workspace.mcpForm.sseLong")}
 										</SelectItem>
 										<SelectItem value="stdio" data-testid="connection-type-stdio">
 											STDIO
@@ -597,7 +598,7 @@ export function MCPClientFormFields({ form, satellites, headersValidationError, 
 									</SelectContent>
 								</Select>
 								{!lockConnection && (
-									<p className="text-muted-foreground text-xs">Connection type and authentication settings cannot be changed later.</p>
+									<p className="text-muted-foreground text-xs">{i18n.t("workspace.mcpForm.connectionSettingsImmutable")}</p>
 								)}
 								<FormMessage />
 							</FormItem>
@@ -612,7 +613,7 @@ export function MCPClientFormFields({ form, satellites, headersValidationError, 
 								name="connection_string"
 								render={({ field }) => (
 									<FormItem>
-										<FormLabel>Connection URL</FormLabel>
+										<FormLabel>{i18n.t("workspace.mcpForm.connectionUrl")}</FormLabel>
 										<SecretVarInput
 											value={field.value}
 											disabled={lockConnection}
@@ -630,11 +631,11 @@ export function MCPClientFormFields({ form, satellites, headersValidationError, 
 
 							{/* Auth Type */}
 							<FormItem className="w-full">
-								<FormLabel>Authentication Type</FormLabel>
+								<FormLabel>{i18n.t("workspace.mcpForm.authType")}</FormLabel>
 								<Select value={authKind} onValueChange={(value: MCPAuthKind) => applyAuthKind(value)}>
 									<FormControl>
 										<SelectTrigger className="w-full" data-testid="auth-type-select">
-											<SelectValue placeholder="Select authentication type" />
+											<SelectValue placeholder={i18n.t("supplemental.selectAuthenticationType")} />
 										</SelectTrigger>
 									</FormControl>
 									<SelectContent>
@@ -645,7 +646,7 @@ export function MCPClientFormFields({ form, satellites, headersValidationError, 
 											Headers
 										</SelectItem>
 										<SelectItem value="oauth" data-testid="auth-type-oauth">
-											OAuth 2.0
+											{i18n.t("workspace.mcpForm.oauth")}
 										</SelectItem>
 										{/* Also rendered when it is already the selected value, so the
 										    trigger shows the real auth type rather than a placeholder. */}
@@ -674,19 +675,19 @@ export function MCPClientFormFields({ form, satellites, headersValidationError, 
 							    shared variant; token exchange is inherently per-caller */}
 							{authKind !== "none" && authKind !== "token_exchange" && (
 								<FormItem className="w-full">
-									<FormLabel>Auth Scope</FormLabel>
+									<FormLabel>{i18n.t("supplemental.authScope")}</FormLabel>
 									<Select value={authScope} onValueChange={(value: MCPAuthScope) => applyAuthScope(value)}>
 										<FormControl>
 											<SelectTrigger className="w-full" data-testid="auth-scope-select">
-												<SelectValue placeholder="Select auth scope" />
+												<SelectValue placeholder={i18n.t("supplemental.selectAuthScope")} />
 											</SelectTrigger>
 										</FormControl>
 										<SelectContent>
 											<SelectItem value="shared" data-testid="auth-scope-shared">
-												Shared
+												{i18n.t("supplemental.shared")}
 											</SelectItem>
 											<SelectItem value="per_user" data-testid="auth-scope-per-user">
-												Per-User
+												{i18n.t("supplemental.perUser")}
 											</SelectItem>
 										</SelectContent>
 									</Select>
@@ -744,7 +745,7 @@ export function MCPClientFormFields({ form, satellites, headersValidationError, 
 										id="per-user-header-keys"
 										data-testid="per-user-header-keys-textarea"
 										className="h-24"
-										placeholder="X-API-Key, X-Tenant-ID"
+										placeholder={i18n.t("workspace.mcpClientSheet.perUserHeadersPlaceholder")}
 										value={satellites.headerKeysInput}
 										onChange={(e) => satellites.setHeaderKeysInput(e.target.value)}
 									/>
@@ -946,7 +947,7 @@ export function MCPClientFormFields({ form, satellites, headersValidationError, 
 								name="stdio_config.command"
 								render={({ field }) => (
 									<FormItem>
-										<FormLabel>Command</FormLabel>
+										<FormLabel>{i18n.t("workspace.mcpForm.command")}</FormLabel>
 										<FormControl>
 											<Input
 												{...field}
@@ -956,7 +957,7 @@ export function MCPClientFormFields({ form, satellites, headersValidationError, 
 													field.onChange(e);
 													clearErrors("stdio_config.command");
 												}}
-												placeholder="node, python, /path/to/executable"
+												placeholder={i18n.t("workspace.mcpForm.commandPlaceholder")}
 												data-testid="stdio-command-input"
 											/>
 										</FormControl>
@@ -967,13 +968,13 @@ export function MCPClientFormFields({ form, satellites, headersValidationError, 
 
 							{/* Args (local state) */}
 							<div className="space-y-2">
-								<Label htmlFor="stdio-args-input">Arguments (comma-separated)</Label>
+								<Label htmlFor="stdio-args-input">{i18n.t("workspace.mcpForm.argumentsCommaSeparated")}</Label>
 								<Input
 									id="stdio-args-input"
 									value={satellites.argsText}
 									disabled={lockConnection}
 									onChange={(e) => satellites.setArgsText(e.target.value)}
-									placeholder="--port, 3000, --config, config.json"
+									placeholder={i18n.t("workspace.mcpForm.argumentsPlaceholder")}
 									data-testid="stdio-args-input"
 								/>
 							</div>
@@ -981,7 +982,7 @@ export function MCPClientFormFields({ form, satellites, headersValidationError, 
 							{/* Envs (local state) */}
 							<div className="space-y-2" role="group" aria-labelledby="stdio-envs-label">
 								<div className="flex items-center gap-2">
-									<Label id="stdio-envs-label">Environment Variables</Label>
+									<Label id="stdio-envs-label">{i18n.t("workspace.mcpClientSheet.environmentVariables")}</Label>
 									<TooltipProvider>
 										<Tooltip>
 											<TooltipTrigger asChild>

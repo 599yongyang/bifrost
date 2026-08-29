@@ -13,6 +13,7 @@ import {
 
 import CollapsibleBox from "./collapsibleBox";
 import { CodeEditor } from "@/components/ui/codeEditor";
+import i18n from "@/lib/i18n";
 
 interface VideoGenerationInput {
 	prompt: string;
@@ -54,7 +55,7 @@ export default function VideoView({ videoInput, videoOutput, videoListOutput, re
 				<div className="w-full rounded-sm border">
 					<div className="flex items-center gap-2 border-b px-6 py-2 text-sm font-medium">
 						<Video className="h-4 w-4" />
-						{methodTypeLabel} Input
+						{methodTypeLabel} {i18n.t("workspace.logs.media.input")}
 					</div>
 					<div className="space-y-2 p-6">
 						<div className="text-muted-foreground text-xs font-medium">PROMPT</div>
@@ -67,7 +68,7 @@ export default function VideoView({ videoInput, videoOutput, videoListOutput, re
 				<div className="w-full rounded-sm border">
 					<div className="flex items-center gap-2 border-b px-6 py-2 text-sm font-medium">
 						<Video className="h-4 w-4" />
-						{methodTypeLabel} Output
+						{methodTypeLabel} {i18n.t("workspace.logs.media.output")}
 					</div>
 					<div className="space-y-3 p-6">
 						{downloadOutput ? (
@@ -75,7 +76,7 @@ export default function VideoView({ videoInput, videoOutput, videoListOutput, re
 								<div className="grid grid-cols-1 gap-3 md:grid-cols-3">
 									{downloadOutput.video_id && (
 										<div className="space-y-1">
-											<div className="text-muted-foreground text-xs font-medium">VIDEO ID</div>
+											<div className="text-muted-foreground text-xs font-medium">{i18n.t("supplemental.videoId")}</div>
 											<div className="flex items-center gap-1">
 												<div className="font-mono text-xs break-all">{downloadOutput.video_id}</div>
 												<CopyableId id={downloadOutput.video_id} entityLabel="Video" testId="video-view-copy-download-video-id-button" />
@@ -84,18 +85,18 @@ export default function VideoView({ videoInput, videoOutput, videoListOutput, re
 									)}
 									{downloadOutput.content_type && (
 										<div className="space-y-1">
-											<div className="text-muted-foreground text-xs font-medium">CONTENT TYPE</div>
+											<div className="text-muted-foreground text-xs font-medium">{i18n.t("supplemental.contentType")}</div>
 											<div className="font-mono text-xs">{downloadOutput.content_type}</div>
 										</div>
 									)}
 								</div>
-								<p className="text-muted-foreground text-xs">Video content was successfully downloaded (content is not stored in logs)</p>
+								<p className="text-muted-foreground text-xs">{i18n.t("supplemental.videoDownloaded")}</p>
 							</>
 						) : deleteOutput ? (
 							<div className="grid grid-cols-1 gap-3 md:grid-cols-3">
 								{deleteOutput.id && (
 									<div className="space-y-1">
-										<div className="text-muted-foreground text-xs font-medium">VIDEO ID</div>
+										<div className="text-muted-foreground text-xs font-medium">{i18n.t("supplemental.videoId")}</div>
 										<div className="flex items-center gap-1">
 											<div className="font-mono text-xs break-all">{deleteOutput.id}</div>
 											<CopyableId id={deleteOutput.id} entityLabel="Video" testId="video-view-copy-delete-video-id-button" />
@@ -114,7 +115,7 @@ export default function VideoView({ videoInput, videoOutput, videoListOutput, re
 								<div className="grid grid-cols-1 gap-3 md:grid-cols-3">
 									{generationOutput.id && (
 										<div className="space-y-1">
-											<div className="text-muted-foreground text-xs font-medium">VIDEO ID</div>
+											<div className="text-muted-foreground text-xs font-medium">{i18n.t("supplemental.videoId")}</div>
 											<div className="flex items-center gap-1">
 												<div className="font-mono text-xs break-all">{generationOutput.id}</div>
 												<CopyableId id={generationOutput.id} entityLabel="Video" testId="video-view-copy-generation-video-id-button" />
@@ -149,7 +150,7 @@ export default function VideoView({ videoInput, videoOutput, videoListOutput, re
 									)}
 									{generationOutput.remixed_from_video_id && (
 										<div className="space-y-1">
-											<div className="text-muted-foreground text-xs font-medium">REMIXED FROM</div>
+											<div className="text-muted-foreground text-xs font-medium">{i18n.t("workspace.logs.media.remixedFrom")}</div>
 											<div className="font-mono text-xs break-all">{generationOutput.remixed_from_video_id}</div>
 										</div>
 									)}
@@ -158,7 +159,7 @@ export default function VideoView({ videoInput, videoOutput, videoListOutput, re
 								{generationOutput.error && (generationOutput.error.message || generationOutput.error.code) && (
 									<div className="flex items-start gap-2 rounded-md border px-3 py-2 text-sm">
 										<div className="space-y-1">
-											<div className="text-muted-foreground font-medium">Error from provider</div>
+											<div className="text-muted-foreground font-medium">{i18n.t("supplemental.providerError")}</div>
 											{generationOutput.error.code && <div className="font-medium">{generationOutput.error.code}</div>}
 											{generationOutput.error.message && <div className="text-muted-foreground">{generationOutput.error.message}</div>}
 										</div>
@@ -181,7 +182,7 @@ export default function VideoView({ videoInput, videoOutput, videoListOutput, re
 													data-testid="video-view-open-video-url-link"
 													className="text-primary inline-flex items-center gap-1 text-xs underline"
 												>
-													Open video URL
+													{i18n.t("supplemental.openVideoUrl")}
 													<ExternalLink className="h-3 w-3" />
 												</a>
 											)}

@@ -10,6 +10,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Eye, EyeOff, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm, type Resolver } from "react-hook-form";
+import i18n from "@/lib/i18n";
 
 interface MaximFormFragmentProps {
 	initialConfig?: {
@@ -70,12 +71,12 @@ export function MaximFormFragment({ initialConfig, onSave, onDelete, isDeleting 
 							name="maxim_config.api_key"
 							render={({ field }) => (
 								<FormItem>
-									<FormLabel>API Key</FormLabel>
+									<FormLabel>{i18n.t("workspace.observability.maximForm.apiKey")}</FormLabel>
 									<FormControl>
 										<div className="relative">
 											<Input
 												type={showApiKey ? "text" : "password"}
-												placeholder="Enter your Maxim API key"
+												placeholder={i18n.t("workspace.observability.maximForm.apiKeyPlaceholder")}
 												disabled={!hasMaximAccess}
 												{...field}
 												className="pr-10"
@@ -102,9 +103,14 @@ export function MaximFormFragment({ initialConfig, onSave, onDelete, isDeleting 
 							name="maxim_config.log_repo_id"
 							render={({ field }) => (
 								<FormItem>
-									<FormLabel>Log Repository ID (Optional)</FormLabel>
+									<FormLabel>{i18n.t("workspace.observability.maximForm.logRepoIdOptional")}</FormLabel>
 									<FormControl>
-										<Input placeholder="Enter log repository ID" disabled={!hasMaximAccess} {...field} value={field.value ?? ""} />
+										<Input
+											placeholder={i18n.t("workspace.observability.maximForm.logRepoIdPlaceholder")}
+											disabled={!hasMaximAccess}
+											{...field}
+											value={field.value ?? ""}
+										/>
 									</FormControl>
 									<FormMessage />
 								</FormItem>
@@ -117,18 +123,14 @@ export function MaximFormFragment({ initialConfig, onSave, onDelete, isDeleting 
 							render={({ field }) => (
 								<FormItem>
 									<FormLabel>
-										Request Headers <span className="text-muted-foreground font-normal">(Optional)</span>
+										{i18n.t("workspace.observability.otelForm.requestHeaders")}{" "}
+										<span className="text-muted-foreground font-normal">{i18n.t("workspace.providers.optionalSuffix")}</span>
 									</FormLabel>
-									<FormDescription>
-										Comma-separated list of request headers to capture and attach as trace tags. Supports exact names and wildcard patterns
-										(e.g. <code className="text-xs">x-custom-*</code> captures all headers with that prefix,{" "}
-										<code className="text-xs">*</code> captures all headers; note that <code className="text-xs">*</code> will capture
-										sensitive headers like Authorization).
-									</FormDescription>
+									<FormDescription>{i18n.t("workspace.observability.maximForm.requestHeadersDescription")}</FormDescription>
 									<FormControl>
 										<RequestHeadersTextarea
 											className="h-24"
-											placeholder="X-Tenant-ID, X-Request-Source, x-custom-*"
+											placeholder={i18n.t("workspace.observability.maximForm.requestHeadersPlaceholder")}
 											disabled={!hasMaximAccess}
 											value={field.value ?? []}
 											onChange={field.onChange}
@@ -149,7 +151,9 @@ export function MaximFormFragment({ initialConfig, onSave, onDelete, isDeleting 
 						name="enabled"
 						render={({ field }) => (
 							<FormItem className="flex items-center gap-2 py-2">
-								<FormLabel className="text-muted-foreground text-sm font-medium">Enabled</FormLabel>
+								<FormLabel className="text-muted-foreground text-sm font-medium">
+									{i18n.t("workspace.observability.maximForm.enabled")}
+								</FormLabel>
 								<FormControl>
 									<Switch
 										checked={field.value}
@@ -168,8 +172,8 @@ export function MaximFormFragment({ initialConfig, onSave, onDelete, isDeleting 
 								variant="outline"
 								onClick={onDelete}
 								disabled={isDeleting}
-								title="Delete connector"
-								aria-label="Delete connector"
+								title={i18n.t("workspace.observability.maximForm.deleteConnector")}
+								aria-label={i18n.t("workspace.observability.maximForm.deleteConnector")}
 							>
 								<Trash2 className="size-4" />
 							</Button>
@@ -189,23 +193,23 @@ export function MaximFormFragment({ initialConfig, onSave, onDelete, isDeleting 
 							}}
 							disabled={!hasMaximAccess || isLoading || !form.formState.isDirty}
 						>
-							Reset
+							{i18n.t("common.reset")}
 						</Button>
 						<TooltipProvider>
 							<Tooltip>
 								<TooltipTrigger asChild>
 									<Button type="submit" disabled={!hasMaximAccess || !form.formState.isDirty} isLoading={isSaving}>
-										Save Maxim Configuration
+										{i18n.t("workspace.observability.maximForm.saveConfiguration")}
 									</Button>
 								</TooltipTrigger>
 								{!form.formState.isDirty && (
 									<TooltipContent>
 										<p>
 											{!form.formState.isDirty
-												? "No changes made and validation errors present"
+												? i18n.t("workspace.observability.maximForm.noChangesAndErrors")
 												: !form.formState.isDirty
-													? "No changes made"
-													: "Please fix validation errors"}
+													? i18n.t("workspace.observability.maximForm.noChanges")
+													: i18n.t("workspace.observability.maximForm.pleaseFixErrors")}
 										</p>
 									</TooltipContent>
 								)}

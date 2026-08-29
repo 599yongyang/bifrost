@@ -10,6 +10,7 @@ import { getModelColor } from "../utils/chartUtils";
 import { ChartCard } from "./charts/chartCard";
 import { ChartErrorBoundary } from "./charts/chartErrorBoundary";
 import { formatCost, SortableHeader, TrendBadge } from "./rankingsShared";
+import i18n from "@/lib/i18n";
 
 type SortField = "total_requests" | "total_tokens" | "total_cost";
 type SortOrder = "asc" | "desc";
@@ -29,7 +30,9 @@ function TopDimensionTooltip({ active, payload }: any) {
 	return (
 		<div className="rounded-sm border border-zinc-200 bg-white px-3 py-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
 			<div className="mb-1 text-xs text-zinc-500">{data.displayName}</div>
-			<div className="text-sm font-medium">{data.total_requests.toLocaleString()} requests</div>
+			<div className="text-sm font-medium">
+				{data.total_requests.toLocaleString()} {i18n.t("workspace.governance.teams.requestsUnit")}
+			</div>
 		</div>
 	);
 }
@@ -82,7 +85,9 @@ function TopDimensionChart({
 			testId={`${testIdPrefix}-top-chart`}
 			className="z-[1]"
 			autoHeight
-			totalLabel={attributed && actualTotal === null ? "Total Requests (attributed)" : "Total Requests"}
+			totalLabel={
+				attributed && actualTotal === null ? i18n.t("workspace.dashboard.totalRequestsAttributed") : i18n.t("workspace.logs.totalRequests")
+			}
 			total={
 				actualTotal !== null ? (
 					<NumberFlow value={actualTotal} format={COMPACT_NUMBER_FORMAT} />
@@ -92,25 +97,24 @@ function TopDimensionChart({
 			}
 			totalTooltip={
 				grandTotal === null ? undefined : actualTotal !== null ? (
-					<div className="max-w-[240px] text-xs opacity-80">Actual number of requests sent</div>
+					<div className="max-w-[240px] text-xs opacity-80">{i18n.t("workspace.dashboard.actualRequests")}</div>
 				) : attributed ? (
 					<div className="space-y-1">
 						<div className="max-w-[240px] text-xs opacity-80">
-							Attributed - a request counts toward each {dimensionLabel.toLowerCase()} it belongs to, so this can exceed the actual request
-							count.
+							{i18n.t("workspace.dashboard.attributedRequests", { dimension: dimensionLabel.toLowerCase() })}
 						</div>
 					</div>
 				) : (
 					grandTotal.toLocaleString("en-US")
 				)
 			}
-			secondaryTotalLabel="Attributed Requests"
+			secondaryTotalLabel={i18n.t("workspace.dashboard.attributedRequestsLabel")}
 			secondaryTotal={actualTotal !== null ? <NumberFlow value={attributedTotal ?? 0} format={COMPACT_NUMBER_FORMAT} /> : undefined}
 			secondaryTotalTooltip={
 				actualTotal === null ? undefined : (
 					<div className="space-y-1">
 						<div className="max-w-[240px] text-xs opacity-80">
-							A request counts toward each {dimensionLabel.toLowerCase()} it belongs to, so this can exceed the total request count.
+							{i18n.t("workspace.dashboard.attributedTotal", { dimension: dimensionLabel.toLowerCase() })}
 						</div>
 					</div>
 				)
@@ -161,7 +165,7 @@ function TopDimensionChart({
 						</ResponsiveContainer>
 					</ChartErrorBoundary>
 				) : (
-					<div className="text-muted-foreground flex h-full items-center justify-center text-sm">No data available</div>
+					<div className="text-muted-foreground flex h-full items-center justify-center text-sm">{i18n.t("common.noDataAvailable")}</div>
 				)}
 			</div>
 			<div className="py-2">
@@ -230,12 +234,14 @@ function DimensionRankingsTabImpl({ data, loading, dimensionLabel, testIdPrefix,
 			) : !data?.rankings?.length ? (
 				<Card className="rounded-sm p-4 shadow-none">
 					<div className="text-muted-foreground flex h-[200px] items-center justify-center text-sm">
-						No {dimensionLabel.toLowerCase()} usage data available for this time period.
+						{i18n.t("workspace.dashboard.noDimensionUsage", { dimension: dimensionLabel.toLowerCase() })}
 					</div>
 				</Card>
 			) : (
 				<Card className="rounded-sm p-2 shadow-none" data-testid={`${testIdPrefix}-table`}>
-					<span className="text-primary pl-2 text-sm font-medium">{dimensionLabel} Rankings</span>
+					<span className="text-primary pl-2 text-sm font-medium">
+						{dimensionLabel} {i18n.t("workspace.dashboard.rankings")}
+					</span>
 					<Table>
 						<TableHeader>
 							<TableRow>
@@ -243,7 +249,7 @@ function DimensionRankingsTabImpl({ data, loading, dimensionLabel, testIdPrefix,
 								<TableHead>{dimensionLabel}</TableHead>
 								<TableHead className="text-right">
 									<SortableHeader
-										label="Requests"
+										label={i18n.t("workspace.dashboard.requests")}
 										field="total_requests"
 										currentSort={sortField}
 										currentOrder={sortOrder}
@@ -252,7 +258,7 @@ function DimensionRankingsTabImpl({ data, loading, dimensionLabel, testIdPrefix,
 								</TableHead>
 								<TableHead className="text-right">
 									<SortableHeader
-										label="Tokens"
+										label={i18n.t("workspace.dashboard.tokens")}
 										field="total_tokens"
 										currentSort={sortField}
 										currentOrder={sortOrder}
@@ -260,7 +266,13 @@ function DimensionRankingsTabImpl({ data, loading, dimensionLabel, testIdPrefix,
 									/>
 								</TableHead>
 								<TableHead className="text-right">
-									<SortableHeader label="Cost" field="total_cost" currentSort={sortField} currentOrder={sortOrder} onSort={handleSort} />
+									<SortableHeader
+										label={i18n.t("workspace.dashboard.cost")}
+										field="total_cost"
+										currentSort={sortField}
+										currentOrder={sortOrder}
+										onSort={handleSort}
+									/>
 								</TableHead>
 							</TableRow>
 						</TableHeader>

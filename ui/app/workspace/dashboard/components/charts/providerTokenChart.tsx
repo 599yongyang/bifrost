@@ -14,6 +14,7 @@ import {
 } from "../../utils/chartUtils";
 import { ChartErrorBoundary } from "./chartErrorBoundary";
 import type { ChartType } from "./chartTypeToggle";
+import i18n from "@/lib/i18n";
 
 interface ProviderTokenChartProps {
 	data: ProviderTokenHistogramResponse | null;
@@ -68,19 +69,19 @@ function SingleProviderTooltip({ active, payload, provider }: any) {
 				<div className="flex items-center justify-between gap-4">
 					<span className="flex items-center gap-1.5">
 						<span className="h-2 w-2 rounded-full" style={{ backgroundColor: CHART_COLORS.promptTokens }} />
-						<span className="text-zinc-600 dark:text-zinc-400">Input</span>
+						<span className="text-zinc-600 dark:text-zinc-400">{i18n.t("workspace.dashboard.input")}</span>
 					</span>
 					<span className="font-medium">{formatCompactNumber(stats.prompt_tokens || 0)}</span>
 				</div>
 				<div className="flex items-center justify-between gap-4">
 					<span className="flex items-center gap-1.5">
 						<span className="h-2 w-2 rounded-full" style={{ backgroundColor: CHART_COLORS.completionTokens }} />
-						<span className="text-zinc-600 dark:text-zinc-400">Output</span>
+						<span className="text-zinc-600 dark:text-zinc-400">{i18n.t("workspace.dashboard.output")}</span>
 					</span>
 					<span className="font-medium">{formatCompactNumber(stats.completion_tokens || 0)}</span>
 				</div>
 				<div className="flex items-center justify-between gap-4 border-t border-zinc-200 pt-1 dark:border-zinc-700">
-					<span className="text-zinc-600 dark:text-zinc-400">Total</span>
+					<span className="text-zinc-600 dark:text-zinc-400">{i18n.t("supplemental.total")}</span>
 					<span className="font-medium">{formatCompactNumber(stats.total_tokens || 0)}</span>
 				</div>
 			</div>
@@ -137,7 +138,7 @@ function ProviderTokenChartImpl({ data, chartType, startTime, endTime, selectedP
 	}, [data, selectedProvider]);
 
 	if (!data?.buckets || chartData.length === 0) {
-		return <div className="text-muted-foreground flex h-full items-center justify-center text-sm">No data available</div>;
+		return <div className="text-muted-foreground flex h-full items-center justify-center text-sm">{i18n.t("common.noDataAvailable")}</div>;
 	}
 
 	const commonProps = {

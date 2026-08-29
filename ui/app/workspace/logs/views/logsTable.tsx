@@ -18,6 +18,7 @@ import { ColumnDef, flexRender, getCoreRowModel, SortingState, useReactTable } f
 import { ChevronLeft, ChevronRight, Loader2, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { logsPageCopy } from "../utils/logsPageCopy";
+import i18n from "@/lib/i18n";
 
 interface DataTableProps {
 	columns: ColumnDef<LogEntry>[];
@@ -206,12 +207,12 @@ export function LogsDataTable({
 									{loading ? (
 										<>
 											<RefreshCw className="h-4 w-4 animate-spin" />
-											Loading logs...
+											{i18n.t("supplemental.loadingLogs")}
 										</>
 									) : polling ? (
 										<>
 											<RefreshCw className="h-4 w-4 animate-spin" />
-											Waiting for new logs...
+											{i18n.t("supplemental.waitingLogs")}
 										</>
 									) : (
 										<Button
@@ -222,7 +223,7 @@ export function LogsDataTable({
 											variant={"ghost"}
 										>
 											{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-											Refresh
+											{i18n.t("common.reload")}
 										</Button>
 									)}
 								</div>

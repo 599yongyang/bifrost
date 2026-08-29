@@ -1,10 +1,11 @@
 import AlertingPlaceholderView from "./alertingPlaceholderView";
+import i18n from "@/lib/i18n";
 
 export default function AlertChannelsView() {
 	return (
 		<AlertingPlaceholderView
-			title="Unlock alerting channels for proactive monitoring"
-			description="This feature is a part of the Bifrost enterprise license. Configure Slack, PagerDuty, OpsGenie, and webhook alerts to stay ahead of budget and performance issues."
+			title={i18n.t("workspace.enterpriseFallbacks.alertChannelsTitle")}
+			description={i18n.t("workspace.enterpriseFallbacks.alertChannelsDescription")}
 			readmeLink="https://docs.getbifrost.ai/enterprise/alerting/alert-channels"
 			testIdPrefix="alert-channels"
 		/>

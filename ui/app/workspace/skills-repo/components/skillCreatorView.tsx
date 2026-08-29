@@ -6,6 +6,7 @@ import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { toast } from "sonner";
 import { useSkillForm } from "./helpers";
 import { SkillEditView } from "../forms/skillEditForm";
+import i18n from "@/lib/i18n";
 
 // ---------- SkillCreateView ----------
 
@@ -20,10 +21,10 @@ export function SkillCreateView({ onCreated, onBack }: { onCreated: (id: string)
 
 		try {
 			const result = await createSkill(form.getPayload()).unwrap();
-			toast.success("Skill created successfully");
+			toast.success(i18n.t("supplemental.skillCreated"));
 			onCreated(result.skill.id);
 		} catch (err: unknown) {
-			toast.error("Failed to create skill", {
+			toast.error(i18n.t("supplemental.skillCreateFailed"), {
 				description: getErrorMessage(err),
 			});
 		}

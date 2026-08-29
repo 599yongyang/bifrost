@@ -4,6 +4,7 @@ import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Too
 import { formatFullTimestamp, formatLatency, formatTimestamp, LATENCY_COLORS } from "../../utils/chartUtils";
 import { ChartErrorBoundary } from "./chartErrorBoundary";
 import type { ChartType } from "./chartTypeToggle";
+import i18n from "@/lib/i18n";
 
 interface OverheadChartProps {
 	data: LatencyHistogramResponse | null;
@@ -25,7 +26,7 @@ function CustomTooltip({ active, payload }: any) {
 				<div className="flex items-center justify-between gap-4">
 					<span className="flex items-center gap-1.5">
 						<span className="h-2 w-2 rounded-full" style={{ backgroundColor: LATENCY_COLORS.avg }} />
-						<span className="text-zinc-600 dark:text-zinc-400">Avg</span>
+						<span className="text-zinc-600 dark:text-zinc-400">{i18n.t("workspace.dashboard.avg")}</span>
 					</span>
 					<span className="font-medium">{formatLatency(data.avg_overhead ?? 0)}</span>
 				</div>
@@ -51,7 +52,7 @@ function CustomTooltip({ active, payload }: any) {
 					<span className="font-medium">{formatLatency(data.p99_overhead ?? 0)}</span>
 				</div>
 				<div className="flex items-center justify-between gap-4 border-t border-zinc-200 pt-1 dark:border-zinc-700">
-					<span className="text-zinc-600 dark:text-zinc-400">Requests</span>
+					<span className="text-zinc-600 dark:text-zinc-400">{i18n.t("workspace.dashboard.requests")}</span>
 					<span className="font-medium">{(data.total_requests ?? 0).toLocaleString()}</span>
 				</div>
 			</div>
@@ -73,7 +74,7 @@ function OverheadChartImpl({ data, chartType, startTime, endTime }: OverheadChar
 	}, [data]);
 
 	if (!data?.buckets || chartData.length === 0) {
-		return <div className="text-muted-foreground flex h-full items-center justify-center text-sm">No data available</div>;
+		return <div className="text-muted-foreground flex h-full items-center justify-center text-sm">{i18n.t("common.noDataAvailable")}</div>;
 	}
 
 	const commonProps = {

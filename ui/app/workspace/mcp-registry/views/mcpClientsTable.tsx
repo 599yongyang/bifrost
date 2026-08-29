@@ -59,6 +59,7 @@ import { MCPHeadersAuthorizer } from "./mcpHeadersAuthorizer";
 import { MCPServersEmptyState } from "./mcpServersEmptyState";
 import { MCPUsageGuideSheet } from "./mcpUsageGuide";
 import { OAuth2Authorizer } from "./oauth2Authorizer";
+import i18n from "@/lib/i18n";
 
 function MCPClientActionsMenu({
 	client,
@@ -102,7 +103,7 @@ function MCPClientActionsMenu({
 					variant="ghost"
 					size="icon"
 					className="h-8 w-8"
-					aria-label="MCP server actions"
+					aria-label={i18n.t("supplemental.mcpServerActions")}
 					data-testid={`mcp-client-actions-${client.config.client_id}-btn`}
 					disabled={isReconnecting || isReauthorizing || isVerifyingExchange}
 				>
@@ -134,7 +135,7 @@ function MCPClientActionsMenu({
 						}}
 					>
 						<PencilIcon className="h-4 w-4" />
-						Edit
+						{i18n.t("common.edit")}
 					</DropdownMenuItem>
 				)}
 				{hasUpdateAccess && client.state === "pending_verification" && (
@@ -165,7 +166,7 @@ function MCPClientActionsMenu({
 						}}
 					>
 						<RefreshCcw className="h-4 w-4" />
-						Reconnect
+						{i18n.t("workspace.mcp.reconnect")}
 					</DropdownMenuItem>
 				)}
 				{hasUpdateAccess &&
@@ -232,7 +233,7 @@ function MCPClientActionsMenu({
 						}}
 					>
 						<Trash2 className="h-4 w-4" />
-						Delete
+						{i18n.t("common.delete")}
 					</DropdownMenuItem>
 				)}
 			</DropdownMenuContent>
@@ -511,7 +512,7 @@ export default function MCPClientsTable({
 		if (type === "token_exchange") {
 			return "Per-User";
 		}
-		return authScopeOf(type) === "per_user" ? "Per-User" : "Shared";
+		return authScopeOf(type) === "per_user" ? i18n.t("supplemental.perUser") : i18n.t("supplemental.shared");
 	};
 
 	const handleRowClick = (mcpClient: MCPClient) => {
@@ -565,7 +566,7 @@ export default function MCPClientsTable({
 	// Rendered on the empty branch too, not just the populated one: PageTitle
 	// draws nothing inline, and leaving it out drops the topbar to the
 	// route-derived fallback, which for this route reads "MCP Registry".
-	const pageTitle = <PageTitle title="MCP Server Catalog">Manage servers that can connect to the MCP Tools endpoint.</PageTitle>;
+	const pageTitle = <PageTitle title={i18n.t("supplemental.mcpServerCatalog")}>{i18n.t("supplemental.manageMcpServers")}</PageTitle>;
 
 	// True empty state: no servers at all (not just filtered to zero)
 	if (totalCount === 0 && !hasActiveFilters) {
@@ -593,7 +594,7 @@ export default function MCPClientsTable({
 			<AlertDialog open={!!clientToDelete} onOpenChange={(open) => !open && setClientToDelete(null)}>
 				<AlertDialogContent>
 					<AlertDialogHeader>
-						<AlertDialogTitle>Remove MCP Server</AlertDialogTitle>
+						<AlertDialogTitle>{i18n.t("workspace.mcp.removeServerTitle")}</AlertDialogTitle>
 						<AlertDialogDescription>
 							Are you sure you want to remove MCP server {clientToDelete?.config.name}? You will need to reconnect the server to continue
 							using it.
@@ -607,7 +608,7 @@ export default function MCPClientsTable({
 							}}
 							className="bg-destructive hover:bg-destructive/90"
 						>
-							Delete
+							{i18n.t("common.delete")}
 						</AlertDialogAction>
 					</AlertDialogFooter>
 				</AlertDialogContent>
@@ -874,8 +875,8 @@ export default function MCPClientsTable({
 				<div className="relative max-w-sm flex-1">
 					<Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
 					<Input
-						aria-label="Search MCP servers by name"
-						placeholder="Search by name..."
+						aria-label={i18n.t("supplemental.searchMcpServers")}
+						placeholder={i18n.t("workspace.mcp.searchPlaceholder")}
 						value={search}
 						onChange={(e) => onSearchChange(e.target.value)}
 						className="pl-9"
@@ -890,7 +891,7 @@ export default function MCPClientsTable({
 						onClick={onServerFilterClear}
 						data-testid="mcp-client-server-filter-clear-btn"
 					>
-						Server filter
+						{i18n.t("supplemental.serverFilter")}
 						<X className="size-3" />
 					</Button>
 				)}
@@ -901,18 +902,18 @@ export default function MCPClientsTable({
 						{/* The label is hidden below sm, leaving a bare icon. */}
 						<Link to="/workspace/mcp-registry/library" aria-label="MCP server library">
 							<Box />
-							<span className="hidden sm:inline">Library</span>
+							<span className="hidden sm:inline">{i18n.t("supplemental.library")}</span>
 						</Link>
 					</Button>
 					<Button
 						onClick={handleCreate}
 						disabled={!hasCreateMCPClientAccess}
 						data-testid="create-mcp-client-btn"
-						aria-label="New MCP Server"
+						aria-label={i18n.t("workspace.mcpForm.newServerTitle")}
 						className="h-8 gap-2"
 					>
 						<Plus />
-						<span className="hidden sm:inline">New MCP Server</span>
+						<span className="hidden sm:inline">{i18n.t("workspace.mcpForm.newServerTitle")}</span>
 					</Button>
 				</div>
 			</div>
@@ -922,14 +923,14 @@ export default function MCPClientsTable({
 					<Table data-testid="mcp-clients-table" containerClassName="h-full overflow-auto" className="w-full min-w-[1516px] table-fixed">
 						<TableHeader className="bg-muted sticky top-0 z-20">
 							<TableRow>
-								<TableHead className="w-[260px] font-semibold">Name</TableHead>
+								<TableHead className="w-[260px] font-semibold">{i18n.t("workspace.mcp.name")}</TableHead>
 								<TableHead className="w-[150px] font-semibold">Connection Type</TableHead>
-								<TableHead className="w-[150px] font-semibold">Auth Type</TableHead>
-								<TableHead className="w-[140px] font-semibold">Auth Scope</TableHead>
-								<TableHead className="w-[120px] font-semibold">Code Mode</TableHead>
-								<TableHead className="w-[120px] font-semibold">VK Access</TableHead>
-								<TableHead className="w-[130px] font-semibold">Enabled Tools</TableHead>
-								<TableHead className="w-[160px] font-semibold">Auto-execute Tools</TableHead>
+								<TableHead className="w-[150px] font-semibold">{i18n.t("supplemental.authType")}</TableHead>
+								<TableHead className="w-[140px] font-semibold">{i18n.t("supplemental.authScope")}</TableHead>
+								<TableHead className="w-[120px] font-semibold">{i18n.t("workspace.mcp.codeMode")}</TableHead>
+								<TableHead className="w-[120px] font-semibold">{i18n.t("supplemental.vkAccess")}</TableHead>
+								<TableHead className="w-[130px] font-semibold">{i18n.t("workspace.mcp.enabledTools")}</TableHead>
+								<TableHead className="w-[160px] font-semibold">{i18n.t("supplemental.autoExecuteTools")}</TableHead>
 								<TableHead className="w-[140px] font-semibold">
 									<HeaderWithTooltip
 										label="State"
@@ -955,7 +956,7 @@ export default function MCPClientsTable({
 										}
 									/>
 								</TableHead>
-								<TableHead className="w-[90px] font-semibold">Status</TableHead>
+								<TableHead className="w-[90px] font-semibold">{i18n.t("supplemental.status")}</TableHead>
 								<TableHead className={`bg-muted sticky right-0 z-10 w-14 text-right ${PIN_SHADOW_RIGHT}`}></TableHead>
 							</TableRow>
 						</TableHeader>
@@ -963,7 +964,7 @@ export default function MCPClientsTable({
 							{mcpClients.length === 0 ? (
 								<TableRow>
 									<TableCell colSpan={11} className="h-24 text-center">
-										<span className="text-muted-foreground text-sm">No matching MCP servers found.</span>
+										<span className="text-muted-foreground text-sm">{i18n.t("supplemental.noMatchingMcpServers")}</span>
 									</TableCell>
 								</TableRow>
 							) : (
@@ -1013,12 +1014,12 @@ export default function MCPClientsTable({
 												    that can't be reached right now is still configured for code
 												    mode or not. */}
 												<Badge className={c.config.is_code_mode_client ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"}>
-													{c.config.is_code_mode_client ? "Enabled" : "Disabled"}
+													{c.config.is_code_mode_client ? "Enabled" : i18n.t("workspace.mcp.disabled")}
 												</Badge>
 											</TableCell>
 											<TableCell data-testid="mcp-client-vk-access">
 												{c.config.allow_on_all_virtual_keys
-													? "All"
+													? i18n.t("common.all")
 													: c.vk_configs?.length
 														? `${c.vk_configs.length} ${c.vk_configs.length === 1 ? "VK" : "VKs"}`
 														: "None"}
@@ -1122,8 +1123,8 @@ export default function MCPClientsTable({
 				{totalCount > 0 && (
 					<div className="flex shrink-0 items-center justify-between text-xs" data-testid="pagination">
 						<div className="text-muted-foreground flex items-center gap-2">
-							{(offset + 1).toLocaleString()}-{Math.min(offset + limit, totalCount).toLocaleString()} of {totalCount.toLocaleString()}{" "}
-							entries
+							{(offset + 1).toLocaleString()}-{Math.min(offset + limit, totalCount).toLocaleString()} {i18n.t("supplemental.of")}{" "}
+							{totalCount.toLocaleString()} entries
 						</div>
 
 						<div className="flex items-center gap-2">
@@ -1133,15 +1134,17 @@ export default function MCPClientsTable({
 								onClick={() => onOffsetChange(Math.max(0, offset - limit))}
 								disabled={offset === 0}
 								data-testid="mcp-clients-pagination-prev-btn"
-								aria-label="Previous page"
+								aria-label={i18n.t("supplemental.previousPage")}
 							>
 								<ChevronLeft className="size-3" />
 							</Button>
 
 							<div className="flex items-center gap-1">
-								<span>Page</span>
+								<span>{i18n.t("supplemental.page")}</span>
 								<span>{Math.floor(offset / limit) + 1}</span>
-								<span>of {Math.ceil(totalCount / limit)}</span>
+								<span>
+									{i18n.t("supplemental.of")} {Math.ceil(totalCount / limit)}
+								</span>
 							</div>
 
 							<Button
@@ -1150,7 +1153,7 @@ export default function MCPClientsTable({
 								onClick={() => onOffsetChange(offset + limit)}
 								disabled={offset + limit >= totalCount}
 								data-testid="mcp-clients-pagination-next-btn"
-								aria-label="Next page"
+								aria-label={i18n.t("supplemental.nextPage")}
 							>
 								<ChevronRight className="size-3" />
 							</Button>

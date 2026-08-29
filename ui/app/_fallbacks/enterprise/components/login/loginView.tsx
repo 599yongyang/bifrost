@@ -8,6 +8,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Eye, EyeOff } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
+import i18n from "@/lib/i18n";
 
 const externalLinks = [
 	{
@@ -65,8 +66,8 @@ export default function LoginView() {
 					</div>
 
 					<div className="space-y-2 text-center">
-						<h1 className="text-foreground text-lg font-semibold">Welcome back</h1>
-						<p className="text-muted-foreground text-sm">Sign in to your account to continue</p>
+						<h1 className="text-foreground text-lg font-semibold">{i18n.t("login.welcome")}</h1>
+						<p className="text-muted-foreground text-sm">{i18n.t("login.subtitle")}</p>
 					</div>
 
 					<form onSubmit={handleSubmit} className="space-y-5">
@@ -74,12 +75,12 @@ export default function LoginView() {
 
 						<div className="space-y-2">
 							<Label htmlFor="username" className="text-sm font-medium">
-								Username
+								{i18n.t("login.username")}
 							</Label>
 							<Input
 								id="username"
 								type="text"
-								placeholder="Enter your username"
+								placeholder={i18n.t("login.enterUsername")}
 								value={username}
 								onChange={(e) => setUsername(e.target.value)}
 								required
@@ -90,13 +91,13 @@ export default function LoginView() {
 
 						<div className="space-y-2">
 							<Label htmlFor="password" className="text-sm font-medium">
-								Password
+								{i18n.t("login.password")}
 							</Label>
 							<div className="relative">
 								<Input
 									id="password"
 									type={showPassword ? "text" : "password"}
-									placeholder="Enter your password"
+									placeholder={i18n.t("login.enterPassword")}
 									value={password}
 									onChange={(e) => setPassword(e.target.value)}
 									required
@@ -107,7 +108,7 @@ export default function LoginView() {
 									type="button"
 									onClick={() => setShowPassword(!showPassword)}
 									className="text-muted-foreground hover:text-foreground absolute top-1/2 right-3 -translate-y-1/2 transition-colors"
-									aria-label={showPassword ? "Hide password" : "Show password"}
+									aria-label={showPassword ? i18n.t("login.hidePassword") : i18n.t("login.showPassword")}
 								>
 									{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
 								</button>
@@ -115,7 +116,7 @@ export default function LoginView() {
 						</div>
 
 						<Button type="submit" className="h-9 w-full text-sm" isLoading={isLoading} disabled={isLoading}>
-							{isLoading || isLoggingIn ? "Signing in..." : "Sign in"}
+							{isLoading || isLoggingIn ? i18n.t("login.signingIn") : i18n.t("login.signIn")}
 						</Button>
 					</form>
 

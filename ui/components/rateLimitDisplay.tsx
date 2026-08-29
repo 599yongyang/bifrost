@@ -3,6 +3,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { resetDurationLabels, supportsCalendarAlignment } from "@/lib/constants/governance";
 import { cn } from "@/lib/utils";
 import { formatCompactNumber } from "@/lib/utils/numbers";
+import i18n from "@/lib/i18n";
 
 interface RateLimitShape {
 	token_max_limit?: number | null;
@@ -88,7 +89,9 @@ function Bar({
 					{current.toLocaleString()} / {max.toLocaleString()} {label}
 				</p>
 				{resetDuration ? (
-					<p className="text-primary-foreground/80 text-xs">Resets {formatResetDuration(resetDuration, calendarAligned)}</p>
+					<p className="text-primary-foreground/80 text-xs">
+						{i18n.t("supplemental.resets")} {formatResetDuration(resetDuration, calendarAligned)}
+					</p>
 				) : null}
 			</TooltipContent>
 		</Tooltip>

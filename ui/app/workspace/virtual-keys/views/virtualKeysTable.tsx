@@ -72,6 +72,7 @@ import VirtualKeySheet from "./virtualKeySheet";
 // Registers the enterprise user picker as a side effect; a no-op in OSS builds,
 // where the user filter stays hidden because no picker is registered.
 import "@enterprise/lib/registrations/userPicker";
+import i18n from "@/lib/i18n";
 
 const formatResetDuration = (duration: string) => resetDurationLabels[duration] || duration;
 
@@ -89,7 +90,13 @@ function virtualKeysToCSV(vks: VirtualKey[]): string {
 				vk.rate_limit?.request_max_limit &&
 				vk.rate_limit.request_current_usage >= vk.rate_limit.request_max_limit);
 		const isExpired = !!vk.expires_at && Date.now() >= new Date(vk.expires_at).getTime();
-		const status = !vk.is_active ? "Inactive" : isExpired ? "Expired" : isExhausted ? "Exhausted" : "Active";
+		const status = !vk.is_active
+			? i18n.t("workspace.virtualKeys.inactive")
+			: isExpired
+				? i18n.t("supplemental.expired")
+				: isExhausted
+					? "Exhausted"
+					: i18n.t("workspace.virtualKeys.active");
 		const assignedTo = vk.team ? `Team: ${vk.team.name}` : vk.customer ? `Customer: ${vk.customer.name}` : "";
 		const budgetLimit = vk.budgets?.length ? vk.budgets.map((b) => formatCurrency(getEffectiveBudgetLimit(b))).join("; ") : "";
 		const budgetSpent = vk.budgets?.length ? vk.budgets.map((b) => formatCurrency(b.current_usage)).join("; ") : "";
@@ -157,7 +164,9 @@ function VKAssignedToCell({ vk }: { vk: VirtualKey }) {
 	}
 
 	if (!label) {
-		return <span className="text-muted-foreground max-w-full truncate text-left text-sm">-</span>;
+		return (
+			<span className="text-muted-foreground max-w-full truncate text-left text-sm">{i18n.t("workspace.routingRules.notAvailable")}</span>
+		);
 	}
 
 	return (
@@ -192,9 +201,9 @@ function VKActiveSwitch({
 		<Switch
 			checked={vk.is_active}
 			disabled={!hasUpdateAccess || isManagedByProfile}
-			aria-label={`${vk.is_active ? "Disable" : "Enable"} virtual key ${vk.name}`}
+			aria-label={`${vk.is_active ? i18n.t("common.disable") : i18n.t("common.enable")} virtual key ${vk.name}`}
 			data-testid={`vk-active-switch-${vk.name}`}
-			title={isManagedByProfile ? "This virtual key is managed by an access profile." : undefined}
+			title={isManagedByProfile ? i18n.t("workspace.virtualKeys.managedByProfileShort") : undefined}
 			onAsyncCheckedChange={(checked) => onToggle(vk, checked)}
 		/>
 	);
@@ -227,7 +236,7 @@ function VKActionsMenu({
 						variant="ghost"
 						size="icon"
 						className="h-8 w-8"
-						aria-label="Virtual key actions"
+						aria-label={i18n.t("workspace.virtualKeys.actionsAria")}
 						data-testid={`vk-actions-btn-${vk.name}`}
 					>
 						<MoreHorizontal className="h-4 w-4" />
@@ -245,12 +254,12 @@ function VKActionsMenu({
 						}}
 					>
 						<Edit className="h-4 w-4" />
-						Edit
+						{i18n.t("common.edit")}
 					</DropdownMenuItem>
 					<DropdownMenuItem asChild className="cursor-pointer" data-testid={`vk-view-logs-btn-${vk.name}`}>
 						<Link to="/workspace/logs" search={{ virtual_key_ids: [vk.id] }} onClick={() => setIsOpen(false)}>
 							<ScrollText className="h-4 w-4" />
-							View logs
+							{i18n.t("supplemental.viewLogs")}
 						</Link>
 					</DropdownMenuItem>
 					<DropdownMenuItem
@@ -258,7 +267,7 @@ function VKActionsMenu({
 						className="cursor-pointer"
 						disabled={!hasDeleteAccess || isManagedByProfile}
 						data-testid={`vk-delete-btn-${vk.name}`}
-						title={isManagedByProfile ? "This virtual key is managed by an access profile and can't be deleted here." : undefined}
+						title={isManagedByProfile ? i18n.t("workspace.virtualKeys.managedDeleteDisabled") : undefined}
 						onSelect={(e) => {
 							e.preventDefault();
 							setDeleteOpen(true);
@@ -266,29 +275,29 @@ function VKActionsMenu({
 						}}
 					>
 						<Trash2 className="h-4 w-4" />
-						Delete
+						{i18n.t("common.delete")}
 					</DropdownMenuItem>
 				</DropdownMenuContent>
 			</DropdownMenu>
 			<AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
 				<AlertDialogContent>
 					<AlertDialogHeader>
-						<AlertDialogTitle>Delete Virtual Key</AlertDialogTitle>
+						<AlertDialogTitle>{i18n.t("workspace.virtualKeys.deleteVirtualKey")}</AlertDialogTitle>
 						<AlertDialogDescription>
-							Are you sure you want to delete &quot;
-							{vk.name.length > 20 ? `${vk.name.slice(0, 20)}...` : vk.name}
-							&quot;? This action cannot be undone.
+							{i18n.t("workspace.virtualKeys.deleteVirtualKeyDescription", {
+								name: vk.name.length > 20 ? `${vk.name.slice(0, 20)}...` : vk.name,
+							})}
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>
-						<AlertDialogCancel data-testid={`vk-delete-cancel-${vk.name}`}>Cancel</AlertDialogCancel>
+						<AlertDialogCancel data-testid={`vk-delete-cancel-${vk.name}`}>{i18n.t("common.cancel")}</AlertDialogCancel>
 						<AlertDialogAction
 							onClick={() => onDelete(vk.id)}
 							disabled={isDeleting}
 							className="bg-destructive hover:bg-destructive/90"
 							data-testid={`vk-delete-confirm-${vk.name}`}
 						>
-							{isDeleting ? "Deleting..." : "Delete"}
+							{isDeleting ? i18n.t("workspace.virtualKeys.deleteDialogDeleting") : i18n.t("common.delete")}
 						</AlertDialogAction>
 					</AlertDialogFooter>
 				</AlertDialogContent>
@@ -417,7 +426,7 @@ export default function VirtualKeysTable({
 	const handleDelete = async (vkId: string) => {
 		try {
 			await deleteVirtualKey(vkId).unwrap();
-			toast.success("Virtual key deleted successfully");
+			toast.success(i18n.t("workspace.virtualKeys.deleteSuccess"));
 		} catch (error) {
 			toast.error(getErrorMessage(error));
 		}
@@ -429,7 +438,9 @@ export default function VirtualKeysTable({
 				vkId: vk.id,
 				data: { is_active: checked },
 			}).unwrap();
-			toast.success(`Virtual key ${checked ? "enabled" : "disabled"}`);
+			toast.success(
+				`Virtual key ${checked ? i18n.t("workspace.providers.keyTable.itemEnabled") : i18n.t("workspace.providers.keyTable.itemDisabled")}`,
+			);
 		} catch (error) {
 			toast.error(getErrorMessage(error));
 			throw error;
@@ -669,12 +680,12 @@ export default function VirtualKeysTable({
 			<Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
 				<DialogContent className="sm:max-w-[425px]">
 					<DialogHeader className="pb-0">
-						<DialogTitle>Export Virtual Keys</DialogTitle>
-						<DialogDescription>Download as CSV with current filters and sorting applied.</DialogDescription>
+						<DialogTitle>{i18n.t("workspace.virtualKeys.exportDialogTitle")}</DialogTitle>
+						<DialogDescription>{i18n.t("workspace.virtualKeys.exportDialogDescription")}</DialogDescription>
 					</DialogHeader>
 					<div className="space-y-4">
 						<div className="space-y-2">
-							<Label className="text-sm">Export scope</Label>
+							<Label className="text-sm">{i18n.t("workspace.virtualKeys.exportScope")}</Label>
 							<div className="grid grid-cols-1 gap-2 sm:grid-cols-2" data-testid="vk-export-scope">
 								<button
 									type="button"
@@ -686,8 +697,10 @@ export default function VirtualKeysTable({
 											: "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground",
 									)}
 								>
-									<span className="font-medium">Current page</span>
-									<span className="text-muted-foreground text-xs">{virtualKeys.length} entries</span>
+									<span className="font-medium">{i18n.t("workspace.virtualKeys.currentPage")}</span>
+									<span className="text-muted-foreground text-xs">
+										{virtualKeys.length} {i18n.t("workspace.virtualKeys.entries")}
+									</span>
 								</button>
 								<button
 									type="button"
@@ -699,8 +712,10 @@ export default function VirtualKeysTable({
 											: "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground",
 									)}
 								>
-									<span className="font-medium">All entries</span>
-									<span className="text-muted-foreground text-xs">{totalCount} total</span>
+									<span className="font-medium">{i18n.t("workspace.virtualKeys.allEntries")}</span>
+									<span className="text-muted-foreground text-xs">
+										{totalCount} {i18n.t("workspace.virtualKeys.total")}
+									</span>
 								</button>
 							</div>
 						</div>
@@ -708,7 +723,7 @@ export default function VirtualKeysTable({
 						{exportScope === "all" && (
 							<div className="space-y-2">
 								<Label htmlFor="export-max-limit" className="text-sm">
-									Max entries <span className="text-muted-foreground font-normal">(optional)</span>
+									{i18n.t("workspace.virtualKeys.maxEntriesOptional")}
 								</Label>
 								<Input
 									id="export-max-limit"
@@ -724,7 +739,7 @@ export default function VirtualKeysTable({
 
 						{hasActiveFilters && (
 							<p className="text-muted-foreground text-xs">
-								Filters applied:{" "}
+								{i18n.t("workspace.virtualKeys.filtersApplied")}{" "}
 								{[
 									debouncedSearch && `search "${debouncedSearch}"`,
 									customerFilter && "customer filter",
@@ -738,23 +753,23 @@ export default function VirtualKeysTable({
 
 						<div className="text-muted-foreground flex items-center gap-2">
 							<ShieldCheck className="h-3.5 w-3.5 shrink-0" />
-							<p className="text-xs">API tokens are excluded from the export.</p>
+							<p className="text-xs">{i18n.t("workspace.virtualKeys.apiTokensExcluded")}</p>
 						</div>
 					</div>
 					<DialogFooter className="pt-0">
 						<Button variant="outline" onClick={() => setShowExportDialog(false)} disabled={isExporting}>
-							Cancel
+							{i18n.t("common.cancel")}
 						</Button>
 						<Button onClick={handleExportCSV} disabled={isExporting} data-testid="vk-export-confirm-btn">
 							{isExporting ? (
 								<>
 									<Loader2 className="h-4 w-4 animate-spin" />
-									Exporting...
+									{i18n.t("workspace.virtualKeys.exportingButton")}
 								</>
 							) : (
 								<>
 									<Download className="h-4 w-4" />
-									Export CSV
+									{i18n.t("workspace.virtualKeys.exportCSV")}
 								</>
 							)}
 						</Button>
@@ -765,21 +780,21 @@ export default function VirtualKeysTable({
 			<AlertDialog open={showBulkRotateDialog} onOpenChange={setShowBulkRotateDialog}>
 				<AlertDialogContent>
 					<AlertDialogHeader>
-						<AlertDialogTitle>Rotate selected virtual keys?</AlertDialogTitle>
+						<AlertDialogTitle>{i18n.t("workspace.virtualKeys.bulkRotateTitle")}</AlertDialogTitle>
 						<AlertDialogDescription>
-							This will replace the secret value for {selectedCount} selected virtual {selectedCount === 1 ? "key" : "keys"}. IDs, budgets,
-							rate limits, provider permissions, MCP access, and assignments stay the same. Previous key values will stop working
-							immediately.
+							{i18n.t("workspace.virtualKeys.bulkRotateDescription", {
+								count: selectedCount,
+							})}
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>
-						<AlertDialogCancel data-testid="vk-bulk-rotate-cancel-btn">Cancel</AlertDialogCancel>
+						<AlertDialogCancel data-testid="vk-bulk-rotate-cancel-btn">{i18n.t("common.cancel")}</AlertDialogCancel>
 						<AlertDialogAction
 							onClick={handleBulkRotate}
 							disabled={isBulkRotating || selectedCount === 0}
 							data-testid="vk-bulk-rotate-confirm-btn"
 						>
-							{isBulkRotating ? "Rotating..." : "Rotate Selected"}
+							{isBulkRotating ? i18n.t("workspace.virtualKeys.rotating") : i18n.t("workspace.virtualKeys.rotateSelected")}
 						</AlertDialogAction>
 					</AlertDialogFooter>
 				</AlertDialogContent>
@@ -788,12 +803,12 @@ export default function VirtualKeysTable({
 			<div className="flex min-h-0 w-full grow flex-col overflow-hidden">
 				{/* Toolbar: Search + Filters + Actions */}
 				<div className="mb-4 flex shrink-0 flex-wrap items-center gap-3">
-					<PageTitle title="Virtual Keys">Manage virtual keys, their permissions, budgets, and rate limits.</PageTitle>
+					<PageTitle title={i18n.t("sidebar.sub.virtualKeys")}>{i18n.t("workspace.virtualKeys.tableDescription")}</PageTitle>
 					<div className="relative w-full max-w-sm min-w-0 flex-1 basis-full sm:min-w-[180px] sm:basis-auto">
 						<Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
 						<Input
-							aria-label="Search virtual keys by name"
-							placeholder="Search by name..."
+							aria-label={i18n.t("workspace.virtualKeys.searchAriaLabel")}
+							placeholder={i18n.t("workspace.mcp.searchPlaceholder")}
 							value={search}
 							onChange={(e) => onSearchChange(e.target.value)}
 							className="pl-9"
@@ -806,7 +821,7 @@ export default function VirtualKeysTable({
 						<CustomerSelector
 							value={customerFilter}
 							onChange={onCustomerFilterChange}
-							placeholder="All Customers"
+							placeholder={i18n.t("workspace.virtualKeys.allCustomers")}
 							triggerClassName="h-9"
 							className="w-full min-w-0"
 						/>
@@ -817,12 +832,14 @@ export default function VirtualKeysTable({
 							data-testid="vk-customer-filter-clear-btn"
 						/>
 					</div>
-					{customerFilter && teamFilter && <span className="text-muted-foreground text-xs font-medium">or</span>}
+					{customerFilter && teamFilter && (
+						<span className="text-muted-foreground text-xs font-medium">{i18n.t("workspace.virtualKeys.or")}</span>
+					)}
 					<div className="flex w-full min-w-0 items-center gap-1 sm:w-auto sm:max-w-[250px] sm:flex-1" data-testid="vk-team-filter">
 						<TeamSelector
 							value={teamFilter}
 							onChange={onTeamFilterChange}
-							placeholder="All Teams"
+							placeholder={i18n.t("workspace.virtualKeys.allTeams")}
 							triggerClassName="h-9"
 							className="w-full min-w-0"
 						/>
@@ -834,14 +851,14 @@ export default function VirtualKeysTable({
 						/>
 					</div>
 					{UserPicker && (customerFilter || teamFilter) && userFilter && (
-						<span className="text-muted-foreground text-xs font-medium">or</span>
+						<span className="text-muted-foreground text-xs font-medium">{i18n.t("workspace.virtualKeys.or")}</span>
 					)}
 					{UserPicker && (
 						<div className="flex w-full min-w-0 items-center gap-1 sm:w-auto sm:max-w-[250px] sm:flex-1" data-testid="vk-user-filter">
 							<UserPicker
 								value={userFilter}
 								onChange={onUserFilterChange}
-								placeholder="All Users"
+								placeholder={i18n.t("workspace.virtualKeys.allUsers")}
 								triggerClassName="h-9"
 								className="w-full min-w-0"
 							/>
@@ -863,16 +880,18 @@ export default function VirtualKeysTable({
 								data-testid="vk-bulk-rotate-btn"
 							>
 								<RotateCcw className="h-4 w-4" />
-								Rotate selected ({selectedCount})
+								{i18n.t("workspace.virtualKeys.rotateSelectedCount", {
+									count: selectedCount,
+								})}
 							</Button>
 						)}
 						<Button variant="outline" onClick={openExportDialog} disabled={virtualKeys.length === 0} data-testid="vk-export-btn">
 							<Download className="h-4 w-4" />
-							Export CSV
+							{i18n.t("workspace.virtualKeys.exportCSV")}
 						</Button>
 						<Button onClick={handleAddVirtualKey} disabled={!hasCreateAccess} data-testid="create-vk-btn">
 							<Plus className="h-4 w-4" />
-							Add Virtual Key
+							{i18n.t("workspace.virtualKeys.addVirtualKey")}
 						</Button>
 					</div>
 				</div>
@@ -885,21 +904,21 @@ export default function VirtualKeysTable({
 									<Checkbox
 										checked={allVisibleSelected || (someVisibleSelected ? "indeterminate" : false)}
 										onCheckedChange={(checked) => toggleSelectAllVisible(checked === true)}
-										aria-label="Select all virtual keys on this page"
+										aria-label={i18n.t("workspace.virtualKeys.selectAllPageAria")}
 										data-testid="vk-select-all-checkbox"
 									/>
 								</TableHead>
 								<TableHead className="w-[250px]">
-									<SortableHeader column="name" label="Name" />
+									<SortableHeader column="name" label={i18n.t("workspace.virtualKeys.columnName")} />
 								</TableHead>
-								<TableHead className="w-[160px]">Assigned To</TableHead>
-								<TableHead className="w-[440px]">Key</TableHead>
+								<TableHead className="w-[160px]">{i18n.t("workspace.virtualKeys.assignedTo")}</TableHead>
+								<TableHead className="w-[440px]">{i18n.t("workspace.virtualKeys.columnKey")}</TableHead>
 								<TableHead className="w-[200px]">
-									<SortableHeader column="budget_spent" label="Budget" />
+									<SortableHeader column="budget_spent" label={i18n.t("workspace.virtualKeys.columnBudget")} />
 								</TableHead>
-								<TableHead className="w-[200px]">Rate Limits</TableHead>
+								<TableHead className="w-[200px]">{i18n.t("workspace.virtualKeys.rateLimits")}</TableHead>
 								<TableHead className="w-[120px]">
-									<SortableHeader column="status" label="Status" />
+									<SortableHeader column="status" label={i18n.t("workspace.virtualKeys.columnStatus")} />
 								</TableHead>
 								<TableHead className={`bg-muted sticky right-0 z-30 w-[56px] text-right ${PIN_SHADOW_RIGHT}`}></TableHead>
 							</TableRow>
@@ -908,7 +927,7 @@ export default function VirtualKeysTable({
 							{virtualKeys.length === 0 ? (
 								<TableRow>
 									<TableCell colSpan={8} className="h-24 text-center">
-										<span className="text-muted-foreground text-sm">No matching virtual keys found.</span>
+										<span className="text-muted-foreground text-sm">{i18n.t("workspace.virtualKeys.noMatchingVirtualKeys")}</span>
 									</TableCell>
 								</TableRow>
 							) : (
@@ -972,7 +991,7 @@ export default function VirtualKeysTable({
 											<TableCell onClick={(e) => e.stopPropagation()}>
 												{showExpiredBadge ? (
 													<Badge variant="destructive" className="text-xs">
-														Expired
+														{i18n.t("supplemental.expired")}
 													</Badge>
 												) : (
 													<VKActiveSwitch vk={vk} hasUpdateAccess={hasUpdateAccess} onToggle={handleToggleActive} />
@@ -1003,8 +1022,8 @@ export default function VirtualKeysTable({
 				{totalCount > 0 && (
 					<div className="flex shrink-0 items-center justify-between text-xs" data-testid="pagination">
 						<div className="text-muted-foreground flex items-center gap-2">
-							{(offset + 1).toLocaleString()}-{Math.min(offset + limit, totalCount).toLocaleString()} of {totalCount.toLocaleString()}{" "}
-							entries
+							{(offset + 1).toLocaleString()}-{Math.min(offset + limit, totalCount).toLocaleString()} {i18n.t("supplemental.of")}{" "}
+							{totalCount.toLocaleString()} {i18n.t("workspace.virtualKeys.entries")}
 						</div>
 
 						<div className="flex items-center gap-2">
@@ -1014,15 +1033,17 @@ export default function VirtualKeysTable({
 								onClick={() => onOffsetChange(Math.max(0, offset - limit))}
 								disabled={offset === 0}
 								data-testid="vk-pagination-prev-btn"
-								aria-label="Previous page"
+								aria-label={i18n.t("supplemental.previousPage")}
 							>
 								<ChevronLeft className="size-3" />
 							</Button>
 
 							<div className="flex items-center gap-1">
-								<span>Page</span>
+								<span>{i18n.t("supplemental.page")}</span>
 								<span>{Math.floor(offset / limit) + 1}</span>
-								<span>of {Math.ceil(totalCount / limit)}</span>
+								<span>
+									{i18n.t("supplemental.of")} {Math.ceil(totalCount / limit)}
+								</span>
 							</div>
 
 							<Button
@@ -1031,7 +1052,7 @@ export default function VirtualKeysTable({
 								onClick={() => onOffsetChange(offset + limit)}
 								disabled={offset + limit >= totalCount}
 								data-testid="vk-pagination-next-btn"
-								aria-label="Next page"
+								aria-label={i18n.t("supplemental.nextPage")}
 							>
 								<ChevronRight className="size-3" />
 							</Button>

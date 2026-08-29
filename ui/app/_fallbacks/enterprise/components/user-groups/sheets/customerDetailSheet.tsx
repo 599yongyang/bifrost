@@ -5,6 +5,7 @@ import { fiscalQuarterNote, resetDurationLabels } from "@/lib/constants/governan
 import { Customer } from "@/lib/types/governance";
 import { cn } from "@/lib/utils";
 import { formatCompactNumber } from "@/lib/utils/numbers";
+import i18n from "@/lib/i18n";
 
 interface Props {
 	customer: Customer | null;
@@ -115,44 +116,46 @@ export function CustomerDetailSheet({ customer, open, onOpenChange }: Props) {
 						<SheetTitle className="truncate text-lg">{customer?.name || "Customer Details"}</SheetTitle>
 						{customer?.id && <CopyableId id={customer.id} entityLabel="Customer" />}
 					</div>
-					<SheetDescription>Usage details for this customer.</SheetDescription>
+					<SheetDescription>{i18n.t("workspace.enterpriseFallbacks.customerUsageDescription")}</SheetDescription>
 				</SheetHeader>
 
 				{customer && (
 					<div className="space-y-6 px-4 py-4 md:px-8">
 						{/* ── Info ─────────────────────────────────────────── */}
-						<DetailCard title="Info">
+						<DetailCard title={i18n.t("workspace.enterpriseFallbacks.info")}>
 							<div className="grid grid-cols-2 gap-x-8 gap-y-4">
 								<div>
-									<Label className="text-muted-foreground text-xs">Name</Label>
+									<Label className="text-muted-foreground text-xs">{i18n.t("workspace.mcp.name")}</Label>
 									<p className="mt-0.5 text-sm">{customer.name ?? "—"}</p>
 								</div>
 							</div>
 						</DetailCard>
 
 						{/* ── Budgets ──────────────────────────────────────── */}
-						<DetailCard title="Budgets">
+						<DetailCard title={i18n.t("workspace.governance.teams.dialog.budgets")}>
 							{budgets.length > 0 ? (
 								<div className="space-y-3">
 									{[...budgets]
 										.sort((a, b) => (b.max_limit || 0) - (a.max_limit || 0))
 										.map((b) => (
 											<BudgetLineBar
-											key={b.id}
-											current={b.current_usage}
-											max={b.max_limit}
-											resetDuration={b.reset_duration}
-											resetConfig={b.reset_config}
-										/>
+												key={b.id}
+												current={b.current_usage}
+												max={b.max_limit}
+												resetDuration={b.reset_duration}
+												resetConfig={b.reset_config}
+											/>
 										))}
 								</div>
 							) : (
-								<p className="text-muted-foreground py-1 text-center text-sm">No budgets configured</p>
+								<p className="text-muted-foreground py-1 text-center text-sm">
+									{i18n.t("workspace.enterpriseFallbacks.noBudgetsConfigured")}
+								</p>
 							)}
 						</DetailCard>
 
 						{/* ── Rate Limits ──────────────────────────────────── */}
-						<DetailCard title="Rate Limits">
+						<DetailCard title={i18n.t("workspace.virtualKeys.rateLimits")}>
 							{rateLimit && hasRateLimit ? (
 								<div className="space-y-3">
 									{rateLimit.token_max_limit != null && (
@@ -173,7 +176,7 @@ export function CustomerDetailSheet({ customer, open, onOpenChange }: Props) {
 									)}
 								</div>
 							) : (
-								<p className="text-muted-foreground py-1 text-center text-sm">No rate limits configured</p>
+								<p className="text-muted-foreground py-1 text-center text-sm">{i18n.t("workspace.virtualKeys.noRateLimitsConfigured")}</p>
 							)}
 						</DetailCard>
 					</div>

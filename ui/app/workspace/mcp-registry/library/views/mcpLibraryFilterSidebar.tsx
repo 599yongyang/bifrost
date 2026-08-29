@@ -10,6 +10,7 @@ import { useGetMCPLibraryFilterDataQuery } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { ChevronDown, PanelLeftClose, RotateCcw, Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import i18n from "@/lib/i18n";
 
 const COLLAPSE_STORAGE_KEY = "mcp-library-filter-sidebar-collapsed";
 
@@ -94,7 +95,7 @@ export function MCPLibraryFilterSidebar({ filters, onFiltersChange }: SidebarPro
 							data-testid="mcpLibraryFilterSidebar-reset-button"
 						>
 							<RotateCcw className="size-3" />
-							Reset
+							{i18n.t("workspace.plugins.reset")}
 						</Button>
 					)}
 					<Button
@@ -117,7 +118,7 @@ export function MCPLibraryFilterSidebar({ filters, onFiltersChange }: SidebarPro
 						<p className="text-muted-foreground text-sm">Failed to load filters.</p>
 						<Button variant="outline" size="sm" onClick={() => refetch()} data-testid="mcpLibraryFilterSidebar-retry-button">
 							<RotateCcw className="size-3" />
-							Retry
+							{i18n.t("workspace.oauth.retry")}
 						</Button>
 					</div>
 				) : (
@@ -132,7 +133,7 @@ export function MCPLibraryFilterSidebar({ filters, onFiltersChange }: SidebarPro
 							testIdPrefix="mcp-library-filter-category"
 						/>
 						<CheckboxFilterSection
-							title="Connection Type"
+							title={i18n.t("workspace.mcp.connectionType")}
 							items={filterData?.connection_types || []}
 							selected={filters.connection_types}
 							loading={isLoading}
@@ -140,7 +141,7 @@ export function MCPLibraryFilterSidebar({ filters, onFiltersChange }: SidebarPro
 							testIdPrefix="mcp-library-filter-connection-type"
 						/>
 						<CheckboxFilterSection
-							title="Auth Type"
+							title={i18n.t("supplemental.authType")}
 							items={filterData?.auth_types || []}
 							selected={filters.auth_types}
 							loading={isLoading}
@@ -282,7 +283,7 @@ function CheckboxFilterSection({
 					<Input
 						value={query}
 						onChange={(e) => setQuery(e.target.value)}
-						placeholder="Search..."
+						placeholder={i18n.t("common.search")}
 						className="h-8 border-0 pl-8 text-xs"
 						data-testid={testIdPrefix ? `${testIdPrefix}-search` : undefined}
 					/>

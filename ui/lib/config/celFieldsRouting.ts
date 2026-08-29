@@ -5,6 +5,7 @@
 
 import { getProviderLabel } from "@/lib/constants/logs";
 import { COMPLEXITY_TIER_VALUES } from "@/lib/types/complexityRouter";
+import i18n from "@/lib/i18n";
 
 export interface CELFieldDefinition {
 	name: string;
@@ -30,8 +31,8 @@ export interface CELFieldDefinition {
 export const baseRoutingFields: CELFieldDefinition[] = [
 	{
 		name: "model",
-		label: "Model",
-		placeholder: "e.g., gpt-4, claude-3-sonnet",
+		label: i18n.t("workspace.routingRules.copy.celFieldsRouting_model"),
+		placeholder: i18n.t("workspace.routingRules.copy.celFieldsRouting_e_g_gpt_4_claude_3_sonnet"),
 		inputType: "text",
 		valueEditorType: (operator: string) =>
 			operator === "=" || operator === "!=" ? "select" : operator === "in" || operator === "notIn" ? "select" : "text",
@@ -40,8 +41,8 @@ export const baseRoutingFields: CELFieldDefinition[] = [
 	},
 	{
 		name: "provider",
-		label: "Provider",
-		placeholder: "Select provider",
+		label: i18n.t("workspace.routingRules.copy.celFieldsRouting_provider"),
+		placeholder: i18n.t("workspace.routingRules.copy.celFieldsRouting_select_provider"),
 		inputType: "select",
 		valueEditorType: (operator: string) =>
 			operator === "matches" ? "text" : operator === "in" || operator === "notIn" ? "select" : "select",
@@ -50,41 +51,40 @@ export const baseRoutingFields: CELFieldDefinition[] = [
 	},
 	{
 		name: "request_type",
-		label: "Request Type",
-		placeholder: "Select request type",
+		label: i18n.t("workspace.routingRules.copy.celFieldsRouting_request_type"),
+		placeholder: i18n.t("workspace.routingRules.copy.celFieldsRouting_select_request_type"),
 		inputType: "select",
 		valueEditorType: (operator: string) =>
 			operator === "matches" ? "text" : operator === "in" || operator === "notIn" ? "select" : "select",
 		operators: ["=", "!=", "in", "notIn", "matches"],
 		defaultOperator: "=",
 		values: [
-			{ name: "text_completion", label: "Text Completion" },
-			{ name: "text_completion_stream", label: "Text Completion (Streaming)" },
-			{ name: "chat_completion", label: "Chat Completion" },
-			{ name: "chat_completion_stream", label: "Chat Completion (Streaming)" },
+			{ name: "text_completion", label: i18n.t("workspace.routingRules.copy.celFieldsRouting_text_completion") },
+			{ name: "text_completion_stream", label: i18n.t("workspace.routingRules.copy.celFieldsRouting_text_completion_streaming") },
+			{ name: "chat_completion", label: i18n.t("workspace.routingRules.copy.celFieldsRouting_chat_completion") },
+			{ name: "chat_completion_stream", label: i18n.t("workspace.routingRules.copy.celFieldsRouting_chat_completion_streaming") },
 			{ name: "responses", label: "Responses" },
-			{ name: "responses_stream", label: "Responses (Streaming)" },
-			{ name: "embedding", label: "Embeddings" },
-			{ name: "image_generation", label: "Image Generation" },
-			{ name: "image_generation_stream", label: "Image Generation (Streaming)" },
-			{ name: "image_edit", label: "Image Edit" },
-			{ name: "image_edit_stream", label: "Image Edit (Streaming)" },
-			{ name: "image_variation", label: "Image Variation" },
-			{ name: "speech", label: "Speech" },
-			{ name: "speech_stream", label: "Speech (Streaming)" },
-			{ name: "transcription", label: "Transcription" },
-			{ name: "transcription_stream", label: "Transcription (Streaming)" },
-			{ name: "count_tokens", label: "Count Tokens" },
-			{ name: "rerank", label: "Rerank" },
-			{ name: "video_generation", label: "Video Generation" },
+			{ name: "responses_stream", label: i18n.t("workspace.routingRules.copy.celFieldsRouting_responses_streaming") },
+			{ name: "embedding", label: i18n.t("workspace.routingRules.copy.celFieldsRouting_embeddings") },
+			{ name: "image_generation", label: i18n.t("workspace.routingRules.copy.celFieldsRouting_image_generation") },
+			{ name: "image_generation_stream", label: i18n.t("workspace.routingRules.copy.celFieldsRouting_image_generation_streaming") },
+			{ name: "image_edit", label: i18n.t("workspace.routingRules.copy.celFieldsRouting_image_edit") },
+			{ name: "image_edit_stream", label: i18n.t("workspace.routingRules.copy.celFieldsRouting_image_edit_streaming") },
+			{ name: "image_variation", label: i18n.t("workspace.routingRules.copy.celFieldsRouting_image_variation") },
+			{ name: "speech", label: i18n.t("workspace.routingRules.copy.celFieldsRouting_speech") },
+			{ name: "speech_stream", label: i18n.t("workspace.routingRules.copy.celFieldsRouting_speech_streaming") },
+			{ name: "transcription", label: i18n.t("workspace.routingRules.copy.celFieldsRouting_transcription") },
+			{ name: "transcription_stream", label: i18n.t("workspace.routingRules.copy.celFieldsRouting_transcription_streaming") },
+			{ name: "count_tokens", label: i18n.t("workspace.routingRules.copy.celFieldsRouting_count_tokens") },
+			{ name: "rerank", label: i18n.t("workspace.routingRules.copy.celFieldsRouting_rerank") },
+			{ name: "video_generation", label: i18n.t("workspace.routingRules.copy.celFieldsRouting_video_generation") },
 		],
-		description:
-			"Filter rules by the type of API request (chat, text, embeddings, images, audio, etc.). Streaming and non-streaming requests are distinct types: select both to cover all requests of a kind.",
+		description: i18n.t("workspace.routingRules.copy.celFieldsRouting_filter_rules_by_the_type_of_api_request_chat_text_embedd"),
 	},
 	{
 		name: "headers",
-		label: "Header",
-		placeholder: "e.g., authorization, x-custom-header (use lowercase)",
+		label: i18n.t("workspace.routingRules.copy.celFieldsRouting_header"),
+		placeholder: i18n.t("workspace.routingRules.copy.celFieldsRouting_e_g_authorization_x_custom_header_use_lowercase"),
 		inputType: "keyValue",
 		valueEditorType: "keyValue",
 		operators: ["=", "!=", "contains", "beginsWith", "endsWith", "matches", "null", "notNull"],
@@ -92,38 +92,38 @@ export const baseRoutingFields: CELFieldDefinition[] = [
 	},
 	{
 		name: "tokens_used",
-		label: "Tokens Used (%)",
+		label: i18n.t("workspace.routingRules.copy.celFieldsRouting_tokens_used"),
 		placeholder: "e.g., 80",
 		inputType: "text",
 		valueEditorType: "number",
 		operators: ["=", "!=", ">", "<", ">=", "<="],
 		defaultOperator: ">=",
-		description: "Check token usage as percentage. Checked against max of model and provider configs.",
+		description: i18n.t("workspace.routingRules.copy.celFieldsRouting_check_token_usage_as_percentage_checked_against_max_of_m"),
 	},
 	{
 		name: "request",
-		label: "Request (%)",
+		label: i18n.t("workspace.routingRules.copy.celFieldsRouting_request"),
 		placeholder: "e.g., 80",
 		inputType: "text",
 		valueEditorType: "number",
 		operators: ["=", "!=", ">", "<", ">=", "<="],
 		defaultOperator: ">=",
-		description: "Check request usage as percentage. Checked against max of model and provider configs.",
+		description: i18n.t("workspace.routingRules.copy.celFieldsRouting_check_request_usage_as_percentage_checked_against_max_of"),
 	},
 	{
 		name: "budget_used",
-		label: "Budget Used (%)",
+		label: i18n.t("workspace.routingRules.copy.celFieldsRouting_budget_used"),
 		placeholder: "e.g., 50",
 		inputType: "text",
 		valueEditorType: "number",
 		operators: ["=", "!=", ">", "<", ">=", "<="],
 		defaultOperator: ">=",
-		description: "Check budget usage as percentage. Checked against max of model and provider configs.",
+		description: i18n.t("workspace.routingRules.copy.celFieldsRouting_check_budget_usage_as_percentage_checked_against_max_of_"),
 	},
 	{
 		name: "complexity_tier",
-		label: "Complexity Tier",
-		placeholder: "Select complexity tier",
+		label: i18n.t("workspace.routingRules.copy.celFieldsRouting_complexity_tier"),
+		placeholder: i18n.t("workspace.routingRules.copy.celFieldsRouting_select_complexity_tier"),
 		inputType: "select",
 		valueEditorType: "select",
 		operators: ["=", "!=", "in", "notIn"],
@@ -132,8 +132,8 @@ export const baseRoutingFields: CELFieldDefinition[] = [
 	},
 	{
 		name: "params",
-		label: "Query Parameter",
-		placeholder: "e.g., api_key, user_id",
+		label: i18n.t("workspace.routingRules.copy.celFieldsRouting_query_parameter"),
+		placeholder: i18n.t("workspace.routingRules.copy.celFieldsRouting_e_g_api_key_user_id"),
 		inputType: "keyValue",
 		valueEditorType: "keyValue",
 		operators: ["=", "!=", "contains", "beginsWith", "endsWith", "matches", "null", "notNull"],
@@ -154,7 +154,7 @@ export function getRoutingFields(providers: string[] = [], models: string[] = []
 					name: provider,
 					label: getProviderLabel(provider),
 				}))
-			: [{ name: "_no_providers", label: "No providers configured", disabled: true }];
+			: [{ name: "_no_providers", label: i18n.t("workspace.routingRules.copy.celFieldsRouting_no_providers_configured"), disabled: true }];
 
 	// Create model field values
 	const modelValues =
@@ -167,14 +167,14 @@ export function getRoutingFields(providers: string[] = [], models: string[] = []
 
 	// Create metric options for scope input: providers + models
 	const scopeOptions = [
-		{ name: "", label: "(provider-level)" }, // Empty scope for provider-level
+		{ name: "", label: i18n.t("workspace.routingRules.copy.celFieldsRouting_provider_level") }, // Empty scope for provider-level
 		...providers.map((provider) => ({
 			name: provider,
-			label: `${provider} (provider)`,
+			label: i18n.t("workspace.routingRules.copy.celFieldsRouting_provider_2", { value0: provider }),
 		})),
 		...models.map((model) => ({
 			name: model,
-			label: `${model} (model)`,
+			label: i18n.t("workspace.routingRules.copy.celFieldsRouting_model_2", { value0: model }),
 		})),
 	];
 

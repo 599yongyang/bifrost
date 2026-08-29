@@ -13,6 +13,7 @@ import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
+import i18n from "@/lib/i18n";
 
 interface ModelSettingsFormData {
 	pricing_datasheet_url: string;
@@ -114,7 +115,7 @@ export default function ModelSettingsView() {
 					routing_chain_max_depth: data.routing_chain_max_depth,
 				},
 			}).unwrap();
-			toast.success("Model settings updated successfully.");
+			toast.success(i18n.t("workspace.customPricing.modelSettings.updatedSuccess"));
 			reset(data);
 		} catch (error) {
 			toast.error(getErrorMessage(error));
@@ -124,7 +125,7 @@ export default function ModelSettingsView() {
 	const handleForceSync = async () => {
 		try {
 			await forcePricingSync().unwrap();
-			toast.success("Pricing synced successfully.");
+			toast.success(i18n.t("workspace.config.modelSettings.pricingSynced"));
 		} catch (error) {
 			toast.error(getErrorMessage(error));
 		}
@@ -133,19 +134,19 @@ export default function ModelSettingsView() {
 	return (
 		<div className="mx-auto w-full max-w-7xl space-y-4" data-testid="model-settings-view">
 			<form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-				<PageTitle title="Model Settings">Configure pricing and routing behaviour.</PageTitle>
+				<PageTitle title={i18n.t("sidebar.sub.modelSettings")}>{i18n.t("workspace.customPricing.modelSettings.description")}</PageTitle>
 
 				<div className="space-y-4">
 					{/* Pricing Datasheet URL */}
 					<div className="space-y-2 rounded-sm border p-4">
 						<div className="space-y-0.5">
-							<Label htmlFor="pricing-datasheet-url">Pricing Datasheet URL</Label>
-							<p className="text-muted-foreground text-sm">URL to a custom pricing datasheet. Leave empty to use default pricing.</p>
+							<Label htmlFor="pricing-datasheet-url">{i18n.t("workspace.customPricing.modelSettings.pricingDatasheetUrl")}</Label>
+							<p className="text-muted-foreground text-sm">{i18n.t("workspace.customPricing.modelSettings.pricingDatasheetUrlDesc")}</p>
 						</div>
 						<Input
 							id="pricing-datasheet-url"
 							type="text"
-							placeholder="https://example.com/pricing.json"
+							placeholder={i18n.t("workspace.customPricing.modelSettings.pricingDatasheetUrlPlaceholder")}
 							data-testid="pricing-datasheet-url-input"
 							{...register("pricing_datasheet_url", {
 								validate: {
@@ -168,8 +169,8 @@ export default function ModelSettingsView() {
 					{/* Model Parameters URL */}
 					<div className="space-y-2 rounded-sm border p-4">
 						<div className="space-y-0.5">
-							<Label htmlFor="model-parameters-url">Model Parameters URL</Label>
-							<p className="text-muted-foreground text-sm">URL to a custom model parameters datasheet. Leave empty to use default.</p>
+							<Label htmlFor="model-parameters-url">{i18n.t("workspace.config.modelSettings.parametersUrl")}</Label>
+							<p className="text-muted-foreground text-sm">{i18n.t("workspace.config.modelSettings.parametersUrlDescription")}</p>
 						</div>
 						<Input
 							id="model-parameters-url"
@@ -197,8 +198,8 @@ export default function ModelSettingsView() {
 					{/* Pricing Sync Interval */}
 					<div className="space-y-2 rounded-sm border p-4">
 						<div className="space-y-0.5">
-							<Label htmlFor="pricing-sync-interval">Pricing Sync Interval (hours)</Label>
-							<p className="text-muted-foreground text-sm">How often to sync pricing data from the datasheet URL.</p>
+							<Label htmlFor="pricing-sync-interval">{i18n.t("workspace.customPricing.modelSettings.pricingSyncInterval")}</Label>
+							<p className="text-muted-foreground text-sm">{i18n.t("workspace.customPricing.modelSettings.pricingSyncIntervalDesc")}</p>
 						</div>
 						<Input
 							id="pricing-sync-interval"
@@ -218,11 +219,8 @@ export default function ModelSettingsView() {
 					{/* Model Discovery Interval */}
 					<div className="space-y-2 rounded-sm border p-4">
 						<div className="space-y-0.5">
-							<Label htmlFor="live-models-sync-interval">Model Discovery Interval (minutes)</Label>
-							<p className="text-muted-foreground text-sm">
-								How often each provider&apos;s model list is re-fetched in the background, so models a provider starts serving become
-								available without a restart. Set to 0 to turn it off and refresh only from the Providers page.
-							</p>
+							<Label htmlFor="live-models-sync-interval">{i18n.t("workspace.config.modelSettings.discoveryInterval")}</Label>
+							<p className="text-muted-foreground text-sm">{i18n.t("workspace.config.modelSettings.discoveryIntervalDescription")}</p>
 						</div>
 						<Input
 							id="live-models-sync-interval"
@@ -246,19 +244,15 @@ export default function ModelSettingsView() {
 							<p className="text-destructive text-sm">{errors.live_models_sync_interval_minutes.message}</p>
 						)}
 						{formValues.live_models_sync_interval_minutes === 0 && !errors.live_models_sync_interval_minutes && (
-							<p className="text-muted-foreground text-sm">
-								Background discovery is off. Model lists update only at startup, on key changes, and when refreshed manually.
-							</p>
+							<p className="text-muted-foreground text-sm">{i18n.t("workspace.config.modelSettings.discoveryDisabled")}</p>
 						)}
 					</div>
 
 					{/* Routing Chain Max Depth */}
 					<div className="flex items-center justify-between rounded-sm border p-4">
 						<div className="space-y-0.5">
-							<Label htmlFor="routing-chain-max-depth">Routing Chain Max Depth</Label>
-							<p className="text-muted-foreground text-sm">
-								Maximum number of chained routing rule evaluations per request. Prevents infinite loops from circular rule definitions.
-							</p>
+							<Label htmlFor="routing-chain-max-depth">{i18n.t("workspace.customPricing.modelSettings.routingChainMaxDepth")}</Label>
+							<p className="text-muted-foreground text-sm">{i18n.t("workspace.customPricing.modelSettings.routingChainMaxDepthDesc")}</p>
 						</div>
 						<Input
 							id="routing-chain-max-depth"
@@ -284,10 +278,10 @@ export default function ModelSettingsView() {
 						disabled={isForceSyncing || isLoading || hasChanges || !hasSettingsUpdateAccess}
 						data-testid="pricing-force-sync-btn"
 					>
-						{isForceSyncing ? "Syncing..." : "Force Sync Now"}
+						{isForceSyncing ? i18n.t("workspace.config.modelSettings.syncing") : i18n.t("workspace.config.modelSettings.forceSync")}
 					</Button>
 					<Button type="submit" disabled={!hasChanges || isLoading || !hasSettingsUpdateAccess} data-testid="model-settings-save-btn">
-						{isLoading ? "Saving..." : "Save Changes"}
+						{isLoading ? i18n.t("common.saving") : i18n.t("workspace.config.saveChanges")}
 					</Button>
 				</div>
 			</form>

@@ -32,7 +32,11 @@ import {
 	RoutingTargetFormData,
 } from "@/lib/types/routingRules";
 import { validateRateLimitAndBudgetRules, validateRoutingRules } from "@/lib/utils/celConverterRouting";
-import { mergeContentSafetyErrorFallbacks, toContentSafetyErrorFallbackFormData, validateErrorFallbackForms } from "@/lib/utils/errorFallbackRules";
+import {
+	mergeContentSafetyErrorFallbacks,
+	toContentSafetyErrorFallbackFormData,
+	validateErrorFallbackForms,
+} from "@/lib/utils/errorFallbackRules";
 import { isValidRuleGroupType, normalizeRoutingRuleGroupQuery } from "@/lib/utils/routingRuleGroupQuery";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { Plus, Trash2, X } from "lucide-react";
@@ -40,6 +44,7 @@ import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { RuleGroupType } from "react-querybuilder";
 import { toast } from "sonner";
+import { routingRulesCopy as copy } from "../routingRulesCopy";
 // Side-effect import: registers the enterprise user picker (no-op in OSS builds).
 import "@enterprise/lib/registrations/userPicker";
 
@@ -80,7 +85,7 @@ const CELRuleBuilderLazy = lazy(() =>
 	})),
 );
 const CELRuleBuilder = (props: React.ComponentProps<typeof CELRuleBuilderLazy>) => (
-	<Suspense fallback={<div className="text-sm text-gray-500">Loading CEL builder...</div>}>
+	<Suspense fallback={<div className="text-sm text-gray-500">{copy.loadingCelBuilder}</div>}>
 		<CELRuleBuilderLazy {...props} />
 	</Suspense>
 );
@@ -230,25 +235,23 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 
 		// Validate scope_id is required when scope is not global
 		if (data.scope !== "global" && !data.scope_id?.trim()) {
-			toast.error(
-				`${data.scope === "team" ? "Team" : data.scope === "customer" ? "Customer" : data.scope === "user" ? "User" : "Virtual Key"} is required`,
-			);
+			toast.error(copy.scopeRequired(copy.scopeLabel(data.scope)));
 			return;
 		}
 
 		// Validate targets
 		if (targets.length === 0) {
-			toast.error("At least one routing target is required");
+			toast.error(copy.atLeastOneTarget);
 			return;
 		}
 		for (const t of targets) {
 			if (t.weight <= 0) {
-				toast.error("Each target weight must be greater than 0");
+				toast.error(copy.positiveTargetWeight);
 				return;
 			}
 		}
 		if (Math.abs(totalWeight - 1) > 0.001) {
-			toast.error(`Target weights must sum to 1, current total: ${totalWeight.toFixed(4)}`);
+			toast.error(copy.weightsMustSum(totalWeight.toFixed(4)));
 			return;
 		}
 
@@ -258,14 +261,14 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 			// Validate regex patterns in routing rules
 			const regexErrors = validateRoutingRules(query);
 			if (regexErrors.length > 0) {
-				toast.error(`Invalid regex pattern:\n${regexErrors.join("\n")}`);
+				toast.error(copy.invalidRegex(regexErrors.join("\n")));
 				return;
 			}
 
 			// Validate rate limit and budget rules
 			const rateLimitErrors = validateRateLimitAndBudgetRules(query);
 			if (rateLimitErrors.length > 0) {
-				toast.error(`Invalid rule configuration:\n${rateLimitErrors.join("\n")}`);
+				toast.error(copy.invalidRuleConfig(rateLimitErrors.join("\n")));
 				return;
 			}
 		}
@@ -313,7 +316,7 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 
 		submitPromise
 			.then(() => {
-				toast.success(isEditing ? "Routing rule updated successfully" : "Routing rule created successfully");
+				toast.success(isEditing ? copy.updateSuccess : copy.createSuccess);
 				reset();
 				setTargets([{ ...DEFAULT_ROUTING_TARGET }]);
 				setQuery(defaultQuery);
@@ -349,10 +352,8 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 		<Sheet open={open} onOpenChange={onOpenChange}>
 			<SheetContent className="flex w-full min-w-1/2 flex-col gap-4 overflow-x-hidden p-0 pt-4">
 				<SheetHeader className="flex flex-col items-start px-4 py-4 md:px-8" headerClassName="mb-0 sticky -top-4 bg-card z-10">
-					<SheetTitle>{isEditing ? "Edit Routing Rule" : "Create New Routing Rule"}</SheetTitle>
-					<SheetDescription>
-						{isEditing ? "Update the routing rule configuration" : "Create a new CEL-based routing rule for intelligent request routing"}
-					</SheetDescription>
+					<SheetTitle>{isEditing ? copy.editRule : copy.createRule}</SheetTitle>
+					<SheetDescription>{isEditing ? copy.updateRuleDescription : copy.createRuleDescription}</SheetDescription>
 				</SheetHeader>
 
 				<form onSubmit={handleSubmit(onSubmit)} className="flex grow flex-col">
@@ -360,27 +361,27 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 						{/* Rule Name */}
 						<div className="space-y-3">
 							<Label htmlFor="name">
-								Rule Name <span className="text-red-500">*</span>
+								{copy.ruleName} <span className="text-red-500">*</span>
 							</Label>
 							<Input
 								id="name"
-								placeholder="e.g., Route GPT-4 to Azure"
-								{...register("name", { required: "Rule name is required", maxLength: 255 })}
+								placeholder={copy.ruleNamePlaceholder}
+								{...register("name", { required: copy.ruleNameRequired, maxLength: 255 })}
 							/>
 							{errors.name && <p className="text-destructive text-sm">{errors.name.message}</p>}
 						</div>
 
 						{/* Description */}
 						<div className="space-y-3">
-							<Label htmlFor="description">Description</Label>
-							<Textarea id="description" placeholder="Describe what this rule does..." rows={2} {...register("description")} />
+							<Label htmlFor="description">{copy.description}</Label>
+							<Textarea id="description" placeholder={copy.descriptionPlaceholder} rows={2} {...register("description")} />
 						</div>
 
 						{/* Enabled Switch */}
 						<div className="flex items-center justify-between rounded-lg border p-4">
 							<div className="space-y-0.5">
-								<Label htmlFor="enabled">Enable Rule</Label>
-								<p className="text-muted-foreground text-sm">Rule will be active and applied to matching requests</p>
+								<Label htmlFor="enabled">{copy.enableRule}</Label>
+								<p className="text-muted-foreground text-sm">{copy.enableRuleHelp}</p>
 							</div>
 							<Switch id="enabled" checked={enabled} onCheckedChange={(checked) => setValue("enabled", checked)} />
 						</div>
@@ -388,11 +389,8 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 						{/* Chain Rule Switch */}
 						<div className="flex items-center justify-between rounded-lg border p-4">
 							<div className="space-y-0.5">
-								<Label htmlFor="chain_rule">Chain Rule</Label>
-								<p className="text-muted-foreground text-sm">
-									After this rule matches, re-evaluate routing rules using the resolved provider/model as the new context. Useful for
-									composing rules, e.g. normalize a model alias first, then route based on the canonical name.
-								</p>
+								<Label htmlFor="chain_rule">{copy.chainRule}</Label>
+								<p className="text-muted-foreground text-sm">{copy.chainRuleEditorHelp}</p>
 							</div>
 							<Switch
 								id="chain_rule"
@@ -405,7 +403,7 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 						{/* Scope and Priority - Side by Side */}
 						<div className="grid grid-cols-1 gap-4 md:grid-cols-2">
 							<div className="space-y-3">
-								<Label htmlFor="scope">Scope</Label>
+								<Label htmlFor="scope">{copy.scope}</Label>
 								<Select
 									value={scope}
 									onValueChange={(value) => {
@@ -415,22 +413,22 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 									}}
 								>
 									<SelectTrigger className="w-full">
-										<SelectValue placeholder="Select scope..." />
+										<SelectValue placeholder={copy.selectScope} />
 									</SelectTrigger>
 									<SelectContent>
 										{ROUTING_RULE_SCOPES.map((scopeOption) => (
 											<SelectItem key={scopeOption.value} value={scopeOption.value}>
-												{scopeOption.label}
+												{copy.scopeLabel(scopeOption.value)}
 											</SelectItem>
 										))}
-										{(UserPicker || scope === "user") && <SelectItem value="user">User</SelectItem>}
+										{(UserPicker || scope === "user") && <SelectItem value="user">{copy.user}</SelectItem>}
 									</SelectContent>
 								</Select>
 							</div>
 
 							<div className="space-y-3">
 								<Label htmlFor="priority">
-									Priority <span className="text-red-500">*</span>
+									{copy.priority} <span className="text-red-500">*</span>
 								</Label>
 								<Input
 									id="priority"
@@ -438,13 +436,13 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 									min={0}
 									max={1000}
 									{...register("priority", {
-										required: "Priority is required",
-										min: { value: 0, message: "Priority must be ≥ 0" },
-										max: { value: 1000, message: "Priority must be ≤ 1000" },
+										required: copy.priorityRequired,
+										min: { value: 0, message: copy.priorityMin },
+										max: { value: 1000, message: copy.priorityMax },
 										valueAsNumber: true,
 									})}
 								/>
-								<p className="text-muted-foreground text-xs">Lower numbers = higher priority (0 is highest)</p>
+								<p className="text-muted-foreground text-xs">{copy.priorityHelp}</p>
 								{errors.priority && <p className="text-destructive text-sm">{errors.priority.message}</p>}
 							</div>
 						</div>
@@ -452,8 +450,7 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 						{scope !== "global" && (
 							<div className="space-y-2">
 								<Label htmlFor="scope_id">
-									{scope === "team" ? "Team" : scope === "customer" ? "Customer" : scope === "user" ? "User" : "Virtual Key"}{" "}
-									<span className="text-red-500">*</span>
+									{copy.scopeLabel(scope)} <span className="text-red-500">*</span>
 								</Label>
 								{/* A rule stores only its scope_id, so there is no name to seed
 								    these with — each selector resolves its own selection. */}
@@ -469,7 +466,7 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 										<Input
 											id="scope_id"
 											data-testid="routing-rule-scope-user-input"
-											placeholder="Governance user ID"
+											placeholder={copy.governanceUserId}
 											value={scopeId || ""}
 											onChange={(e) => setValue("scope_id", e.target.value)}
 										/>
@@ -484,10 +481,8 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 
 						{/* CEL Rule Builder */}
 						<div className="space-y-3">
-							<Label>Rule Builder</Label>
-							<p className="text-muted-foreground text-sm">
-								Build conditions to determine when this rule should apply. Leave empty to apply this rule to all requests.
-							</p>
+							<Label>{copy.ruleBuilder}</Label>
+							<p className="text-muted-foreground text-sm">{copy.ruleBuilderHelp}</p>
 							<CELRuleBuilder
 								key={builderKey}
 								initialQuery={query}
@@ -504,11 +499,7 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 						</div>
 
 						{/* Note about Token/Request Limits and Budget Configuration */}
-						<p className="text-muted-foreground text-xs">
-							Note: Ensure token limits, request limits, and budget are configured in{" "}
-							<strong>Model Providers → Configurations → {"{provider}"} → Governance</strong> (provider-level) or{" "}
-							<strong>Model Providers → Budgets & Limits</strong> section (model-level) before using them in routing rules.
-						</p>
+						<p className="text-muted-foreground text-xs">{copy.governancePrerequisite}</p>
 
 						<Separator />
 
@@ -516,10 +507,8 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 						<div className="space-y-3">
 							<div className="flex items-center justify-between">
 								<div>
-									<Label>Routing Targets</Label>
-									<p className="text-muted-foreground mt-0.5 text-xs">
-										Weights must sum to 1. Leave provider or model empty to use the incoming request value.
-									</p>
+									<Label>{copy.routingTargets}</Label>
+									<p className="text-muted-foreground mt-0.5 text-xs">{copy.routingTargetsHelp}</p>
 								</div>
 								<Button
 									type="button"
@@ -530,7 +519,7 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 									data-testid="routing-rule-target-add"
 								>
 									<Plus className="h-4 w-4" />
-									Add Target
+									{copy.addTarget}
 								</Button>
 							</div>
 
@@ -553,8 +542,8 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 							<div
 								className={`flex items-center justify-end gap-2 text-xs font-medium ${Math.abs(totalWeight - 1) > 0.001 ? "text-destructive" : "text-muted-foreground"}`}
 							>
-								Total weight: {totalWeight.toFixed(4)}
-								{Math.abs(totalWeight - 1) > 0.001 && <span className="text-destructive">(must equal 1)</span>}
+								{copy.totalWeight}: {totalWeight.toFixed(4)}
+								{Math.abs(totalWeight - 1) > 0.001 && <span className="text-destructive">({copy.mustEqualOne})</span>}
 							</div>
 						</div>
 
@@ -562,10 +551,7 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 						<div className="space-y-3">
 							<div className="flex items-center justify-between">
 								<div>
-									<Label>Fallbacks</Label>{" "}
-									<p className="text-muted-foreground mt-0.5 text-xs">
-										Provider is required, but model is optional. Leave model empty to use the incoming request value.
-									</p>
+									<Label>{copy.fallbacks}</Label> <p className="text-muted-foreground mt-0.5 text-xs">{copy.fallbacksHelp}</p>
 								</div>
 								<Button
 									type="button"
@@ -575,12 +561,12 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 									className="gap-2"
 								>
 									<Plus className="h-4 w-4" />
-									Add Fallback
+									{copy.addFallback}
 								</Button>
 							</div>
 							<div className="space-y-2">
 								{(fallbacks || []).length === 0 ? (
-									<p className="text-muted-foreground text-sm">No fallbacks configured</p>
+									<p className="text-muted-foreground text-sm">{copy.noFallbacks}</p>
 								) : (
 									(fallbacks || []).map((fallback, index) => {
 										// Parse provider/model from fallback string
@@ -616,7 +602,7 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 														options={providerOptions}
 														value={fbProvider || null}
 														onValueChange={(value) => handleProviderChange(value ?? "")}
-														placeholder="Select provider..."
+														placeholder={copy.selectProvider}
 														className="h-9"
 														noPortal
 													/>
@@ -626,7 +612,7 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 														provider={fbProvider || undefined}
 														value={fbModel}
 														onChange={handleModelChange}
-														placeholder="Incoming (optional)"
+														placeholder={copy.incomingOptional}
 														isSingleSelect
 														disabled={!fbProvider}
 														className="!h-9 !min-h-9 w-full"
@@ -638,7 +624,7 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 													size="sm"
 													onClick={handleRemove}
 													className="h-9 px-2"
-													aria-label={`Remove fallback ${index + 1}`}
+													aria-label={copy.removeFallback(index + 1)}
 												>
 													<Trash2 className="h-4 w-4" />
 												</Button>
@@ -647,7 +633,7 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 									})
 								)}
 							</div>
-							<p className="text-muted-foreground text-xs">Fallbacks will be used in the order they are defined</p>
+							<p className="text-muted-foreground text-xs">{copy.fallbackOrderHelp}</p>
 						</div>
 
 						<Separator />
@@ -661,10 +647,10 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 					{/* Action Buttons */}
 					<div className="bg-card sticky bottom-0 flex justify-end gap-3 border-t px-4 py-4 md:px-8">
 						<Button type="button" variant="outline" onClick={handleCancel} disabled={isLoading}>
-							Cancel
+							{copy.cancel}
 						</Button>
 						<Button type="submit" disabled={isLoading || !hasRequiredAccess}>
-							{isEditing ? "Update Rule" : "Save Rule"}
+							{isEditing ? copy.updateRule : copy.saveRule}
 						</Button>
 					</div>
 				</form>
@@ -691,11 +677,13 @@ function TargetRow({ target, index, providerOptions, allKeys, showRemove, onUpda
 	return (
 		<div className="space-y-3 rounded-lg border p-3" data-testid={`routing-target-${index}`}>
 			<div className="flex items-center justify-between">
-				<span className="text-muted-foreground text-sm font-medium">Target {index + 1}</span>
+				<span className="text-muted-foreground text-sm font-medium">
+					{copy.target} {index + 1}
+				</span>
 				<div className="flex items-center gap-2">
 					<div className="flex items-center gap-1.5">
 						<Label htmlFor={`routing-target-${index}-weight-input`} className="text-muted-foreground shrink-0 text-xs">
-							Weight
+							{copy.weight}
 						</Label>
 						<Input
 							id={`routing-target-${index}-weight-input`}
@@ -716,7 +704,7 @@ function TargetRow({ target, index, providerOptions, allKeys, showRemove, onUpda
 							size="sm"
 							onClick={() => onRemove(index)}
 							className="h-8 w-8 p-0"
-							aria-label={`Remove target ${index + 1}`}
+							aria-label={copy.removeTarget(index + 1)}
 							data-testid={`routing-target-${index}-remove-button`}
 						>
 							<Trash2 className="h-3.5 w-3.5" />
@@ -728,7 +716,7 @@ function TargetRow({ target, index, providerOptions, allKeys, showRemove, onUpda
 			<div className="grid grid-cols-1 gap-3 md:grid-cols-2">
 				<div className="space-y-1.5">
 					<Label id={`routing-target-${index}-provider-label`} className="text-xs">
-						Provider
+						{copy.provider}
 					</Label>
 					<div className="flex gap-1.5">
 						<ComboboxSelect
@@ -739,7 +727,7 @@ function TargetRow({ target, index, providerOptions, allKeys, showRemove, onUpda
 								onUpdate(index, "model", "");
 								onUpdate(index, "key_id", "");
 							}}
-							placeholder="Incoming (optional)"
+							placeholder={copy.incomingOptional}
 							className="h-9 flex-1 text-sm"
 							data-testid={`routing-target-${index}-provider-select`}
 							noPortal
@@ -755,7 +743,7 @@ function TargetRow({ target, index, providerOptions, allKeys, showRemove, onUpda
 									onUpdate(index, "key_id", "");
 								}}
 								className="h-9 w-9 p-0"
-								aria-label={`Clear provider for target ${index + 1}`}
+								aria-label={copy.clearProvider(index + 1)}
 								data-testid={`routing-target-${index}-provider-clear`}
 							>
 								<X className="h-3.5 w-3.5" />
@@ -766,7 +754,7 @@ function TargetRow({ target, index, providerOptions, allKeys, showRemove, onUpda
 
 				<div className="space-y-1.5">
 					<Label id={`routing-target-${index}-model-label`} className="text-xs">
-						Model
+						{copy.model}
 					</Label>
 					<div className="flex gap-1.5">
 						<div className="flex-1" data-testid={`routing-target-${index}-model-select`}>
@@ -774,7 +762,7 @@ function TargetRow({ target, index, providerOptions, allKeys, showRemove, onUpda
 								provider={target.provider || undefined}
 								value={target.model}
 								onChange={(value) => onUpdate(index, "model", value)}
-								placeholder="Incoming (optional)"
+								placeholder={copy.incomingOptional}
 								isSingleSelect
 								loadModelsOnEmptyProvider
 								className="!h-9 !min-h-9"
@@ -789,7 +777,7 @@ function TargetRow({ target, index, providerOptions, allKeys, showRemove, onUpda
 								size="sm"
 								onClick={() => onUpdate(index, "model", "")}
 								className="h-9 w-9 p-0"
-								aria-label={`Clear model for target ${index + 1}`}
+								aria-label={copy.clearModel(index + 1)}
 								data-testid={`routing-target-${index}-model-clear`}
 							>
 								<X className="h-3.5 w-3.5" />
@@ -802,7 +790,7 @@ function TargetRow({ target, index, providerOptions, allKeys, showRemove, onUpda
 			{target.provider && (availableKeys.length > 0 || target.key_id) && (
 				<div className="space-y-1.5">
 					<Label id={`routing-target-${index}-apikey-label`} className="text-xs">
-						API Key <span className="text-muted-foreground">(optional; leave unset for load-balanced selection)</span>
+						{copy.apiKey} <span className="text-muted-foreground">({copy.apiKeyOptional})</span>
 					</Label>
 					<div className="flex gap-1.5">
 						<Select value={target.key_id || ""} onValueChange={(value) => onUpdate(index, "key_id", value)}>
@@ -812,7 +800,7 @@ function TargetRow({ target, index, providerOptions, allKeys, showRemove, onUpda
 								className="h-9 flex-1 text-sm"
 								data-testid={`routing-target-${index}-apikey-select`}
 							>
-								<SelectValue placeholder="Select key (optional)" />
+								<SelectValue placeholder={copy.selectKey} />
 							</SelectTrigger>
 							<SelectContent>
 								{availableKeys.map((key) => (
@@ -822,7 +810,7 @@ function TargetRow({ target, index, providerOptions, allKeys, showRemove, onUpda
 								))}
 								{target.key_id && !availableKeys.some((k) => k.id === target.key_id) && (
 									<SelectItem key={`pinned-${target.key_id}`} value={target.key_id}>
-										(pinned) {target.key_id}
+										({copy.pinned}) {target.key_id}
 									</SelectItem>
 								)}
 							</SelectContent>
@@ -834,7 +822,7 @@ function TargetRow({ target, index, providerOptions, allKeys, showRemove, onUpda
 								size="sm"
 								onClick={() => onUpdate(index, "key_id", "")}
 								className="h-9 w-9 p-0"
-								aria-label={`Clear API key for target ${index + 1}`}
+								aria-label={copy.clearApiKey(index + 1)}
 								data-testid={`routing-target-${index}-apikey-clear`}
 							>
 								<X className="h-3.5 w-3.5" />

@@ -12,6 +12,7 @@ import { LogStats } from "@/lib/types/logs";
 import { useEffect, useMemo, useState } from "react";
 import { ModelCatalogEmptyState } from "./modelCatalogEmptyState";
 import ModelCatalogTable, { ModelCatalogRow } from "./modelCatalogTable";
+import i18n from "@/lib/i18n";
 
 interface OverviewTabProps {
 	hasAccess: boolean;
@@ -184,9 +185,9 @@ export default function OverviewTab({ hasAccess }: OverviewTabProps) {
 	if (providersError) {
 		return (
 			<div className="flex h-full flex-col items-center justify-center gap-4 text-center">
-				<p className="text-muted-foreground text-sm">Failed to load providers</p>
+				<p className="text-muted-foreground text-sm">{i18n.t("workspace.modelCatalog.failedToLoadProviders")}</p>
 				<button type="button" data-testid="model-catalog-retry-btn" onClick={refetchProviders} className="text-sm underline">
-					Retry
+					{i18n.t("workspace.oauth.retry")}
 				</button>
 			</div>
 		);

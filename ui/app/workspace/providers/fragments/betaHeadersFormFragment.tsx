@@ -14,6 +14,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useForm, type Resolver } from "react-hook-form";
 import { toast } from "sonner";
+import i18n from "@/lib/i18n";
 
 // Known beta headers with their prefixes, descriptions, and default support per provider.
 // This mirrors the Go ProviderFeatures map in core/providers/anthropic/types.go.
@@ -22,79 +23,157 @@ const KNOWN_BETA_HEADERS = [
 		prefix: "computer-use-",
 		label: "Computer Use",
 		description: "Computer use client tool",
-		defaults: { anthropic: true, vertex: true, bedrock: true, bedrock_mantle: true, azure: true },
+		defaults: {
+			anthropic: true,
+			vertex: true,
+			bedrock: true,
+			bedrock_mantle: true,
+			azure: true,
+		},
 	},
 	{
 		prefix: "structured-outputs-",
 		label: "Structured Outputs",
 		description: "Strict tool validation and output_format",
-		defaults: { anthropic: true, vertex: false, bedrock: true, bedrock_mantle: true, azure: true },
+		defaults: {
+			anthropic: true,
+			vertex: false,
+			bedrock: true,
+			bedrock_mantle: true,
+			azure: true,
+		},
 	},
 	{
 		prefix: "advanced-tool-use-",
 		label: "Advanced Tool Use",
 		description: "defer_loading, input_examples, allowed_callers",
-		defaults: { anthropic: true, vertex: false, bedrock: false, bedrock_mantle: false, azure: true },
+		defaults: {
+			anthropic: true,
+			vertex: false,
+			bedrock: false,
+			bedrock_mantle: false,
+			azure: true,
+		},
 	},
 	{
 		prefix: "mcp-client-",
 		label: "MCP Client",
 		description: "MCP connector support",
-		defaults: { anthropic: true, vertex: false, bedrock: false, bedrock_mantle: false, azure: true },
+		defaults: {
+			anthropic: true,
+			vertex: false,
+			bedrock: false,
+			bedrock_mantle: false,
+			azure: true,
+		},
 	},
 	{
 		prefix: "prompt-caching-scope-",
 		label: "Prompt Caching Scope",
 		description: "Prompt caching scope control",
-		defaults: { anthropic: true, vertex: false, bedrock: false, bedrock_mantle: false, azure: true },
+		defaults: {
+			anthropic: true,
+			vertex: false,
+			bedrock: false,
+			bedrock_mantle: false,
+			azure: true,
+		},
 	},
 	{
 		prefix: "compact-",
 		label: "Compaction",
 		description: "Server-side context compaction",
-		defaults: { anthropic: true, vertex: true, bedrock: true, bedrock_mantle: true, azure: true },
+		defaults: {
+			anthropic: true,
+			vertex: true,
+			bedrock: true,
+			bedrock_mantle: true,
+			azure: true,
+		},
 	},
 	{
 		prefix: "context-management-",
 		label: "Context Management",
 		description: "Context editing (clear_tool_uses, clear_thinking)",
-		defaults: { anthropic: true, vertex: true, bedrock: true, bedrock_mantle: true, azure: true },
+		defaults: {
+			anthropic: true,
+			vertex: true,
+			bedrock: true,
+			bedrock_mantle: true,
+			azure: true,
+		},
 	},
 	{
 		prefix: "files-api-",
 		label: "Files API",
 		description: "Files API support",
-		defaults: { anthropic: true, vertex: false, bedrock: false, bedrock_mantle: false, azure: true },
+		defaults: {
+			anthropic: true,
+			vertex: false,
+			bedrock: false,
+			bedrock_mantle: false,
+			azure: true,
+		},
 	},
 	{
 		prefix: "interleaved-thinking-",
 		label: "Interleaved Thinking",
 		description: "Interleaved thinking between tool calls",
-		defaults: { anthropic: true, vertex: true, bedrock: true, bedrock_mantle: true, azure: true },
+		defaults: {
+			anthropic: true,
+			vertex: true,
+			bedrock: true,
+			bedrock_mantle: true,
+			azure: true,
+		},
 	},
 	{
 		prefix: "skills-",
 		label: "Skills",
 		description: "Agent Skills",
-		defaults: { anthropic: true, vertex: false, bedrock: false, bedrock_mantle: false, azure: true },
+		defaults: {
+			anthropic: true,
+			vertex: false,
+			bedrock: false,
+			bedrock_mantle: false,
+			azure: true,
+		},
 	},
 	{
 		prefix: "context-1m-",
 		label: "Context 1M",
 		description: "1M context window (beta for Sonnet 4.5/4)",
-		defaults: { anthropic: true, vertex: true, bedrock: true, bedrock_mantle: true, azure: true },
+		defaults: {
+			anthropic: true,
+			vertex: true,
+			bedrock: true,
+			bedrock_mantle: true,
+			azure: true,
+		},
 	},
 	{
 		prefix: "fast-mode-",
 		label: "Fast Mode",
 		description: "Fast mode (Opus 4.6 research preview)",
-		defaults: { anthropic: true, vertex: false, bedrock: false, bedrock_mantle: false, azure: false },
+		defaults: {
+			anthropic: true,
+			vertex: false,
+			bedrock: false,
+			bedrock_mantle: false,
+			azure: false,
+		},
 	},
 	{
 		prefix: "redact-thinking-",
 		label: "Redact Thinking",
 		description: "Redact thinking blocks in responses",
-		defaults: { anthropic: true, vertex: false, bedrock: false, bedrock_mantle: false, azure: true },
+		defaults: {
+			anthropic: true,
+			vertex: false,
+			bedrock: false,
+			bedrock_mantle: false,
+			azure: true,
+		},
 	},
 ] as const;
 
@@ -186,11 +265,11 @@ export function BetaHeadersFormFragment({ provider }: BetaHeadersFormFragmentPro
 		)
 			.unwrap()
 			.then(() => {
-				toast.success("Beta header configuration updated successfully");
+				toast.success(i18n.t("workspace.providers.betaHeaderConfigurationUpdated"));
 				form.reset(data);
 			})
 			.catch((err) => {
-				toast.error("Failed to update beta header configuration", {
+				toast.error(i18n.t("workspace.providers.betaHeaderConfigurationUpdateFailed"), {
 					description: getErrorMessage(err),
 				});
 			});
@@ -252,7 +331,7 @@ export function BetaHeadersFormFragment({ provider }: BetaHeadersFormFragmentPro
 	const getSelectValue = (prefix: string): string => {
 		const override = overrides[prefix];
 		if (override === undefined) return "default";
-		return override ? "enabled" : "disabled";
+		return override ? i18n.t("workspace.providers.keyTable.itemEnabled") : i18n.t("workspace.providers.keyTable.itemDisabled");
 	};
 
 	if (!providerKey) return null;
@@ -261,17 +340,14 @@ export function BetaHeadersFormFragment({ provider }: BetaHeadersFormFragmentPro
 		<Form {...form}>
 			<form onSubmit={form.handleSubmit(onSubmit)} data-testid="provider-config-beta-headers-content">
 				<div className="space-y-2 px-4 pb-6 md:px-6">
-					<p className="text-muted-foreground text-xs">
-						Configure which Anthropic beta headers are allowed for this provider. Override the defaults when a provider adds or removes
-						support for a beta feature.
-					</p>
+					<p className="text-muted-foreground text-xs">{i18n.t("workspace.providers.betaHeadersDescription")}</p>
 					<div className="rounded-md border">
 						<table className="w-full text-sm">
 							<thead>
 								<tr className="border-b">
-									<th className="px-3 py-2 text-left font-medium">Beta Header</th>
-									<th className="px-3 py-2 text-left font-medium">Default</th>
-									<th className="w-[180px] px-3 py-2 text-left font-medium">Override</th>
+									<th className="px-3 py-2 text-left font-medium">{i18n.t("workspace.providers.betaHeader")}</th>
+									<th className="px-3 py-2 text-left font-medium">{i18n.t("workspace.providers.default")}</th>
+									<th className="w-[180px] px-3 py-2 text-left font-medium">{i18n.t("workspace.providers.override")}</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -285,7 +361,7 @@ export function BetaHeadersFormFragment({ provider }: BetaHeadersFormFragmentPro
 										</td>
 										<td className="px-3 py-2">
 											<Badge variant={row.defaultSupported ? "default" : "secondary"} className="text-xs">
-												{row.defaultSupported ? "Supported" : "Unsupported"}
+												{row.defaultSupported ? i18n.t("workspace.providers.supported") : i18n.t("workspace.providers.unsupported")}
 											</Badge>
 										</td>
 										<td className="w-[180px] px-3 py-2">
@@ -301,9 +377,9 @@ export function BetaHeadersFormFragment({ provider }: BetaHeadersFormFragmentPro
 													<SelectValue />
 												</SelectTrigger>
 												<SelectContent>
-													<SelectItem value="default">Default</SelectItem>
-													<SelectItem value="enabled">Supported</SelectItem>
-													<SelectItem value="disabled">Unsupported</SelectItem>
+													<SelectItem value="default">{i18n.t("workspace.providers.default")}</SelectItem>
+													<SelectItem value="enabled">{i18n.t("workspace.providers.supported")}</SelectItem>
+													<SelectItem value="disabled">{i18n.t("workspace.providers.unsupported")}</SelectItem>
 												</SelectContent>
 											</Select>
 										</td>
@@ -314,18 +390,22 @@ export function BetaHeadersFormFragment({ provider }: BetaHeadersFormFragmentPro
 										<td className="px-3 py-2">
 											<div className="flex flex-col gap-0.5">
 												<span className="font-mono text-xs">{prefix}*</span>
-												<span className="text-muted-foreground text-xs">Custom header</span>
+												<span className="text-muted-foreground text-xs">{i18n.t("workspace.providers.customHeader")}</span>
 											</div>
 										</td>
 										<td className="px-3 py-2">
 											<Badge variant="outline" className="text-xs">
-												Custom
+												{i18n.t("supplemental.custom")}
 											</Badge>
 										</td>
 										<td className="w-[180px] px-3 py-2">
 											<div className="flex items-center gap-1">
 												<Select
-													value={overrides[prefix] ? "enabled" : "disabled"}
+													value={
+														overrides[prefix]
+															? i18n.t("workspace.providers.keyTable.itemEnabled")
+															: i18n.t("workspace.providers.keyTable.itemDisabled")
+													}
 													onValueChange={(val) => setOverride(prefix, val as "enabled" | "disabled")}
 													disabled={!hasUpdateProviderAccess}
 												>
@@ -336,8 +416,8 @@ export function BetaHeadersFormFragment({ provider }: BetaHeadersFormFragmentPro
 														<SelectValue />
 													</SelectTrigger>
 													<SelectContent>
-														<SelectItem value="enabled">Supported</SelectItem>
-														<SelectItem value="disabled">Unsupported</SelectItem>
+														<SelectItem value="enabled">{i18n.t("workspace.providers.supported")}</SelectItem>
+														<SelectItem value="disabled">{i18n.t("workspace.providers.unsupported")}</SelectItem>
 													</SelectContent>
 												</Select>
 												<Button
@@ -363,7 +443,7 @@ export function BetaHeadersFormFragment({ provider }: BetaHeadersFormFragmentPro
 					<div className="flex items-start gap-2 pt-2">
 						<div className="flex-1">
 							<Input
-								placeholder="Add custom beta header prefix (e.g. new-feature-)"
+								placeholder={i18n.t("workspace.providers.addCustomPrefix")}
 								value={newPrefix}
 								onChange={(e) => {
 									setNewPrefix(e.target.value);
@@ -378,7 +458,7 @@ export function BetaHeadersFormFragment({ provider }: BetaHeadersFormFragmentPro
 								disabled={!hasUpdateProviderAccess}
 								className="h-8 text-xs"
 								data-testid="provider-beta-custom-prefix-input"
-								aria-label="Custom beta header prefix"
+								aria-label={i18n.t("workspace.providers.customPrefixAriaLabel")}
 								aria-describedby={newPrefixError ? "custom-prefix-error" : undefined}
 							/>
 							{newPrefixError && (
@@ -397,7 +477,7 @@ export function BetaHeadersFormFragment({ provider }: BetaHeadersFormFragmentPro
 							data-testid="provider-beta-add-prefix-btn"
 						>
 							<Plus className="mr-1 h-3.5 w-3.5" />
-							Add
+							{i18n.t("common.add")}
 						</Button>
 					</div>
 				</div>
@@ -409,7 +489,7 @@ export function BetaHeadersFormFragment({ provider }: BetaHeadersFormFragmentPro
 						isLoading={isUpdatingProvider}
 						data-testid="provider-beta-save-btn"
 					>
-						Save Beta Header Configuration
+						{i18n.t("workspace.providers.saveBetaHeaderConfiguration")}
 					</Button>
 				</div>
 			</form>

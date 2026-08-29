@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import i18n from "@/lib/i18n";
 
 interface ComboboxContextValue {
 	open: boolean;
@@ -211,7 +212,7 @@ function ComboboxList({ className, ...props }: React.ComponentProps<typeof Comma
 		<>
 			<div className="flex items-center border-b px-3">
 				<CommandPrimitive.Input
-					placeholder="Search..."
+					placeholder={i18n.t("common.search")}
 					className="placeholder:text-muted-foreground flex h-8 w-full bg-transparent py-3 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-50"
 					value={inputValue}
 					autoFocus

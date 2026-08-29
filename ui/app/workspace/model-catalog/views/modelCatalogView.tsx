@@ -4,6 +4,7 @@ import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { parseAsStringLiteral, useQueryState } from "nuqs";
 import AttributesTab from "./attributesTab";
 import OverviewTab from "./overviewTab";
+import i18n from "@/lib/i18n";
 
 const MODEL_CATALOG_TABS = ["overview", "attributes"] as const;
 type ModelCatalogTab = (typeof MODEL_CATALOG_TABS)[number];
@@ -27,10 +28,10 @@ export default function ModelCatalogView() {
 			<Tabs value={tab} onValueChange={(value) => setTab(value as ModelCatalogTab)} className="flex min-h-0 grow flex-col gap-4">
 				<TabsList className="shrink-0">
 					<TabsTrigger value="overview" data-testid="model-catalog-tab-overview">
-						Overview
+						{i18n.t("workspace.dashboard.overview")}
 					</TabsTrigger>
 					<TabsTrigger value="attributes" data-testid="model-catalog-tab-attributes">
-						Models
+						{i18n.t("sidebar.nav.models")}
 					</TabsTrigger>
 				</TabsList>
 				<TabsContent value="overview" className="min-h-0 overflow-auto">

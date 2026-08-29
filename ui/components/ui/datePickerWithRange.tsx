@@ -12,6 +12,7 @@ import { ComboboxSelect } from "./combobox";
 import { Label } from "./label";
 import { Popover, PopoverContent, PopoverTrigger } from "./popover";
 import { TimePicker, TimeValue } from "./timePicker";
+import i18n from "@/lib/i18n";
 
 export type TimeRange = {
 	from: TimeValue;
@@ -482,9 +483,9 @@ export function DateTimePicker(props: DateTimePickerProps) {
 							}}
 						/>
 						<div className="mt-3 flex flex-col gap-1 px-2 pb-2">
-							<Label className="ml-0.5">Time</Label>
+							<Label className="ml-0.5">{i18n.t("workspace.logs.colTime")}</Label>
 							<TimePicker
-								aria-label="Time"
+								aria-label={i18n.t("workspace.logs.colTime")}
 								className=""
 								value={timeValue}
 								onChange={(v) => {

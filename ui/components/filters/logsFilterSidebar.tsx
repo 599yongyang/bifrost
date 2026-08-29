@@ -15,6 +15,7 @@ import { ChevronDown, LoaderCircle, PanelLeftClose, Plus, RotateCcw, Search } fr
 import { Ref, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { logsFilterCopy } from "./logsFilterCopy";
 import { latencySecondsToMilliseconds } from "./logsFilterModel";
+import i18n from "@/lib/i18n";
 
 const COLLAPSE_STORAGE_KEY = "logs-filter-sidebar-collapsed";
 
@@ -81,15 +82,22 @@ export function LogsFilterSidebar({ filters, onFiltersChange }: LogsSidebarProps
 		<div className="bg-card fixed inset-y-2 left-2 z-40 flex h-auto w-[calc(100vw-1rem)] max-w-72 shrink-0 flex-col rounded-md border shadow-xl md:static md:h-full md:w-64 md:max-w-none md:rounded-md md:shadow-none">
 			{/* Header */}
 			<div className="flex h-11 items-center justify-between border-b pr-2 pl-5">
-				<span className="text-sm font-semibold">Filters</span>
+				<span className="text-sm font-semibold">{i18n.t("workspace.logs.filters.title")}</span>
 				<div className="flex items-center gap-1">
 					{activeFilterCount > 0 && (
 						<Button variant="outline" size="sm" className="text-muted-foreground h-7 px-2 text-xs" onClick={handleReset}>
 							<RotateCcw className="size-3" />
-							Reset
+							{i18n.t("workspace.logs.filters.reset")}
 						</Button>
 					)}
-					<Button variant="ghost" size="icon" className="size-7" onClick={toggleCollapsed} title="Hide filters" aria-label="Hide filters">
+					<Button
+						variant="ghost"
+						size="icon"
+						className="size-7"
+						onClick={toggleCollapsed}
+						title={i18n.t("workspace.logs.filters.hide")}
+						aria-label={i18n.t("workspace.logs.filters.hide")}
+					>
 						<PanelLeftClose className="size-4" />
 					</Button>
 				</div>
@@ -339,7 +347,7 @@ function SearchableCheckboxList({
 				/>
 			))}
 			{filtered.length === 0 && !showAddCustom && (
-				<div className="text-muted-foreground flex h-9 items-center px-3 text-xs">No results</div>
+				<div className="text-muted-foreground flex h-9 items-center px-3 text-xs">{i18n.t("workspace.logs.filters.noResults")}</div>
 			)}
 			{showAddCustom && (
 				<button
@@ -349,9 +357,7 @@ function SearchableCheckboxList({
 					data-testid={testIdPrefix ? `${testIdPrefix}-add-custom` : undefined}
 				>
 					<Plus className="text-muted-foreground size-3.5 shrink-0" />
-					<span className="truncate">
-						Use <span className="font-medium">&quot;{trimmed}&quot;</span>
-					</span>
+					<span className="truncate">{i18n.t("workspace.logs.filters.useValue", { value: trimmed })}</span>
 				</button>
 			)}
 		</>
@@ -365,7 +371,7 @@ function SearchableCheckboxList({
 function StatusFilter({ filters, onFiltersChange, defaultOpen }: FilterComponentProps) {
 	const hasActive = (filters.status || []).length > 0;
 	return (
-		<FilterSection title="Status" defaultOpen={defaultOpen || hasActive} testId="status-filter-toggle">
+		<FilterSection title={i18n.t("workspace.logs.filters.status")} defaultOpen={defaultOpen || hasActive} testId="status-filter-toggle">
 			{Statuses.map((status) => (
 				<CheckboxFilterItem
 					key={status}
@@ -410,7 +416,7 @@ function StopReasonFilter({ filters, onFiltersChange, defaultOpen }: FilterCompo
 
 	return (
 		<FilterSection
-			title="Stop Reason"
+			title={i18n.t("workspace.logs.detail.stopReason")}
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
 			onOpenChange={setOpened}
@@ -418,7 +424,7 @@ function StopReasonFilter({ filters, onFiltersChange, defaultOpen }: FilterCompo
 		>
 			<SearchableCheckboxList
 				inputRef={searchInputRef}
-				placeholder="Search or add a stop reason"
+				placeholder={i18n.t("workspace.logs.filters.stopReasonPlaceholder")}
 				items={items}
 				allowCustom
 				isSelected={(reason) => (filters.stop_reasons || []).includes(reason)}
@@ -460,7 +466,7 @@ function AppFilter({ filters, onFiltersChange, defaultOpen }: FilterComponentPro
 
 	return (
 		<FilterSection
-			title="App"
+			title={i18n.t("workspace.logs.filters.app")}
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
 			onOpenChange={setOpened}
@@ -468,7 +474,7 @@ function AppFilter({ filters, onFiltersChange, defaultOpen }: FilterComponentPro
 		>
 			<SearchableCheckboxList
 				inputRef={searchInputRef}
-				placeholder="Search apps"
+				placeholder={i18n.t("workspace.logs.filters.searchApps")}
 				items={items}
 				isSelected={(appName) => selectedSet.has(appName)}
 				onToggle={(appName) => {
@@ -499,7 +505,7 @@ function ProvidersFilter({ filters, onFiltersChange, defaultOpen }: FilterCompon
 
 	return (
 		<FilterSection
-			title="Providers"
+			title={i18n.t("workspace.logs.filters.providers")}
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
 			onOpenChange={setOpened}
@@ -507,7 +513,7 @@ function ProvidersFilter({ filters, onFiltersChange, defaultOpen }: FilterCompon
 		>
 			<SearchableCheckboxList
 				inputRef={searchInputRef}
-				placeholder="Search providers"
+				placeholder={i18n.t("workspace.logs.filters.searchProviders")}
 				items={availableProviders.map((p) => ({ key: p.name, label: p.name }))}
 				isSelected={(name) => (filters.providers || []).includes(name)}
 				onToggle={(name) => {
@@ -528,7 +534,7 @@ function ProvidersFilter({ filters, onFiltersChange, defaultOpen }: FilterCompon
 function TypeFilter({ filters, onFiltersChange, defaultOpen }: FilterComponentProps) {
 	const hasActive = (filters.objects || []).length > 0;
 	return (
-		<FilterSection title="Type" defaultOpen={defaultOpen || hasActive} testId="type-filter-toggle">
+		<FilterSection title={i18n.t("workspace.logs.filters.type")} defaultOpen={defaultOpen || hasActive} testId="type-filter-toggle">
 			{RequestTypes.map((type) => {
 				const label = RequestTypeLabels[type as keyof typeof RequestTypeLabels] ?? type;
 				return (
@@ -575,7 +581,7 @@ function ModelsFilter({ filters, onFiltersChange, defaultOpen }: FilterComponent
 
 	return (
 		<FilterSection
-			title="Models"
+			title={i18n.t("workspace.logs.filters.models")}
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
 			onOpenChange={setOpened}
@@ -583,7 +589,7 @@ function ModelsFilter({ filters, onFiltersChange, defaultOpen }: FilterComponent
 		>
 			<SearchableCheckboxList
 				inputRef={searchInputRef}
-				placeholder="Search or add a model"
+				placeholder={i18n.t("workspace.logs.filters.searchModels")}
 				items={items}
 				allowCustom
 				isSelected={(model) => (filters.models || []).includes(model)}
@@ -626,7 +632,7 @@ function AliasesFilter({ filters, onFiltersChange, defaultOpen }: FilterComponen
 
 	return (
 		<FilterSection
-			title="Aliases"
+			title={i18n.t("workspace.logs.filters.aliases")}
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
 			onOpenChange={setOpened}
@@ -634,7 +640,7 @@ function AliasesFilter({ filters, onFiltersChange, defaultOpen }: FilterComponen
 		>
 			<SearchableCheckboxList
 				inputRef={searchInputRef}
-				placeholder="Search or add an alias"
+				placeholder={i18n.t("workspace.logs.filters.searchAliases")}
 				items={items}
 				allowCustom
 				isSelected={(alias) => (filters.aliases || []).includes(alias)}
@@ -689,7 +695,7 @@ function SelectedKeysFilter({ filters, onFiltersChange, defaultOpen }: FilterCom
 
 	return (
 		<FilterSection
-			title="Selected Keys"
+			title={i18n.t("workspace.logs.filters.selectedKeys")}
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
 			onOpenChange={setOpened}
@@ -697,7 +703,7 @@ function SelectedKeysFilter({ filters, onFiltersChange, defaultOpen }: FilterCom
 		>
 			<SearchableCheckboxList
 				inputRef={searchInputRef}
-				placeholder="Search keys"
+				placeholder={i18n.t("workspace.logs.filters.searchKeys")}
 				items={dedup(availableSelectedKeys).map((name) => ({ key: name, label: name }))}
 				isSelected={isSelected}
 				onToggle={toggle}
@@ -747,7 +753,7 @@ function VirtualKeysFilter({ filters, onFiltersChange, defaultOpen }: FilterComp
 
 	return (
 		<FilterSection
-			title="Virtual Keys"
+			title={i18n.t("workspace.logs.filters.virtualKeys")}
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
 			onOpenChange={setOpened}
@@ -755,7 +761,7 @@ function VirtualKeysFilter({ filters, onFiltersChange, defaultOpen }: FilterComp
 		>
 			<SearchableCheckboxList
 				inputRef={searchInputRef}
-				placeholder="Search virtual keys"
+				placeholder={i18n.t("workspace.mcp.searchVirtualKeys")}
 				items={dedup(availableVirtualKeys).map((name) => ({ key: name, label: name }))}
 				isSelected={isSelected}
 				onToggle={toggle}
@@ -788,7 +794,7 @@ function RoutingEnginesFilter({ filters, onFiltersChange, defaultOpen }: FilterC
 
 	return (
 		<FilterSection
-			title="Routing Engines"
+			title={i18n.t("workspace.logs.filters.routingEngines")}
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
 			onOpenChange={setOpened}
@@ -796,7 +802,7 @@ function RoutingEnginesFilter({ filters, onFiltersChange, defaultOpen }: FilterC
 		>
 			<SearchableCheckboxList
 				inputRef={searchInputRef}
-				placeholder="Search engines"
+				placeholder={i18n.t("workspace.logs.filters.searchEngines")}
 				items={availableRoutingEngines.map((engine) => ({
 					key: engine,
 					label: RoutingEngineUsedLabels[engine as keyof typeof RoutingEngineUsedLabels] ?? engine,
@@ -853,7 +859,7 @@ function RoutingRulesFilter({ filters, onFiltersChange, defaultOpen }: FilterCom
 
 	return (
 		<FilterSection
-			title="Routing Rules"
+			title={i18n.t("workspace.logs.filters.routingRules")}
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
 			onOpenChange={setOpened}
@@ -861,7 +867,7 @@ function RoutingRulesFilter({ filters, onFiltersChange, defaultOpen }: FilterCom
 		>
 			<SearchableCheckboxList
 				inputRef={searchInputRef}
-				placeholder="Search rules"
+				placeholder={i18n.t("workspace.logs.filters.searchRules")}
 				items={dedup(availableRoutingRules).map((name) => ({ key: name, label: name }))}
 				isSelected={isSelected}
 				onToggle={toggle}
@@ -880,13 +886,13 @@ function RoutingRulesFilter({ filters, onFiltersChange, defaultOpen }: FilterCom
 function SessionFilter({ filters, onFiltersChange, defaultOpen }: FilterComponentProps) {
 	const hasActive = !!filters.parent_request_id;
 	return (
-		<FilterSection title="Session" defaultOpen={defaultOpen || hasActive} testId="session-filter-toggle">
+		<FilterSection title={i18n.t("workspace.logs.filters.session")} defaultOpen={defaultOpen || hasActive} testId="session-filter-toggle">
 			<div className="relative">
 				<Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
 				<Input
 					value={filters.parent_request_id || ""}
 					onChange={(e) => onFiltersChange({ ...filters, parent_request_id: e.target.value })}
-					placeholder="Parent request ID"
+					placeholder={i18n.t("workspace.logs.filters.parentRequestId")}
 					className="h-8 border-0 pl-8 text-sm"
 					data-testid="session-filter-input"
 					autoFocus
@@ -922,7 +928,7 @@ function UserFilter({ filters, onFiltersChange, defaultOpen }: FilterComponentPr
 
 	return (
 		<FilterSection
-			title="User"
+			title={i18n.t("workspace.logs.filters.user")}
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
 			onOpenChange={setOpened}
@@ -930,7 +936,7 @@ function UserFilter({ filters, onFiltersChange, defaultOpen }: FilterComponentPr
 		>
 			<SearchableCheckboxList
 				inputRef={searchInputRef}
-				placeholder="Search or add a user"
+				placeholder={i18n.t("workspace.logs.filters.searchUser")}
 				items={items}
 				allowCustom
 				isSelected={(id) => (filters.user_ids || []).includes(id)}
@@ -985,7 +991,7 @@ function TeamFilter({ filters, onFiltersChange, defaultOpen }: FilterComponentPr
 
 	return (
 		<FilterSection
-			title="Teams"
+			title={i18n.t("workspace.logs.filters.teams")}
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
 			onOpenChange={setOpened}
@@ -993,7 +999,7 @@ function TeamFilter({ filters, onFiltersChange, defaultOpen }: FilterComponentPr
 		>
 			<SearchableCheckboxList
 				inputRef={searchInputRef}
-				placeholder="Search or add a team"
+				placeholder={i18n.t("workspace.logs.filters.searchTeam")}
 				items={dedup(availableTeams).map((name) => ({ key: name, label: name }))}
 				isSelected={isSelected}
 				onToggle={toggle}
@@ -1043,7 +1049,7 @@ function CustomerFilter({ filters, onFiltersChange, defaultOpen }: FilterCompone
 
 	return (
 		<FilterSection
-			title="Customers"
+			title={i18n.t("workspace.logs.filters.customers")}
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
 			onOpenChange={setOpened}
@@ -1051,7 +1057,7 @@ function CustomerFilter({ filters, onFiltersChange, defaultOpen }: FilterCompone
 		>
 			<SearchableCheckboxList
 				inputRef={searchInputRef}
-				placeholder="Search or add a customer"
+				placeholder={i18n.t("workspace.logs.filters.searchCustomer")}
 				items={dedup(availableCustomers).map((name) => ({ key: name, label: name }))}
 				allowCustom
 				isSelected={isSelected}
@@ -1102,7 +1108,7 @@ function BusinessUnitFilter({ filters, onFiltersChange, defaultOpen }: FilterCom
 
 	return (
 		<FilterSection
-			title="Business Units"
+			title={i18n.t("sidebar.sub.businessUnits")}
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
 			onOpenChange={setOpened}
@@ -1110,7 +1116,7 @@ function BusinessUnitFilter({ filters, onFiltersChange, defaultOpen }: FilterCom
 		>
 			<SearchableCheckboxList
 				inputRef={searchInputRef}
-				placeholder="Search or add a business unit"
+				placeholder={i18n.t("workspace.logs.filters.searchBusinessUnit")}
 				items={dedup(availableBusinessUnits).map((name) => ({ key: name, label: name }))}
 				allowCustom
 				isSelected={isSelected}
@@ -1177,7 +1183,7 @@ function LatencyFilter({ filters, onFiltersChange, defaultOpen }: FilterComponen
 							step={0.1}
 							value={minSeconds}
 							onChange={(event) => updateSeconds("min_latency", event.target.value)}
-							placeholder="0"
+							placeholder={i18n.t("workspace.providers.maxRetriesPlaceholder")}
 							data-testid="latency-filter-min-seconds"
 						/>
 					</label>
@@ -1220,7 +1226,7 @@ function LatencyFilter({ filters, onFiltersChange, defaultOpen }: FilterComponen
 function CostFilter({ filters, onFiltersChange, defaultOpen }: FilterComponentProps) {
 	const hasActive = !!filters.missing_cost_only;
 	return (
-		<FilterSection title="Cost" defaultOpen={defaultOpen || hasActive} testId="cost-filter-toggle">
+		<FilterSection title={i18n.t("workspace.logs.filters.cost")} defaultOpen={defaultOpen || hasActive} testId="cost-filter-toggle">
 			<CheckboxFilterItem
 				label="Show missing cost only"
 				checked={!!filters.missing_cost_only}
@@ -1243,7 +1249,11 @@ const LocalCachingOptions: { key: string; label: string }[] = [
 function LocalCachingFilter({ filters, onFiltersChange, defaultOpen }: FilterComponentProps) {
 	const hasActive = (filters.cache_hit_types || []).length > 0;
 	return (
-		<FilterSection title="Local Caching" defaultOpen={defaultOpen || hasActive} testId="local-caching-filter-toggle">
+		<FilterSection
+			title={i18n.t("workspace.logs.filters.localCaching")}
+			defaultOpen={defaultOpen || hasActive}
+			testId="local-caching-filter-toggle"
+		>
 			{LocalCachingOptions.map((option) => (
 				<CheckboxFilterItem
 					key={option.key}
@@ -1306,14 +1316,14 @@ function MetadataFilters({ filters, onFiltersChange, defaultOpen }: FilterCompon
 
 	return (
 		<FilterSection
-			title="Metadata"
+			title={i18n.t("workspace.mcpLogs.metadata")}
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
 			onOpenChange={setOpened}
 			testId="metadata-filter-toggle"
 		>
 			{isEmpty ? (
-				<div className="text-muted-foreground px-3 py-2 text-xs">No metadata keys</div>
+				<div className="text-muted-foreground px-3 py-2 text-xs">{i18n.t("workspace.logs.filters.noMetadataKeys")}</div>
 			) : (
 				<>
 					<div className="relative border-b">
@@ -1325,13 +1335,13 @@ function MetadataFilters({ filters, onFiltersChange, defaultOpen }: FilterCompon
 						<Input
 							value={searchQuery}
 							onChange={(e) => setSearchQuery(e.target.value)}
-							placeholder="Search metadata..."
+							placeholder={i18n.t("workspace.logs.filters.searchMetadata")}
 							className="h-8 border-0 pl-8 text-xs"
 							data-testid="metadata-search-input"
 						/>
 					</div>
 					{entries.length === 0 && !isFetching && (
-						<div className="text-muted-foreground flex h-9 items-center px-3 text-xs">No results</div>
+						<div className="text-muted-foreground flex h-9 items-center px-3 text-xs">{i18n.t("workspace.logs.filters.noResults")}</div>
 					)}
 					{entries.map(([metadataKey, values]) => (
 						<div key={metadataKey} data-testid={`metadata-${metadataKey}-filter-group`}>
@@ -1351,7 +1361,7 @@ function MetadataFilters({ filters, onFiltersChange, defaultOpen }: FilterCompon
 							<div className="px-3 py-2.5">
 								<Input
 									className="placeholder:text-muted-foreground h-7 w-full rounded border bg-transparent px-2 text-sm"
-									placeholder="Custom value..."
+									placeholder={i18n.t("workspace.logs.filters.customValue")}
 									value={
 										customInputs[metadataKey] ??
 										(filters.metadata_filters?.[metadataKey] && !values.includes(filters.metadata_filters[metadataKey])

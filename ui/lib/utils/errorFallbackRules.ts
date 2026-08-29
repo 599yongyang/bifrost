@@ -1,4 +1,5 @@
 import type { RoutingErrorFallback, RoutingErrorFallbackFormData } from "@/lib/types/routingRules";
+import i18n from "@/lib/i18n";
 
 const emptySupplement = () => ({ providers: [], error_codes: [], error_types: [], status_codes: [], message_contains_any: [] });
 const emptyWhen = () => ({ categories: [], error_codes: [], error_types: [], status_codes: [], message_contains: [] });
@@ -134,9 +135,9 @@ export function switchErrorFallbackMode(
 export function validateErrorFallbackForms(rules: RoutingErrorFallbackFormData[]): string[] {
 	const errors: string[] = [];
 	rules.forEach((rule, index) => {
-		const label = `Error rule ${index + 1}`;
+		const label = i18n.t("workspace.routingRules.copy.errorFallbackRules_error_rule", { value0: index + 1 });
 		if (rule.mode === "legacy" && Object.values(rule.when).every((values) => values.length === 0)) {
-			errors.push(`${label} needs at least one matcher`);
+			errors.push(i18n.t("workspace.routingRules.copy.errorFallbackRules_needs_at_least_one_matcher", { value0: label }));
 		}
 		const supplementSignals = [
 			...rule.supplement.error_codes,
@@ -150,12 +151,18 @@ export function validateErrorFallbackForms(rules: RoutingErrorFallbackFormData[]
 			rule.supplement.providers.length > 0 &&
 			supplementSignals.length === 0
 		) {
-			errors.push(`${label} limits providers but has no supplemental recognition clue`);
+			errors.push(
+				i18n.t("workspace.routingRules.copy.errorFallbackRules_limits_providers_but_has_no_supplemental_recognition_clu", {
+					value0: label,
+				}),
+			);
 		}
 
 		const fallbacks = rule.fallbacks.map(normalizeFallbackString).filter(hasFallbackProvider);
-		if (fallbacks.length === 0) errors.push(`${label} needs at least one fallback target`);
-		if (new Set(fallbacks).size !== fallbacks.length) errors.push(`${label} contains duplicate fallback targets`);
+		if (fallbacks.length === 0)
+			errors.push(i18n.t("workspace.routingRules.copy.errorFallbackRules_needs_at_least_one_fallback_target", { value0: label }));
+		if (new Set(fallbacks).size !== fallbacks.length)
+			errors.push(i18n.t("workspace.routingRules.copy.errorFallbackRules_contains_duplicate_fallback_targets", { value0: label }));
 	});
 	return errors;
 }

@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { OtelFormFragment } from "../../fragments/otelFormFragment";
 import { buildOtelPluginConfig } from "../../otelConfig";
 import PluginTracingSheet from "../../sheets/pluginTracingSheet";
+import i18n from "@/lib/i18n";
 
 interface OtelViewProps {
 	onDelete?: () => void;
@@ -31,10 +32,10 @@ export default function OtelView({ onDelete, isDeleting }: OtelViewProps) {
 				.unwrap()
 				.then(() => {
 					resolve();
-					toast.success("OTEL configuration updated successfully");
+					toast.success(i18n.t("workspace.observability.otelForm.configurationUpdated"));
 				})
 				.catch((err) => {
-					toast.error("Failed to update OTEL configuration", {
+					toast.error(i18n.t("workspace.observability.otelForm.configurationUpdateFailed"), {
 						description: getErrorMessage(err),
 					});
 					reject(err);
@@ -54,7 +55,7 @@ export default function OtelView({ onDelete, isDeleting }: OtelViewProps) {
 						data-testid="otel-configure-tracing-button"
 					>
 						<Activity className="h-4 w-4" />
-						Configure Plugin Tracing
+						{i18n.t("workspace.observabilitySettings.pluginTracing.title")}
 					</Button>
 				</div>
 				<OtelFormFragment onSave={handleOtelConfigSave} currentConfig={currentConfig} onDelete={onDelete} isDeleting={isDeleting} />
@@ -63,7 +64,7 @@ export default function OtelView({ onDelete, isDeleting }: OtelViewProps) {
 				open={isTracingSheetOpen}
 				onClose={() => setIsTracingSheetOpen(false)}
 				pluginName="otel"
-				destination="the OTEL collector"
+				destination={i18n.t("workspace.observabilitySettings.pluginTracing.otelCollector")}
 			/>
 		</div>
 	);

@@ -8,6 +8,7 @@ import {
 	AlertDialogHeader,
 	AlertDialogTitle,
 } from "@/components/ui/alertDialog";
+import i18n from "@/lib/i18n";
 
 interface BudgetUsageResetDialogProps {
 	"data-testid"?: string;
@@ -41,7 +42,7 @@ export default function BudgetUsageResetDialog({
 		<AlertDialog open={open} onOpenChange={onOpenChange}>
 			<AlertDialogContent data-testid={testId}>
 				<AlertDialogHeader>
-					<AlertDialogTitle>Reset budget usage?</AlertDialogTitle>
+					<AlertDialogTitle>{i18n.t("workspace.virtualKeys.resetBudgetUsageTitle")}</AlertDialogTitle>
 					<AlertDialogDescription>
 						You changed a budget amount or reset frequency on this {ownerLabel}. Reset current usage to 0, or preserve the existing
 						counters. The reset window keeps its current start and end either way.

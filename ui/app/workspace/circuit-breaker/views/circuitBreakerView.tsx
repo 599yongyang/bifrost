@@ -17,7 +17,7 @@ import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { RenderProviderIcon, type ProviderIconType } from "@/lib/constants/icons";
 import { getProviderLabel } from "@/lib/constants/logs";
-import i18n from "./circuitBreakerI18n";
+import i18n from "@/lib/i18n";
 import { getErrorMessage, useCreatePluginMutation, useGetPluginsQuery, useUpdatePluginMutation } from "@/lib/store";
 import { CIRCUIT_BREAKER_PLUGIN, type CircuitBreakerConfig, type CircuitBreakerPolicy } from "@/lib/types/circuitBreaker";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";

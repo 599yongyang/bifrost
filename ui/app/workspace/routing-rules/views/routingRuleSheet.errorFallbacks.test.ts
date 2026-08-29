@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
+import { setTestLanguage } from "@/lib/i18n/testUtils";
 import type { RoutingErrorFallback } from "@/lib/types/routingRules";
 import {
 	mergeContentSafetyErrorFallbacks,
@@ -9,6 +10,10 @@ import {
 	toErrorFallbackPayload,
 	validateErrorFallbackForms,
 } from "@/lib/utils/errorFallbackRules";
+
+beforeAll(async () => {
+	await setTestLanguage("en");
+});
 
 describe("routing rule error fallback form compatibility", () => {
 	it("keeps the stored content-safety matcher and supplements intact", () => {

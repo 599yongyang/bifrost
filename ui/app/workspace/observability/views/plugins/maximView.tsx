@@ -3,6 +3,8 @@ import { MaximConfigSchema, MaximFormSchema } from "@/lib/types/schemas";
 import { useMemo } from "react";
 import { toast } from "sonner";
 import { MaximFormFragment } from "../../fragments/maximFormFragment";
+import i18n from "@/lib/i18n";
+import { Trans } from "react-i18next";
 
 interface MaximViewProps {
 	onDelete?: () => void;
@@ -28,11 +30,11 @@ export default function MaximView({ onDelete, isDeleting }: MaximViewProps) {
 			})
 				.unwrap()
 				.then(() => {
-					toast.success("Maxim configuration updated successfully");
+					toast.success(i18n.t("workspace.observability.maximForm.configurationUpdated"));
 					resolve();
 				})
 				.catch((err) => {
-					toast.error("Failed to update Maxim configuration", {
+					toast.error(i18n.t("workspace.observability.maximForm.configurationUpdateFailed"), {
 						description: getErrorMessage(err),
 					});
 					reject(err);
@@ -43,9 +45,9 @@ export default function MaximView({ onDelete, isDeleting }: MaximViewProps) {
 	return (
 		<div className="flex w-full flex-col gap-4">
 			<div className="flex w-full flex-col gap-2">
-				<div className="text-muted-foreground text-xs font-medium">Configuration</div>
+				<div className="text-muted-foreground text-xs font-medium">{i18n.t("workspace.observability.maximForm.configuration")}</div>
 				<div className="text-muted-foreground mb-2 text-xs font-normal">
-					You can send in header <code>x-bf-log-repo-id</code> with a repository ID to log to a specific repository.
+					<Trans i18nKey="workspace.observability.maximForm.configurationDescription" components={{ code: <code /> }} />
 				</div>
 				<MaximFormFragment onSave={handleMaximConfigSave} initialConfig={currentConfig} onDelete={onDelete} isDeleting={isDeleting} />
 			</div>

@@ -41,6 +41,7 @@ import { getErrorMessage, useReauthMCPSessionMutation, useRevokeMCPSessionMutati
 import { MCPSessionRow } from "@/lib/types/mcpSessions";
 import { ExternalLink, Fingerprint, KeyRound, Loader2, MoreHorizontal, Pencil, RefreshCcw, Trash2, UserRound } from "lucide-react";
 import { useState } from "react";
+import i18n from "@/lib/i18n";
 
 interface SessionsTableProps {
 	sessions: MCPSessionRow[];
@@ -110,7 +111,7 @@ export default function SessionsTable({
 					<AlertDialogHeader>
 						{pendingDelete?.kind === "header" ? (
 							<>
-								<AlertDialogTitle>Revoke these stored header values?</AlertDialogTitle>
+								<AlertDialogTitle>{i18n.t("supplemental.revokeStoredHeaders")}</AlertDialogTitle>
 								<AlertDialogDescription>
 									Bifrost will remove the stored credential values for this binding. There is no upstream token to revoke; the user will
 									need to resubmit their header values to use this MCP again.
@@ -118,7 +119,7 @@ export default function SessionsTable({
 							</>
 						) : (
 							<>
-								<AlertDialogTitle>Revoke this MCP session?</AlertDialogTitle>
+								<AlertDialogTitle>{i18n.t("supplemental.revokeMcpSession")}</AlertDialogTitle>
 								<AlertDialogDescription>
 									Bifrost will remove the stored credential for this binding. The upstream OAuth token is not revoked at the provider; it
 									stays detached and expires naturally. Anyone using this binding will need to re-authenticate to obtain a fresh token.
@@ -129,22 +130,20 @@ export default function SessionsTable({
 					<AlertDialogFooter>
 						<AlertDialogCancel data-testid="mcp-session-revoke-cancel">Cancel</AlertDialogCancel>
 						<AlertDialogAction onClick={confirmRevoke} data-testid="mcp-session-revoke-confirm">
-							Revoke
+							{i18n.t("supplemental.revoke")}
 						</AlertDialogAction>
 					</AlertDialogFooter>
 				</AlertDialogContent>
 			</AlertDialog>
 
-			<PageTitle title="MCP Auth Sessions">
-				Per-user credentials stored for MCP servers (OAuth tokens and submitted headers), plus any pending authentication flows.
-			</PageTitle>
+			<PageTitle title={i18n.t("supplemental.mcpAuthSessions")}>{i18n.t("supplemental.mcpAuthSessionsDescription")}</PageTitle>
 
 			<div className="mb-4 flex items-center gap-3">
 				<div className="relative max-w-sm min-w-[200px] flex-1">
 					<Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
 					<Input
-						aria-label="Search sessions"
-						placeholder="Search MCP, user, VK, session..."
+						aria-label={i18n.t("supplemental.searchSessions")}
+						placeholder={i18n.t("supplemental.searchSessionPlaceholder")}
 						value={search}
 						onChange={(e) => onSearchChange(e.target.value)}
 						className="pl-9"
@@ -158,7 +157,7 @@ export default function SessionsTable({
 					<Table>
 						<TableHeader className="bg-muted sticky top-0 z-20">
 							<TableRow>
-								<TableHead>MCP server</TableHead>
+								<TableHead>{i18n.t("supplemental.mcpServer")}</TableHead>
 								<TableHead>
 									<HeaderWithTooltip
 										label="Type"
@@ -192,12 +191,9 @@ export default function SessionsTable({
 								<TableRow>
 									<TableCell colSpan={7} className="h-24 text-center">
 										{hasActiveFilters ? (
-											<div className="text-muted-foreground text-sm">No sessions match these filters.</div>
+											<div className="text-muted-foreground text-sm">{i18n.t("supplemental.noMatchingSessions")}</div>
 										) : (
-											<span className="text-muted-foreground text-sm">
-												No sessions yet. Sessions appear here when an inference request or MCP gateway call triggers per-user authentication
-												(OAuth or header submission).
-											</span>
+											<span className="text-muted-foreground text-sm">{i18n.t("supplemental.noSessionsYet")}</span>
 										)}
 									</TableCell>
 								</TableRow>
@@ -243,8 +239,8 @@ export default function SessionsTable({
 				{totalCount > 0 && (
 					<div className="flex shrink-0 items-center justify-between text-xs" data-testid="pagination">
 						<div className="text-muted-foreground flex items-center gap-2">
-							{(offset + 1).toLocaleString()}-{Math.min(offset + limit, totalCount).toLocaleString()} of {totalCount.toLocaleString()}{" "}
-							entries
+							{(offset + 1).toLocaleString()}-{Math.min(offset + limit, totalCount).toLocaleString()} {i18n.t("supplemental.of")}{" "}
+							{totalCount.toLocaleString()} entries
 						</div>
 
 						<div className="flex items-center gap-2">
@@ -254,15 +250,17 @@ export default function SessionsTable({
 								onClick={() => onOffsetChange(Math.max(0, offset - limit))}
 								disabled={offset === 0}
 								data-testid="mcp-sessions-pagination-prev-btn"
-								aria-label="Previous page"
+								aria-label={i18n.t("supplemental.previousPage")}
 							>
 								<ChevronLeft className="size-3" />
 							</Button>
 
 							<div className="flex items-center gap-1">
-								<span>Page</span>
+								<span>{i18n.t("supplemental.page")}</span>
 								<span>{Math.floor(offset / limit) + 1}</span>
-								<span>of {Math.ceil(totalCount / limit)}</span>
+								<span>
+									{i18n.t("supplemental.of")} {Math.ceil(totalCount / limit)}
+								</span>
 							</div>
 
 							<Button
@@ -271,7 +269,7 @@ export default function SessionsTable({
 								onClick={() => onOffsetChange(offset + limit)}
 								disabled={offset + limit >= totalCount}
 								data-testid="mcp-sessions-pagination-next-btn"
-								aria-label="Next page"
+								aria-label={i18n.t("supplemental.nextPage")}
 							>
 								<ChevronRight className="size-3" />
 							</Button>
@@ -325,14 +323,14 @@ function BindingCell({ row }: { row: MCPSessionRow }) {
 			</div>
 		);
 	}
-	return <span className="text-muted-foreground text-sm">Session-bound</span>;
+	return <span className="text-muted-foreground text-sm">{i18n.t("supplemental.sessionBound")}</span>;
 }
 
 function TypeBadge({ authKind }: { authKind: string }) {
 	if (authKind === "headers") {
 		return <Badge variant="outline">Headers</Badge>;
 	}
-	return <Badge variant="outline">OAuth</Badge>;
+	return <Badge variant="outline">{i18n.t("workspace.mcp.authTypeLabels.oauth")}</Badge>;
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -345,12 +343,12 @@ function StatusBadge({ status }: { status: string }) {
 		// needed from you" — the auto-restore cascade handles it.
 		return (
 			<Badge variant="outline" className="border-amber-500 bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-200">
-				Orphaned
+				{i18n.t("supplemental.orphaned")}
 			</Badge>
 		);
 	}
 	if (status === "needs_reauth") {
-		return <Badge variant="destructive">Needs re-auth</Badge>;
+		return <Badge variant="destructive">{i18n.t("supplemental.needsReauth")}</Badge>;
 	}
 	if (status === "needs_update") {
 		// Outlined red: signals user action required, but visually distinct from
@@ -358,7 +356,7 @@ function StatusBadge({ status }: { status: string }) {
 		// Distinct copy so the row affordance ("Update values") matches.
 		return (
 			<Badge variant="outline" className="border-red-500 bg-red-100 text-red-900 dark:bg-red-900/30 dark:text-red-200">
-				Needs update
+				{i18n.t("supplemental.needsUpdate")}
 			</Badge>
 		);
 	}
@@ -383,7 +381,7 @@ function RowActions({ row, reauthing, revoking, isPendingRow, onReauth, onRevoke
 					variant="ghost"
 					size="icon"
 					className="h-8 w-8"
-					aria-label="MCP session actions"
+					aria-label={i18n.t("supplemental.mcpSessionActions")}
 					data-testid={`mcp-session-row-actions-${row.id}`}
 					disabled={busy}
 				>
@@ -397,7 +395,7 @@ function RowActions({ row, reauthing, revoking, isPendingRow, onReauth, onRevoke
 						// MCP client will start a new flow. No action we can offer wires
 						// up to the existing flow row, so surface guidance instead.
 						<DropdownMenuItem disabled className="text-muted-foreground cursor-default text-xs">
-							Trigger a request to re-authenticate
+							{i18n.t("supplemental.triggerReauth")}
 						</DropdownMenuItem>
 					) : (
 						<DropdownMenuItem
@@ -416,7 +414,7 @@ function RowActions({ row, reauthing, revoking, isPendingRow, onReauth, onRevoke
 							}}
 						>
 							<ExternalLink className="h-4 w-4" />
-							Complete authentication
+							{i18n.t("supplemental.completeAuthentication")}
 						</DropdownMenuItem>
 					)
 				) : row.kind === "header" ? (
@@ -438,7 +436,7 @@ function RowActions({ row, reauthing, revoking, isPendingRow, onReauth, onRevoke
 								}}
 							>
 								<Pencil className="h-4 w-4" />
-								{row.status === "needs_update" ? "Update values" : "Edit values"}
+								{row.status === "needs_update" ? i18n.t("supplemental.updateValues") : i18n.t("supplemental.editValues")}
 							</DropdownMenuItem>
 						)}
 						<DropdownMenuItem
@@ -452,7 +450,7 @@ function RowActions({ row, reauthing, revoking, isPendingRow, onReauth, onRevoke
 							}}
 						>
 							<Trash2 className="h-4 w-4" />
-							Revoke
+							{i18n.t("supplemental.revoke")}
 						</DropdownMenuItem>
 					</>
 				) : (
@@ -473,7 +471,7 @@ function RowActions({ row, reauthing, revoking, isPendingRow, onReauth, onRevoke
 								}}
 							>
 								<RefreshCcw className="h-4 w-4" />
-								Re-authenticate
+								{i18n.t("supplemental.reauthenticate")}
 							</DropdownMenuItem>
 						)}
 						<DropdownMenuItem
@@ -487,7 +485,7 @@ function RowActions({ row, reauthing, revoking, isPendingRow, onReauth, onRevoke
 							}}
 						>
 							<Trash2 className="h-4 w-4" />
-							Revoke
+							{i18n.t("supplemental.revoke")}
 						</DropdownMenuItem>
 					</>
 				)}

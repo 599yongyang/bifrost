@@ -2,6 +2,7 @@ import { useCallback, useMemo } from "react";
 import { AsyncMultiSelect } from "./asyncMultiselect";
 import { Option } from "./multiselectUtils";
 import { cn } from "./utils";
+import i18n from "@/lib/i18n";
 
 // Entity types supported by this component
 export type EntityType = "virtualKey" | "team" | "customer" | "user" | "provider" | "apiKey";
@@ -213,7 +214,7 @@ export function EntityAssociationSelect({
 							>
 								<div className="flex items-center justify-between">
 									<span className="text-content-primary font-medium">{data.label}</span>
-									{props.isSelected && <span className="text-primary text-xs">Selected</span>}
+									{props.isSelected && <span className="text-primary text-xs">{i18n.t("supplemental.selected")}</span>}
 								</div>
 								{data.meta?.description && <span className="text-content-tertiary line-clamp-1 text-xs">{data.meta.description}</span>}
 							</div>

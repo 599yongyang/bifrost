@@ -1,4 +1,5 @@
 import ContactUsView from "../../views/contactUsView";
+import i18n from "@/lib/i18n";
 
 interface KafkaConnectorViewProps {
 	onDelete?: () => void;
@@ -15,8 +16,8 @@ export default function KafkaConnectorView(_props: KafkaConnectorViewProps) {
 						className="mx-auto w-full max-w-lg"
 						testIdPrefix="kafka-connector"
 						icon={<img src="/images/kafka-logo.svg" alt="Kafka" width={88} height={88} />}
-						title="Unlock native Kafka log streaming for real-time observability"
-						description="This feature is a part of the Bifrost enterprise license. Stream completed request traces as JSON to a Kafka topic for real-time analytics, alerting, and downstream processing."
+						title={i18n.t("workspace.enterpriseFallbacks.kafkaTitle")}
+						description={i18n.t("workspace.enterpriseFallbacks.kafkaDescription")}
 						readmeLink="https://docs.getbifrost.ai/enterprise/kafka-connector"
 					/>
 				</div>

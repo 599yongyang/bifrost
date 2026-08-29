@@ -3,10 +3,10 @@ import { ComboboxSelect } from "@/components/ui/combobox";
 import { Label } from "@/components/ui/label";
 import { ModelMultiselect } from "@/components/ui/modelMultiselect";
 import { Switch } from "@/components/ui/switch";
-import { localize } from "@/lib/i18n/language";
 import { createDefaultRoutingErrorFallback, RoutingErrorFallbackFormData } from "@/lib/types/routingRules";
 import { ArrowDown, ArrowUp, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
+import i18n from "@/lib/i18n";
 
 const splitFallback = (fallback: string): [string, string] => {
 	const [provider = "", ...model] = fallback.split("/");
@@ -50,12 +50,9 @@ export function ErrorFallbackEditor({ value, providerOptions, onChange }: ErrorF
 						<ShieldCheck className="size-4" />
 					</div>
 					<div>
-						<Label>{localize("Use a dedicated fallback for content-safety blocks", "内容安全拦截使用专用备用链")}</Label>
+						<Label>{i18n.t("workspace.routingRules.copy.errorFallbackEditor_use_a_dedicated_fallback_for_content_safety_blocks")}</Label>
 						<p className="text-muted-foreground mt-1 max-w-2xl text-xs leading-relaxed">
-							{localize(
-								"When the provider blocks a request or response for content safety, use this dedicated chain. Rate limits, timeouts, network failures, and all other errors continue through the ordinary fallback chain above.",
-								"仅当供应商因内容安全拦截请求或响应时使用这条专用链。限流、超时、网络异常及其他错误仍继续使用上方的普通 Fallback。",
-							)}
+							{i18n.t("workspace.routingRules.copy.errorFallbackEditor_when_the_provider_blocks_a_request_or_response_for_conte")}
 						</p>
 					</div>
 				</div>
@@ -63,7 +60,7 @@ export function ErrorFallbackEditor({ value, providerOptions, onChange }: ErrorF
 					checked={enabled}
 					onCheckedChange={setEnabled}
 					data-testid="routing-rule-content-safety-fallback-toggle"
-					aria-label={localize("Enable content-safety fallback", "启用内容安全备用链")}
+					aria-label={i18n.t("workspace.routingRules.copy.errorFallbackEditor_enable_content_safety_fallback")}
 				/>
 			</div>
 
@@ -71,12 +68,9 @@ export function ErrorFallbackEditor({ value, providerOptions, onChange }: ErrorF
 				<div className="space-y-4 rounded-sm border p-4" data-testid="routing-rule-content-safety-fallback-editor">
 					<FallbackTargets fallbacks={rule.fallbacks} providerOptions={providerOptions} onChange={updateFallbacks} />
 					<div className="bg-muted/30 rounded-sm border px-3 py-2 text-xs">
-						<p className="font-medium">{localize("Failure behavior", "失败后的行为")}</p>
+						<p className="font-medium">{i18n.t("workspace.routingRules.copy.errorFallbackEditor_failure_behavior")}</p>
 						<p className="text-muted-foreground mt-1">
-							{localize(
-								"If every content-safety fallback fails, Bifrost returns the original safety error. It does not continue the ordinary chain after entering this dedicated chain.",
-								"如果内容安全备用链全部失败，Bifrost 返回原始安全错误；进入专用链后不会再继续普通 Fallback。",
-							)}
+							{i18n.t("workspace.routingRules.copy.errorFallbackEditor_if_every_content_safety_fallback_fails_bifrost_returns_t")}
 						</p>
 					</div>
 				</div>
@@ -111,8 +105,10 @@ function FallbackTargets({
 		<div className="space-y-3">
 			<div className="flex items-center justify-between gap-3">
 				<div>
-					<Label>{localize("Content-safety fallback targets", "内容安全备用目标")}</Label>
-					<p className="text-muted-foreground mt-1 text-xs">{localize("Tried in order until one succeeds.", "按顺序尝试，成功后停止。")}</p>
+					<Label>{i18n.t("workspace.routingRules.copy.errorFallbackEditor_content_safety_fallback_targets")}</Label>
+					<p className="text-muted-foreground mt-1 text-xs">
+						{i18n.t("workspace.routingRules.copy.errorFallbackEditor_tried_in_order_until_one_succeeds")}
+					</p>
 				</div>
 				<Button
 					type="button"
@@ -121,7 +117,7 @@ function FallbackTargets({
 					onClick={() => onChange([...fallbacks, ""])}
 					data-testid="routing-rule-content-safety-add-target"
 				>
-					<Plus className="size-4" /> {localize("Add target", "添加目标")}
+					<Plus className="size-4" /> {i18n.t("workspace.routingRules.copy.errorFallbackEditor_add_target")}
 				</Button>
 			</div>
 			{fallbacks.map((fallback, index) => {
@@ -140,7 +136,7 @@ function FallbackTargets({
 									updateFallback(index, selectedProvider, selectedProvider === provider ? model : "");
 								}}
 								options={providerOptions}
-								placeholder={localize("Select provider...", "选择供应商...")}
+								placeholder={i18n.t("workspace.routingRules.copy.errorFallbackEditor_select_provider")}
 								className="h-9"
 								noPortal
 							/>
@@ -150,7 +146,7 @@ function FallbackTargets({
 								provider={provider || undefined}
 								value={model}
 								onChange={(nextModel) => updateFallback(index, provider, nextModel)}
-								placeholder={localize("Incoming model (optional)", "传入模型（可选）")}
+								placeholder={i18n.t("workspace.routingRules.copy.errorFallbackEditor_incoming_model_optional")}
 								isSingleSelect
 								disabled={!provider}
 								className="!h-9 !min-h-9 w-full"
@@ -162,7 +158,7 @@ function FallbackTargets({
 							size="icon"
 							onClick={() => moveFallback(index, -1)}
 							disabled={index === 0}
-							aria-label={localize("Move target up", "上移目标")}
+							aria-label={i18n.t("workspace.routingRules.copy.errorFallbackEditor_move_target_up")}
 						>
 							<ArrowUp className="size-4" />
 						</Button>
@@ -172,7 +168,7 @@ function FallbackTargets({
 							size="icon"
 							onClick={() => moveFallback(index, 1)}
 							disabled={index === fallbacks.length - 1}
-							aria-label={localize("Move target down", "下移目标")}
+							aria-label={i18n.t("workspace.routingRules.copy.errorFallbackEditor_move_target_down")}
 						>
 							<ArrowDown className="size-4" />
 						</Button>
@@ -181,7 +177,7 @@ function FallbackTargets({
 							variant="ghost"
 							size="icon"
 							onClick={() => onChange(fallbacks.filter((_, current) => current !== index))}
-							aria-label={localize("Remove target", "删除目标")}
+							aria-label={i18n.t("workspace.routingRules.copy.errorFallbackEditor_remove_target")}
 						>
 							<Trash2 className="size-4" />
 						</Button>

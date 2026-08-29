@@ -13,6 +13,7 @@ import { HARNESSES } from "./harnesses";
 import { PlatformSelect } from "./platformSelect";
 import type { HarnessID, HarnessPlatform, ServerScope, VirtualKeyOption } from "./types";
 import { isClientAllowedForVirtualKey, maskSecret } from "./utils";
+import i18n from "@/lib/i18n";
 
 // Literal value sets driving the URL-persisted enums.
 const HARNESS_IDS = HARNESSES.map((h) => h.id);
@@ -165,7 +166,7 @@ export function MCPUsageGuideSheet() {
 						{/* ── Virtual key picker ─────────────────────────── */}
 						<section className="flex flex-col gap-2 transition-[border-color,background-color] duration-150 ease-out">
 							<div className="flex items-center gap-2 text-sm font-medium">
-								<span>Virtual key</span>
+								<span>{i18n.t("workspace.customPricing.overrideSheet.virtualKey")}</span>
 							</div>
 							<SearchSelect<VirtualKeyOption>
 								async
@@ -231,7 +232,7 @@ export function MCPUsageGuideSheet() {
 										data-testid="mcp-usage-guide-server-scope-all"
 									>
 										<Globe2 className="text-muted-foreground size-4" />
-										<span className="font-medium">All servers</span>
+										<span className="font-medium">{i18n.t("workspace.mcpLogs.allServers")}</span>
 										{serverScope === "all" && <Check className="ml-auto size-4 text-green-600" />}
 									</button>
 									<button

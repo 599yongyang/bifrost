@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { LogEntry } from "@/lib/types/logs";
 
 import { getMessage } from "./columns";
+import { getLogTimestampPattern } from "../utils/logsPageCopy";
 
 describe("getMessage", () => {
 	it("returns EI realtime text from input history", () => {
@@ -96,5 +97,19 @@ describe("getMessage", () => {
 		} as unknown as LogEntry;
 
 		expect(getMessage(log)).toBe('User: show me a pastel palette\nAssistant Tool Call: display_color_palette({"theme":"pastel"})');
+	});
+});
+
+describe("getLogTimestampPattern", () => {
+	const now = new Date(2026, 7, 29, 12, 0, 0);
+
+	it("omits the year for logs from the current year", () => {
+		expect(getLogTimestampPattern(new Date(2026, 7, 20), now, "zh")).toBe("MM-dd HH:mm:ss");
+		expect(getLogTimestampPattern(new Date(2026, 7, 20), now, "en")).toBe("MMM dd HH:mm:ss");
+	});
+
+	it("keeps the year for logs from another year", () => {
+		expect(getLogTimestampPattern(new Date(2025, 11, 31), now, "zh")).toBe("yyyy-MM-dd HH:mm:ss");
+		expect(getLogTimestampPattern(new Date(2025, 11, 31), now, "en")).toBe("yyyy MMM dd HH:mm:ss");
 	});
 });

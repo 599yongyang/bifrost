@@ -7,6 +7,7 @@ import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { parseAsInteger, useQueryStates } from "nuqs";
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
+import i18n from "@/lib/i18n";
 
 const POLLING_INTERVAL = 5000;
 const PAGE_SIZE = 25;
@@ -67,7 +68,7 @@ export default function GovernanceCustomersPage() {
 		if (shownErrorsRef.current.has(errorKey)) return;
 		shownErrorsRef.current.add(errorKey);
 		if (teamsError && customersError) {
-			toast.error("Failed to load governance data.");
+			toast.error(i18n.t("workspace.virtualKeys.loadGovernanceDataFailed"));
 		} else {
 			if (teamsError) toast.error(`Failed to load teams: ${getErrorMessage(teamsError)}`);
 			if (customersError) toast.error(`Failed to load customers: ${getErrorMessage(customersError)}`);

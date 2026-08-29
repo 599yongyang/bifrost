@@ -3,6 +3,7 @@ import { DialogFooter } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Validator } from "@/lib/utils/validation";
 import { Save } from "lucide-react";
+import i18n from "@/lib/i18n";
 
 interface FormFooterProps {
 	validator: Validator;
@@ -25,7 +26,7 @@ export default function FormFooter({ validator, label, onCancel, isLoading, isEd
 	return (
 		<DialogFooter className="mt-4">
 			<Button type="button" variant="outline" onClick={onCancel} disabled={isLoading}>
-				Cancel
+				{i18n.t("common.cancel")}
 			</Button>
 			<TooltipProvider>
 				<Tooltip>

@@ -20,6 +20,7 @@ import { type ModelRankingsTabViewHandle, ModelRankingsTabView } from "./compone
 import { type OverviewTabViewHandle, OverviewTabView } from "./components/tabViews/overviewTabView";
 import { type ProviderUsageTabViewHandle, ProviderUsageTabView } from "./components/tabViews/providerUsageTabView";
 import { type DashboardData, type DashboardTab, type ExportTab, DASHBOARD_EXPORT_TABS } from "./utils/exportUtils";
+import i18n from "@/lib/i18n";
 
 const toChartType = (value: string): ChartType => (value === "line" ? "line" : "bar");
 
@@ -491,34 +492,34 @@ export default function DashboardPage() {
 								    stretch every tab across the row. */}
 								<TabsList className="w-max min-w-max">
 									<TabsTrigger className="shrink-0" value="overview" data-testid="dashboard-tab-overview">
-										Overview
+										{i18n.t("workspace.dashboard.overview")}
 									</TabsTrigger>
 									<TabsTrigger className="shrink-0" value="provider-usage" data-testid="dashboard-tab-provider-usage">
-										Provider Usage
+										{i18n.t("workspace.dashboard.providerUsage")}
 									</TabsTrigger>
 									<TabsTrigger className="shrink-0" value="rankings" data-testid="dashboard-tab-rankings">
-										Model Rankings
+										{i18n.t("workspace.dashboard.modelRankings")}
 									</TabsTrigger>
 									<TabsTrigger className="shrink-0" value="mcp" data-testid="dashboard-tab-mcp">
-										MCP usage
+										{i18n.t("workspace.dashboard.mcpUsage")}
 									</TabsTrigger>
 									<TabsTrigger className="shrink-0" value="team-rankings" data-testid="dashboard-tab-team-rankings">
-										Team Rankings
+										{i18n.t("workspace.dashboard.teamRankings")}
 									</TabsTrigger>
 									<TabsTrigger className="shrink-0" value="user-rankings" data-testid="dashboard-tab-user-rankings">
-										User Rankings
+										{i18n.t("workspace.dashboard.userRankings")}
 									</TabsTrigger>
 									<TabsTrigger className="shrink-0" value="virtual-key-rankings" data-testid="dashboard-tab-virtual-key-rankings">
-										Virtual Key Rankings
+										{i18n.t("workspace.dashboard.virtualKeyRankings")}
 									</TabsTrigger>
 									<TabsTrigger className="shrink-0" value="customer-rankings" data-testid="dashboard-tab-customer-rankings">
-										Customer Rankings
+										{i18n.t("workspace.dashboard.customerRankings")}
 									</TabsTrigger>
 									<TabsTrigger className="shrink-0" value="bu-rankings" data-testid="dashboard-tab-bu-rankings">
-										BU Rankings
+										{i18n.t("workspace.dashboard.businessUnitRankings")}
 									</TabsTrigger>
 									<TabsTrigger value="app-rankings" data-testid="dashboard-tab-app-rankings">
-										App Rankings
+										{i18n.t("workspace.dashboard.appRankings")}
 									</TabsTrigger>
 								</TabsList>
 							</div>
@@ -543,7 +544,7 @@ export default function DashboardPage() {
 														setUrlState({ mcp_tool_names: value });
 													}
 												}}
-												placeholder="All Tools"
+												placeholder={i18n.t("workspace.dashboard.allTools")}
 												data-testid="dashboard-mcp-tool-filter"
 											/>
 										)}
@@ -558,7 +559,7 @@ export default function DashboardPage() {
 														setUrlState({ mcp_server_labels: value });
 													}
 												}}
-												placeholder="All Servers"
+												placeholder={i18n.t("workspace.dashboard.allServers")}
 												data-testid="dashboard-mcp-server-filter"
 											/>
 										)}
@@ -677,7 +678,7 @@ export default function DashboardPage() {
 									filters={filters}
 									active={activeTab === "team-rankings" || exportingAll}
 									dimension="team"
-									dimensionLabel="Team"
+									dimensionLabel={i18n.t("workspace.dashboard.team")}
 									testIdPrefix="dashboard-team-rankings"
 									dataKey="teamRankingsData"
 									pdfMode={isExportingTab("team-rankings")}
@@ -693,7 +694,7 @@ export default function DashboardPage() {
 									filters={filters}
 									active={activeTab === "customer-rankings" || exportingAll}
 									dimension="customer"
-									dimensionLabel="Customer"
+									dimensionLabel={i18n.t("workspace.dashboard.customer")}
 									testIdPrefix="dashboard-customer-rankings"
 									dataKey="customerRankingsData"
 									pdfMode={isExportingTab("customer-rankings")}
@@ -709,7 +710,7 @@ export default function DashboardPage() {
 									filters={filters}
 									active={activeTab === "bu-rankings" || exportingAll}
 									dimension="business_unit"
-									dimensionLabel="Business Unit"
+									dimensionLabel={i18n.t("workspace.dashboard.businessUnit")}
 									testIdPrefix="dashboard-bu-rankings"
 									dataKey="buRankingsData"
 									pdfMode={isExportingTab("bu-rankings")}
@@ -725,7 +726,7 @@ export default function DashboardPage() {
 									filters={filters}
 									active={activeTab === "user-rankings" || exportingAll}
 									dimension="user"
-									dimensionLabel="User"
+									dimensionLabel={i18n.t("workspace.dashboard.user")}
 									testIdPrefix="dashboard-user-rankings"
 									dataKey="userRankingsData"
 									pdfMode={isExportingTab("user-rankings")}
@@ -741,7 +742,7 @@ export default function DashboardPage() {
 									filters={filters}
 									active={activeTab === "virtual-key-rankings" || exportingAll}
 									dimension="virtual_key"
-									dimensionLabel="Virtual Key"
+									dimensionLabel={i18n.t("workspace.dashboard.virtualKey")}
 									testIdPrefix="dashboard-virtual-key-rankings"
 									dataKey="virtualKeyRankingsData"
 									pdfMode={isExportingTab("virtual-key-rankings")}
@@ -756,7 +757,7 @@ export default function DashboardPage() {
 									filters={filters}
 									active={activeTab === "app-rankings" || isExportingTab("app-rankings")}
 									dimension="app"
-									dimensionLabel="App"
+									dimensionLabel={i18n.t("workspace.dashboard.app")}
 									testIdPrefix="dashboard-app-rankings"
 									dataKey="appRankingsData"
 									pdfMode={isExportingTab("app-rankings")}

@@ -36,7 +36,3 @@ export function setBifrostLanguage(language: BifrostLanguage) {
 	}
 	if (typeof document !== "undefined") document.documentElement.lang = language;
 }
-
-export function localize<T>(english: T, chinese: T): T {
-	return getBifrostLanguage() === "zh" ? chinese : english;
-}

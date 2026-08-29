@@ -1,10 +1,11 @@
 import AlertingPlaceholderView from "./alertingPlaceholderView";
+import i18n from "@/lib/i18n";
 
 export default function AlertHistoryView() {
 	return (
 		<AlertingPlaceholderView
-			title="Unlock alerting history for proactive monitoring"
-			description="This feature is a part of the Bifrost enterprise license. Review alert delivery outcomes, failures, and resolution events in one place."
+			title={i18n.t("workspace.enterpriseFallbacks.alertHistoryTitle")}
+			description={i18n.t("workspace.enterpriseFallbacks.alertHistoryDescription")}
 			readmeLink="https://docs.getbifrost.ai/enterprise/alerting/alert-history"
 			testIdPrefix="alert-history"
 		/>

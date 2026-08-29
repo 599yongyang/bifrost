@@ -1,5 +1,6 @@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatTokenPriceCompact, formatTokenPriceFull } from "@/lib/utils/numbers";
+import i18n from "@/lib/i18n";
 
 interface OverriddenPriceProps {
 	/** Catalog price from governance_model_pricing. */
@@ -37,16 +38,20 @@ export default function OverriddenPrice({ base, override, variant, overrideName,
 					>
 						{/* The strikethrough is visual only, so name each value for screen readers. */}
 						<span className="text-muted-foreground text-xs line-through" data-testid={testId ? `${testId}-original` : undefined}>
-							<span className="sr-only">Original price: </span>
+							<span className="sr-only">{i18n.t("workspace.modelCatalog.attributes.originalPrice")}: </span>
 							{format(base)}
 						</span>
 						<span data-testid={testId ? `${testId}-override` : undefined}>
-							<span className="sr-only">Effective price: </span>
+							<span className="sr-only">{i18n.t("workspace.modelCatalog.attributes.effectivePrice")}: </span>
 							{format(override)}
 						</span>
 					</span>
 				</TooltipTrigger>
-				<TooltipContent>{overrideName ? `Overridden by "${overrideName}"` : "Overridden by a custom pricing override"}</TooltipContent>
+				<TooltipContent>
+					{overrideName
+						? i18n.t("workspace.modelCatalog.attributes.overriddenByName", { name: overrideName })
+						: i18n.t("workspace.modelCatalog.attributes.overriddenByCustom")}
+				</TooltipContent>
 			</Tooltip>
 		</TooltipProvider>
 	);

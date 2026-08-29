@@ -1,17 +1,17 @@
-import { localize } from "@/lib/i18n/language";
+import i18n from "@/lib/i18n";
 
-const linkLabels: Record<string, string> = {
-	"GitHub Repository": "GitHub 仓库",
-	"Full Documentation": "完整文档",
+const linkLabelKeys: Record<string, string> = {
+	"GitHub Repository": "systemCopy.topbarCopy_github_repository",
+	"Full Documentation": "systemCopy.topbarCopy_full_documentation",
 };
 
 export const topbarCopy = () => ({
-	accountMenu: localize("Account menu", "账户菜单"),
-	openMenu: localize("Open menu", "打开菜单"),
-	signOut: localize("Sign out", "退出登录"),
-	version: localize("Version", "版本"),
+	accountMenu: i18n.t("systemCopy.topbarCopy_account_menu"),
+	openMenu: i18n.t("systemCopy.topbarCopy_open_menu"),
+	signOut: i18n.t("systemCopy.topbarCopy_sign_out"),
+	version: i18n.t("systemCopy.topbarCopy_version"),
 });
 
 export function topbarLinkLabel(label: string) {
-	return localize(label, linkLabels[label] ?? label);
+	return linkLabelKeys[label] ? i18n.t(linkLabelKeys[label], { defaultValue: label }) : label;
 }

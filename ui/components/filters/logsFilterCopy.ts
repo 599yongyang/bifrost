@@ -1,24 +1,13 @@
-const content = {
-	en: {
-		latency: "Latency",
-		minimum: "Minimum (seconds)",
-		maximum: "Maximum (seconds)",
-		noLimit: "No limit",
-		secondsOrMore: (seconds: number) => `${seconds}s or more`,
-		unitHelp: "Provider response latency; decimals are supported.",
-		clear: "Clear",
-	},
-	zh: {
-		latency: "延迟",
-		minimum: "最小值（秒）",
-		maximum: "最大值（秒）",
-		noLimit: "不限",
-		secondsOrMore: (seconds: number) => `${seconds} 秒及以上`,
-		unitHelp: "供应商响应延迟，支持小数。",
-		clear: "清除",
-	},
-} as const;
+import i18n from "@/lib/i18n";
 
 export function logsFilterCopy() {
-	return typeof document !== "undefined" && document.documentElement.lang.toLowerCase().startsWith("zh") ? content.zh : content.en;
+	return {
+		latency: i18n.t("workspace.logs.latencyFilter.title"),
+		minimum: i18n.t("workspace.logs.latencyFilter.minimum"),
+		maximum: i18n.t("workspace.logs.latencyFilter.maximum"),
+		noLimit: i18n.t("workspace.logs.latencyFilter.noLimit"),
+		secondsOrMore: (seconds: number) => i18n.t("workspace.logs.latencyFilter.secondsOrMore", { seconds }),
+		unitHelp: i18n.t("workspace.logs.latencyFilter.providerUnitHelp"),
+		clear: i18n.t("workspace.logs.latencyFilter.clear"),
+	};
 }

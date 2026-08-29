@@ -9,6 +9,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./collapsib
 import { Option } from "./multiselectUtils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./table";
 import { cn } from "./utils";
+import i18n from "@/lib/i18n";
 
 // Types
 export interface SelectedTool {
@@ -212,8 +213,8 @@ export function MCPToolSelector({
 						<TableHeader>
 							<TableRow>
 								<TableHead className="w-10"></TableHead>
-								<TableHead className="w-auto">Tool</TableHead>
-								<TableHead className="hidden w-32 md:table-cell">Server</TableHead>
+								<TableHead className="w-auto">{i18n.t("common.tool")}</TableHead>
+								<TableHead className="hidden w-32 md:table-cell">{i18n.t("workspace.mcpLogs.server")}</TableHead>
 								<TableHead className="w-10"></TableHead>
 							</TableRow>
 						</TableHeader>
@@ -271,7 +272,9 @@ export function MCPToolSelector({
 												<tr>
 													<td colSpan={4} className="p-0">
 														<div className="bg-muted/30 border-t px-4 py-3">
-															<div className="text-muted-foreground mb-2 text-xs font-medium">Parameters Schema</div>
+															<div className="text-muted-foreground mb-2 text-xs font-medium">
+																{i18n.t("workspace.mcpClientSheet.parametersSchema")}
+															</div>
 															{tool.parameters ? (
 																<CodeEditor
 																	className="z-0 w-full rounded-md border"
@@ -289,7 +292,9 @@ export function MCPToolSelector({
 																	}}
 																/>
 															) : (
-																<div className="text-muted-foreground text-sm">No parameters defined</div>
+																<div className="text-muted-foreground text-sm">
+																	{i18n.t("workspace.mcpClientSheet.noParametersDefined")}
+																</div>
 															)}
 														</div>
 													</td>

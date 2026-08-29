@@ -1,5 +1,6 @@
 import { Database } from "lucide-react";
 import ContactUsView from "../../views/contactUsView";
+import i18n from "@/lib/i18n";
 
 interface EnableToggleProps {
 	enabled: boolean;
@@ -23,8 +24,8 @@ export default function BigQueryConnectorView(_props: BigQueryConnectorViewProps
 						align="middle"
 						className="mx-auto w-full max-w-lg"
 						icon={<Database className="h-[5.5rem] w-[5.5rem]" strokeWidth={1} />}
-						title="Unlock native BigQuery data ingestion for analytics"
-						description="This feature is a part of the Bifrost enterprise license. We would love to know more about your use case and how we can help you."
+						title={i18n.t("workspace.enterpriseFallbacks.bigQueryTitle")}
+						description={i18n.t("workspace.enterpriseFallbacks.commonDescription")}
 						readmeLink="https://docs.getbifrost.ai/enterprise/bigquery-connector"
 					/>
 				</div>

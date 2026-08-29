@@ -11,6 +11,7 @@ import { resolveObservabilityExport } from "../utils/observabilityExport";
 import { observabilityCopy } from "../utils/observabilityCopy";
 import { useEffect, useState } from "react";
 import { LogDetailView } from "./logDetailView";
+import i18n from "@/lib/i18n";
 
 interface LogDetailSheetProps {
 	log: LogEntry | null;
@@ -82,7 +83,7 @@ export function LogDetailSheet({
 			<SheetContent className="border-secondary flex w-full flex-col gap-4 overflow-x-hidden border p-4 sm:max-w-[60%] md:p-8">
 				{!isFullDataReady ? (
 					<div className="flex h-full items-center justify-center">
-						<SheetTitle className="sr-only">Loading log details</SheetTitle>
+						<SheetTitle className="sr-only">{i18n.t("supplemental.loadingLogDetails")}</SheetTitle>
 						<Loader2 className="text-muted-foreground h-6 w-6 animate-spin" />
 					</div>
 				) : (
@@ -112,7 +113,7 @@ export function LogDetailSheet({
 										data-testid="session-button-view"
 										onClick={() => onViewSession(displayLog.parent_request_id as string, displayLog.id)}
 									>
-										View Session
+										{i18n.t("supplemental.viewSession")}
 									</Button>
 								) : null}
 								<SheetNavigationButtons

@@ -1,7 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { sidebarLabel } from "@/components/sidebarCopy";
-import { topbarCopy } from "@/components/topbarCopy";
-import { getBifrostLanguage, initializeBifrostLanguage, localize, setBifrostLanguage } from "./language";
+import { getBifrostLanguage, initializeBifrostLanguage, setBifrostLanguage } from "./language";
 
 const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
 const originalDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
@@ -38,19 +36,5 @@ describe("Bifrost language", () => {
 		expect(document.documentElement.lang).toBe("zh");
 		setBifrostLanguage("en");
 		expect(getBifrostLanguage()).toBe("en");
-	});
-
-	it("selects localized values from the active language", () => {
-		installBrowser("zh-CN");
-		expect(localize("English", "中文")).toBe("中文");
-		setBifrostLanguage("en");
-		expect(localize("English", "中文")).toBe("English");
-	});
-
-	it("localizes navigation copy after the stored language changes", () => {
-		installBrowser("en-US");
-		setBifrostLanguage("zh");
-		expect(sidebarLabel("Dashboard")).toBe("仪表盘");
-		expect(topbarCopy().signOut).toBe("退出登录");
 	});
 });
