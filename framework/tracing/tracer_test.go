@@ -15,6 +15,14 @@ type testRealtimeObservabilityPlugin struct {
 	injectedPayload chan string
 }
 
+type rejectMediaCapturePlugin struct {
+	testRealtimeObservabilityPlugin
+}
+
+func (*rejectMediaCapturePlugin) BeginTraceMediaCapture(string, *schemas.BifrostRequest) schemas.TraceMediaCaptureDecision {
+	return schemas.TraceMediaCaptureDecision{Capture: false}
+}
+
 func (p *testRealtimeObservabilityPlugin) GetName() string { return "test-observability" }
 func (p *testRealtimeObservabilityPlugin) Cleanup() error  { return nil }
 func (p *testRealtimeObservabilityPlugin) PreRequestHook(_ *schemas.BifrostContext, _ *schemas.BifrostRequest) error {
@@ -46,6 +54,35 @@ func (p *testRealtimeObservabilityPlugin) Inject(_ context.Context, trace *schem
 	// snapshot handed across a channel actually needs.
 	p.injected <- trace.SnapshotForExport()
 	return nil
+}
+
+func TestTracerMediaCapturePolicySkipsImagePayloadCopy(t *testing.T) {
+	store := NewTraceStore(5*time.Minute, nil)
+	defer store.Stop()
+	tracer := NewTracer(store, nil, nil)
+	defer tracer.Stop()
+	tracer.SetObservabilityPlugins([]schemas.ObservabilityPlugin{&rejectMediaCapturePlugin{}}, nil)
+
+	traceID := tracer.CreateTrace("")
+	ctx := context.WithValue(context.Background(), schemas.BifrostContextKeyTraceID, traceID)
+	_, handle := tracer.StartSpan(ctx, "image_edit image-model", schemas.SpanKindLLMCall)
+	tracer.PopulateLLMRequestAttributes(handle, &schemas.BifrostRequest{
+		RequestType: schemas.ImageEditRequest,
+		ImageEditRequest: &schemas.BifrostImageEditRequest{
+			Input: &schemas.ImageEditInput{Prompt: "edit", Images: []schemas.ImageInput{{Image: []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0, 0, 0, 0, 'I', 'H', 'D', 'R'}}}},
+		},
+	})
+
+	trace := tracer.EndTrace(traceID)
+	defer tracer.ReleaseTrace(trace)
+	if attachments := trace.MediaAttachments(); len(attachments) != 0 {
+		t.Fatalf("capture-rejected trace retained %d media attachments", len(attachments))
+	}
+	span := trace.GetSpan(handle.(*spanHandle).spanID)
+	input, _ := span.Attributes[schemas.AttrBifrostImageInput].(string)
+	if !strings.Contains(input, `"capture_status":"metadata_only"`) {
+		t.Fatalf("capture-rejected summary = %s", input)
+	}
 }
 
 func TestTracer_CompleteAndFlushTraceInjectsObservabilityPlugins(t *testing.T) {

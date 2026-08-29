@@ -147,6 +147,14 @@ func PopulateErrorAttributes(err *schemas.BifrostError) map[string]any {
 	if err.StatusCode != nil {
 		attrs[schemas.AttrHTTPResponseStatusCode] = *err.StatusCode
 	}
+	if err.ExtraFields.TimeoutSource != "" {
+		attrs[schemas.AttrBifrostTimeoutSource] = string(err.ExtraFields.TimeoutSource)
+		attrs[schemas.AttrBifrostConfiguredTimeout] = err.ExtraFields.ConfiguredTimeoutSeconds
+		attrs[schemas.AttrBifrostTimeoutElapsedMs] = err.ExtraFields.ElapsedMS
+		if err.ExtraFields.UpstreamResponseReceived != nil {
+			attrs[schemas.AttrBifrostUpstreamResponded] = *err.ExtraFields.UpstreamResponseReceived
+		}
+	}
 
 	return attrs
 }

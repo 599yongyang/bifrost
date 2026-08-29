@@ -12,15 +12,22 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { otelFormSchema, type OtelFormSchema, type SecretVar } from "@/lib/types/schemas";
 import { emptySecretVar, toSecretVarFormValue, toSecretVarMapFormValue } from "@/lib/utils/secretVarForm";
-import { selectiveExportCopy } from "@/lib/i18n/selectiveExport";
+import { selectiveExportText } from "@/lib/i18n/selectiveExportText";
+import { cn } from "@/lib/utils";
+import { normalizeSelectiveExportForForm } from "../selectiveExport";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
+import { DragDropProvider } from "@dnd-kit/react";
+import { useSortable } from "@dnd-kit/react/sortable";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ChevronDown, Info, Plus, Trash2 } from "lucide-react";
+import { CheckCircle2, ChevronDown, GripVertical, Info, Plus, Settings2, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useFieldArray, useForm, type Control, type Resolver, type UseFormReturn } from "react-hook-form";
 
 // ProfileForm is a single profile's form shape, derived from the form schema.
 type ProfileForm = OtelFormSchema["profiles"][number];
+type StoredSelectiveExport = OtelFormSchema["selective_export"];
+
+const useSelectiveExportTranslation = () => ({ t: selectiveExportText });
 
 // StoredOtelProfile is one profile as persisted/returned by the API (headers are strings,
 // SecretVar fields may be plain strings or full objects).
@@ -116,11 +123,78 @@ const emptyProfile = (): ProfileForm => ({
 	disable_root_span_content: false,
 });
 
-const emptySelectiveExport = (): OtelFormSchema["selective_export"] => ({
+const defaultSelectionRules = (): StoredSelectiveExport["rules"] => [
+	{
+		id: "errors",
+		priority: 100,
+		request_types: [],
+		require_error: true,
+		error_categories: [],
+		providers: [],
+		models: [],
+		routing_rules: [],
+		export_rate: 1,
+		max_per_minute: 100,
+	},
+	{
+		id: "fallbacks",
+		priority: 90,
+		request_types: [],
+		require_error: false,
+		require_fallback: true,
+		error_categories: [],
+		providers: [],
+		models: [],
+		routing_rules: [],
+		export_rate: 0.5,
+		max_per_minute: 100,
+	},
+	{
+		id: "slow",
+		priority: 80,
+		request_types: [],
+		require_error: false,
+		min_latency_ms: 30_000,
+		error_categories: [],
+		providers: [],
+		models: [],
+		routing_rules: [],
+		export_rate: 0.3,
+		max_per_minute: 100,
+	},
+	{
+		id: "complete-success",
+		priority: 70,
+		request_types: [],
+		require_error: false,
+		min_technical_quality: 0.85,
+		error_categories: [],
+		providers: [],
+		models: [],
+		routing_rules: [],
+		export_rate: 0.1,
+		max_per_minute: 100,
+	},
+	{
+		id: "default",
+		priority: 0,
+		request_types: [],
+		error_categories: [],
+		providers: [],
+		models: [],
+		routing_rules: [],
+		export_rate: 0.01,
+		max_per_minute: 50,
+	},
+];
+
+const defaultSelectiveExport = (): StoredSelectiveExport => ({
 	enabled: false,
-	dry_run: false,
-	max_exports_per_minute: 0,
-	rules: [],
+	dry_run: true,
+	require_complete_record: true,
+	candidate_rate: 1,
+	max_exports_per_minute: 500,
+	rules: defaultSelectionRules(),
 });
 
 // toProfileForm normalizes a stored profile into the SecretVar-based form representation.
@@ -160,7 +234,12 @@ const buildDefaults = (initial?: OtelFormFragmentProps["currentConfig"]): OtelFo
 		profiles = [];
 	}
 	if (profiles.length === 0) profiles = [emptyProfile()];
-	return { enabled: initial?.enabled ?? true, profiles, selective_export: cfg?.selective_export ?? emptySelectiveExport() };
+	const fallback = defaultSelectiveExport();
+	return {
+		enabled: initial?.enabled ?? true,
+		profiles,
+		selective_export: normalizeSelectiveExportForForm(cfg?.selective_export, fallback),
+	};
 };
 
 export function OtelFormFragment({
@@ -187,7 +266,8 @@ export function OtelFormFragment({
 
 	const onSubmit = (data: OtelFormSchema) => {
 		setIsSaving(true);
-		onSave(data).finally(() => setIsSaving(false));
+		const rules = data.selective_export.rules.map((rule, index, all) => ({ ...rule, priority: (all.length - index) * 10 }));
+		onSave({ ...data, selective_export: { ...data.selective_export, rules } }).finally(() => setIsSaving(false));
 	};
 
 	const handleProfileOpenChange = (index: number, open: boolean) => {
@@ -321,26 +401,456 @@ export function OtelFormFragment({
 	);
 }
 
-const csv = (value: string) =>
+function SelectionFieldLabel({ label, description }: { label: string; description: string }) {
+	const { t } = useSelectiveExportTranslation();
+	return (
+		<TooltipProvider delayDuration={200}>
+			<div className="flex items-center gap-1.5">
+				<FormLabel>{label}</FormLabel>
+				<Tooltip>
+					<TooltipTrigger asChild>
+						<button
+							type="button"
+							className="text-muted-foreground hover:text-foreground"
+							aria-label={t("workspace.observability.otelForm.selective.aboutField", { label })}
+						>
+							<Info className="size-3.5" aria-hidden="true" />
+						</button>
+					</TooltipTrigger>
+					<TooltipContent className="max-w-xs leading-relaxed">{description}</TooltipContent>
+				</Tooltip>
+			</div>
+		</TooltipProvider>
+	);
+}
+
+type SelectionRule = StoredSelectiveExport["rules"][number];
+
+const csvValues = (value: string) =>
 	value
 		.split(",")
 		.map((item) => item.trim())
 		.filter(Boolean);
+const isCatchAllRule = (rule: SelectionRule | undefined) =>
+	!!rule &&
+	!rule.request_types?.length &&
+	rule.require_error === undefined &&
+	rule.require_fallback === undefined &&
+	rule.require_retry === undefined &&
+	!rule.error_categories?.length &&
+	!rule.providers?.length &&
+	!rule.models?.length &&
+	!rule.routing_rules?.length &&
+	rule.min_latency_ms === undefined &&
+	rule.max_latency_ms === undefined &&
+	rule.min_technical_quality === undefined &&
+	rule.min_cost === undefined;
 
-function SelectionLabel({ children, description }: { children: string; description: string }) {
+function SelectionRuleCard({
+	form,
+	fieldID,
+	index,
+	rule,
+	hasOtelAccess,
+	onRemove,
+}: {
+	form: UseFormReturn<OtelFormSchema, unknown, OtelFormSchema>;
+	fieldID: string;
+	index: number;
+	rule: SelectionRule;
+	hasOtelAccess: boolean;
+	onRemove: () => void;
+}) {
+	const { t } = useSelectiveExportTranslation();
+	const [open, setOpen] = useState(false);
+	const [advancedOpen, setAdvancedOpen] = useState(false);
+	const catchAll = isCatchAllRule(rule);
+	const { ref, handleRef, isDragging } = useSortable({ id: fieldID, index, disabled: catchAll || !hasOtelAccess });
+	const base = `selective_export.rules.${index}` as const;
+	const conditions: string[] = [];
+	const requestType = rule.request_types?.[0];
+	if (requestType) conditions.push(t(`workspace.observability.otelForm.selective.summary.${requestType}`));
+	if (rule.require_error === true) conditions.push(t("workspace.observability.otelForm.selective.summary.failed"));
+	if (rule.require_error === false) conditions.push(t("workspace.observability.otelForm.selective.summary.succeeded"));
+	if (rule.require_fallback === true) conditions.push(t("workspace.observability.otelForm.selective.summary.usedFallback"));
+	if (rule.require_fallback === false) conditions.push(t("workspace.observability.otelForm.selective.summary.primaryRoute"));
+	if (rule.require_retry === true) conditions.push(t("workspace.observability.otelForm.selective.summary.retried"));
+	if (rule.error_categories?.[0])
+		conditions.push(t(`workspace.observability.otelForm.selective.errorCategories.${rule.error_categories[0]}`));
+	if (rule.min_latency_ms !== undefined)
+		conditions.push(t("workspace.observability.otelForm.selective.summary.minLatency", { value: rule.min_latency_ms }));
+	if (rule.max_latency_ms !== undefined)
+		conditions.push(t("workspace.observability.otelForm.selective.summary.maxLatency", { value: rule.max_latency_ms }));
+	if (rule.min_technical_quality !== undefined)
+		conditions.push(t("workspace.observability.otelForm.selective.summary.minCompleteness", { value: rule.min_technical_quality }));
+	if (rule.min_cost !== undefined)
+		conditions.push(t("workspace.observability.otelForm.selective.summary.minCost", { value: rule.min_cost }));
+	if (rule.providers?.length)
+		conditions.push(t("workspace.observability.otelForm.selective.summary.providers", { value: rule.providers.join(", ") }));
+	if (rule.models?.length)
+		conditions.push(t("workspace.observability.otelForm.selective.summary.models", { value: rule.models.join(", ") }));
+	if (rule.routing_rules?.length)
+		conditions.push(t("workspace.observability.otelForm.selective.summary.routingRules", { value: rule.routing_rules.join(", ") }));
+
+	const triState = (value: boolean | undefined) => (value === undefined ? "any" : String(value));
+	const updateTriState = (onChange: (value: boolean | undefined) => void, value: string) =>
+		onChange(value === "any" ? undefined : value === "true");
+
 	return (
-		<div className="flex items-center gap-1.5">
-			<FormLabel>{children}</FormLabel>
-			<TooltipProvider delayDuration={200}>
-				<Tooltip>
-					<TooltipTrigger asChild>
-						<button type="button" className="text-muted-foreground hover:text-foreground" aria-label={`About ${children}`}>
-							<Info className="size-3.5" />
-						</button>
-					</TooltipTrigger>
-					<TooltipContent className="max-w-sm">{description}</TooltipContent>
-				</Tooltip>
-			</TooltipProvider>
+		<div
+			ref={ref}
+			className={cn("rounded-sm border bg-card", isDragging && "opacity-50")}
+			data-testid={`otel-selective-export-rule-${index}`}
+		>
+			<div className="flex items-center gap-3 px-3 py-3">
+				{catchAll ? (
+					<div className="flex size-5 items-center justify-center">
+						<CheckCircle2 className="text-muted-foreground size-4" />
+					</div>
+				) : (
+					<button
+						ref={handleRef}
+						type="button"
+						className="text-muted-foreground cursor-grab p-0.5 active:cursor-grabbing"
+						data-testid={`otel-selective-export-rule-${index}-drag-handle`}
+						aria-label={t("workspace.observability.otelForm.selective.reorder")}
+					>
+						<GripVertical className="size-4" />
+					</button>
+				)}
+				<button type="button" className="min-w-0 flex-1 text-left" onClick={() => setOpen((value) => !value)}>
+					<div className="flex flex-wrap items-center gap-2">
+						<span className="text-sm font-medium">
+							{catchAll
+								? t("workspace.observability.otelForm.selective.otherRequests")
+								: t("workspace.observability.otelForm.selective.when")}
+						</span>
+						<span className="text-muted-foreground truncate text-sm">
+							{catchAll
+								? t("workspace.observability.otelForm.selective.noEarlierMatch")
+								: conditions.join(` ${t("workspace.observability.otelForm.selective.and")} `) ||
+									t("workspace.observability.otelForm.selective.allImageRequests")}
+						</span>
+					</div>
+					<div className="text-muted-foreground mt-1 text-xs">
+						{t("workspace.observability.otelForm.selective.thenExport", {
+							rate: Math.round((rule.export_rate ?? 0) * 10000) / 100,
+							max: rule.max_per_minute || t("workspace.observability.otelForm.selective.unlimited"),
+						})}
+					</div>
+				</button>
+				<Badge variant="outline">{Math.round((rule.export_rate ?? 0) * 10000) / 100}%</Badge>
+				{!catchAll && (
+					<Button
+						type="button"
+						variant="ghost"
+						size="icon"
+						onClick={onRemove}
+						disabled={!hasOtelAccess}
+						data-testid={`otel-selective-export-rule-${index}-remove`}
+						aria-label={t("workspace.observability.otelForm.selective.remove")}
+					>
+						<Trash2 className="size-4" />
+					</Button>
+				)}
+				<Button
+					type="button"
+					variant="ghost"
+					size="icon"
+					onClick={() => setOpen((value) => !value)}
+					data-testid={`otel-selective-export-rule-${index}-configure`}
+					aria-label={t("workspace.observability.otelForm.selective.editPolicy")}
+				>
+					<ChevronDown className={cn("size-4 transition-transform", open && "rotate-180")} />
+				</Button>
+			</div>
+
+			{open && (
+				<div className="space-y-4 border-t p-4">
+					{!catchAll && (
+						<>
+							<div>
+								<p className="mb-3 text-sm font-medium">{t("workspace.observability.otelForm.selective.whenAllConditions")}</p>
+								<div className="grid gap-3 md:grid-cols-4">
+									<FormField
+										control={form.control}
+										name={`${base}.request_types`}
+										render={({ field }) => (
+											<FormItem>
+												<SelectionFieldLabel
+													label={t("workspace.observability.otelForm.selective.requestType")}
+													description={t("workspace.observability.otelForm.selective.requestTypeHelp")}
+												/>
+												<Select
+													value={field.value?.[0] ?? "all"}
+													onValueChange={(value) => field.onChange(value === "all" ? [] : [value])}
+													disabled={!hasOtelAccess}
+												>
+													<FormControl>
+														<SelectTrigger data-testid={`otel-selective-export-rule-${index}-request-type`}>
+															<SelectValue />
+														</SelectTrigger>
+													</FormControl>
+													<SelectContent>
+														<SelectItem value="all">{t("workspace.observability.otelForm.selective.allImageRequests")}</SelectItem>
+														<SelectItem value="image_generation">{t("workspace.observability.otelForm.selective.generation")}</SelectItem>
+														<SelectItem value="image_edit">{t("workspace.observability.otelForm.selective.edit")}</SelectItem>
+														<SelectItem value="image_variation">{t("workspace.observability.otelForm.selective.variation")}</SelectItem>
+													</SelectContent>
+												</Select>
+											</FormItem>
+										)}
+									/>
+									<FormField
+										control={form.control}
+										name={`${base}.require_error`}
+										render={({ field }) => (
+											<FormItem>
+												<SelectionFieldLabel
+													label={t("workspace.observability.otelForm.selective.result")}
+													description={t("workspace.observability.otelForm.selective.errorHelp")}
+												/>
+												<Select
+													value={triState(field.value)}
+													onValueChange={(value) => {
+														updateTriState(field.onChange, value);
+														if (value === "false") form.setValue(`${base}.error_categories`, []);
+													}}
+													disabled={!hasOtelAccess}
+												>
+													<FormControl>
+														<SelectTrigger data-testid={`otel-selective-export-rule-${index}-require-error`}>
+															<SelectValue />
+														</SelectTrigger>
+													</FormControl>
+													<SelectContent>
+														<SelectItem value="any">{t("workspace.observability.otelForm.selective.any")}</SelectItem>
+														<SelectItem value="false">{t("workspace.observability.otelForm.selective.success")}</SelectItem>
+														<SelectItem value="true">{t("workspace.observability.otelForm.selective.failure")}</SelectItem>
+													</SelectContent>
+												</Select>
+											</FormItem>
+										)}
+									/>
+									<FormField
+										control={form.control}
+										name={`${base}.require_fallback`}
+										render={({ field }) => (
+											<FormItem>
+												<SelectionFieldLabel
+													label={t("workspace.observability.otelForm.selective.fallback")}
+													description={t("workspace.observability.otelForm.selective.fallbackHelp")}
+												/>
+												<Select
+													value={triState(field.value)}
+													onValueChange={(value) => updateTriState(field.onChange, value)}
+													disabled={!hasOtelAccess}
+												>
+													<FormControl>
+														<SelectTrigger data-testid={`otel-selective-export-rule-${index}-require-fallback`}>
+															<SelectValue />
+														</SelectTrigger>
+													</FormControl>
+													<SelectContent>
+														<SelectItem value="any">{t("workspace.observability.otelForm.selective.any")}</SelectItem>
+														<SelectItem value="true">{t("workspace.observability.otelForm.selective.yes")}</SelectItem>
+														<SelectItem value="false">{t("workspace.observability.otelForm.selective.no")}</SelectItem>
+													</SelectContent>
+												</Select>
+											</FormItem>
+										)}
+									/>
+									<FormField
+										control={form.control}
+										name={`${base}.require_retry`}
+										render={({ field }) => (
+											<FormItem>
+												<SelectionFieldLabel
+													label={t("workspace.observability.otelForm.selective.retry")}
+													description={t("workspace.observability.otelForm.selective.retryHelp")}
+												/>
+												<Select
+													value={triState(field.value)}
+													onValueChange={(value) => updateTriState(field.onChange, value)}
+													disabled={!hasOtelAccess}
+												>
+													<FormControl>
+														<SelectTrigger data-testid={`otel-selective-export-rule-${index}-require-retry`}>
+															<SelectValue />
+														</SelectTrigger>
+													</FormControl>
+													<SelectContent>
+														<SelectItem value="any">{t("workspace.observability.otelForm.selective.any")}</SelectItem>
+														<SelectItem value="true">{t("workspace.observability.otelForm.selective.yes")}</SelectItem>
+														<SelectItem value="false">{t("workspace.observability.otelForm.selective.no")}</SelectItem>
+													</SelectContent>
+												</Select>
+											</FormItem>
+										)}
+									/>
+								</div>
+							</div>
+
+							<Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+								<CollapsibleTrigger asChild>
+									<Button
+										type="button"
+										variant="ghost"
+										size="sm"
+										className="px-0"
+										data-testid={`otel-selective-export-rule-${index}-more-conditions`}
+									>
+										<Settings2 className="size-4" /> {t("workspace.observability.otelForm.selective.moreConditions")}
+										<ChevronDown className={cn("size-4 transition-transform", advancedOpen && "rotate-180")} />
+									</Button>
+								</CollapsibleTrigger>
+								<CollapsibleContent className="grid gap-3 pt-3 md:grid-cols-4">
+									<FormField
+										control={form.control}
+										name={`${base}.error_categories`}
+										render={({ field }) => (
+											<FormItem>
+												<SelectionFieldLabel
+													label={t("workspace.observability.otelForm.selective.errorCategory")}
+													description={t("workspace.observability.otelForm.selective.errorCategoryHelp")}
+												/>
+												<Select
+													value={field.value?.[0] ?? "any"}
+													onValueChange={(value) => {
+														field.onChange(value === "any" ? [] : [value]);
+														if (value !== "any") form.setValue(`${base}.require_error`, true);
+													}}
+													disabled={!hasOtelAccess}
+												>
+													<FormControl>
+														<SelectTrigger>
+															<SelectValue />
+														</SelectTrigger>
+													</FormControl>
+													<SelectContent>
+														<SelectItem value="any">{t("workspace.observability.otelForm.selective.any")}</SelectItem>
+														{["timeout", "connection", "client_error", "server_error", "other"].map((value) => (
+															<SelectItem key={value} value={value}>
+																{t(`workspace.observability.otelForm.selective.errorCategories.${value}`)}
+															</SelectItem>
+														))}
+													</SelectContent>
+												</Select>
+											</FormItem>
+										)}
+									/>
+									{(["providers", "models", "routing_rules"] as const).map((key) => (
+										<FormField
+											key={key}
+											control={form.control}
+											name={`${base}.${key}`}
+											render={({ field }) => (
+												<FormItem>
+													<SelectionFieldLabel
+														label={t(`workspace.observability.otelForm.selective.${key}`)}
+														description={t(`workspace.observability.otelForm.selective.${key}Help`)}
+													/>
+													<FormControl>
+														<Input
+															value={field.value?.join(", ") ?? ""}
+															onChange={(event) => field.onChange(csvValues(event.target.value))}
+															placeholder={t("workspace.observability.otelForm.selective.commaSeparated")}
+															disabled={!hasOtelAccess}
+														/>
+													</FormControl>
+												</FormItem>
+											)}
+										/>
+									))}
+									{(["min_latency_ms", "max_latency_ms", "min_technical_quality", "min_cost"] as const).map((key) => (
+										<FormField
+											key={key}
+											control={form.control}
+											name={`${base}.${key}`}
+											render={({ field }) => (
+												<FormItem>
+													<SelectionFieldLabel
+														label={t(`workspace.observability.otelForm.selective.${key}`)}
+														description={t(`workspace.observability.otelForm.selective.${key}Help`)}
+													/>
+													<FormControl>
+														<Input
+															type="number"
+															min={0}
+															max={key === "min_technical_quality" ? 1 : undefined}
+															step={key === "min_cost" ? 0.001 : key === "min_technical_quality" ? 0.05 : 1}
+															value={field.value ?? ""}
+															onChange={(event) => field.onChange(event.target.value === "" ? undefined : Number(event.target.value))}
+															placeholder={t("workspace.observability.otelForm.selective.any")}
+															disabled={!hasOtelAccess}
+														/>
+													</FormControl>
+													<FormMessage />
+												</FormItem>
+											)}
+										/>
+									))}
+								</CollapsibleContent>
+							</Collapsible>
+						</>
+					)}
+
+					<div className="bg-muted/40 rounded-sm p-3">
+						<p className="mb-3 text-sm font-medium">{t("workspace.observability.otelForm.selective.then")}</p>
+						<div className="grid gap-3 md:grid-cols-2">
+							<FormField
+								control={form.control}
+								name={`${base}.export_rate`}
+								render={({ field }) => (
+									<FormItem>
+										<SelectionFieldLabel
+											label={t("workspace.observability.otelForm.selective.exportRate")}
+											description={t("workspace.observability.otelForm.selective.exportRateHelp")}
+										/>
+										<FormControl>
+											<Input
+												type="number"
+												min={0}
+												max={100}
+												step={0.1}
+												disabled={!hasOtelAccess}
+												data-testid={`otel-selective-export-rule-${index}-export-rate`}
+												value={Math.round((field.value ?? 0) * 10000) / 100}
+												onChange={(event) => field.onChange(Number(event.target.value) / 100)}
+											/>
+										</FormControl>
+										<FormMessage />
+									</FormItem>
+								)}
+							/>
+							<FormField
+								control={form.control}
+								name={`${base}.max_per_minute`}
+								render={({ field }) => (
+									<FormItem>
+										<SelectionFieldLabel
+											label={t("workspace.observability.otelForm.selective.ruleMax")}
+											description={t("workspace.observability.otelForm.selective.ruleMaxHelp")}
+										/>
+										<FormControl>
+											<Input
+												type="number"
+												min={0}
+												max={10000}
+												disabled={!hasOtelAccess}
+												data-testid={`otel-selective-export-rule-${index}-max-per-minute`}
+												{...field}
+												onChange={(event) => field.onChange(Number(event.target.value))}
+											/>
+										</FormControl>
+										<FormMessage />
+									</FormItem>
+								)}
+							/>
+						</div>
+					</div>
+				</div>
+			)}
 		</div>
 	);
 }
@@ -352,240 +862,222 @@ function SelectiveExportSection({
 	form: UseFormReturn<OtelFormSchema, unknown, OtelFormSchema>;
 	hasOtelAccess: boolean;
 }) {
-	const copy = selectiveExportCopy();
+	const { t } = useSelectiveExportTranslation();
 	const enabled = form.watch("selective_export.enabled");
-	const { fields, append, remove } = useFieldArray({ control: form.control, name: "selective_export.rules" });
-	const addRule = () =>
-		append({
-			id: `rule-${fields.length + 1}`,
+	const rules = form.watch("selective_export.rules");
+	const [advancedOpen, setAdvancedOpen] = useState(false);
+	const { fields, insert, remove, move } = useFieldArray({ control: form.control, name: "selective_export.rules" });
+	const catchAllIndex = rules.findIndex(isCatchAllRule);
+	const addPolicy = () => {
+		const next = {
+			id: `policy-${Date.now()}-${fields.length + 1}`,
 			priority: 0,
-			request_types: [],
+			request_types: ["image_generation" as const],
 			error_categories: [],
 			providers: [],
 			models: [],
 			routing_rules: [],
-			export_rate: 1,
-			max_per_minute: 0,
-		});
-
+			export_rate: 0.1,
+			max_per_minute: 50,
+		};
+		insert(catchAllIndex >= 0 ? catchAllIndex : fields.length, next);
+	};
+	const addBalancedSampling = () => {
+		const createdAt = Date.now();
+		const balanced = [
+			{ type: "image_generation" as const, rate: 0.05 },
+			{ type: "image_edit" as const, rate: 0.2 },
+			{ type: "image_variation" as const, rate: 0.3 },
+		].map(({ type, rate }, index) => ({
+			id: `balanced-${type}-${createdAt}-${index}`,
+			priority: 0,
+			request_types: [type],
+			require_error: false,
+			require_fallback: false,
+			error_categories: [],
+			providers: [],
+			models: [],
+			routing_rules: [],
+			export_rate: rate,
+			max_per_minute: 50,
+		}));
+		insert(catchAllIndex >= 0 ? catchAllIndex : fields.length, balanced);
+	};
 	return (
-		<section className="space-y-4 rounded-sm border p-4" data-testid="otel-selective-export-section">
-			<div className="flex items-start justify-between gap-4">
+		<div className="space-y-4 rounded-sm border p-4" data-testid="otel-selective-export-section">
+			<div className="flex items-center justify-between gap-4">
 				<div>
-					<h3 className="font-medium">{copy.title}</h3>
-					<p className="text-muted-foreground text-sm">{copy.description}</p>
+					<FormLabel className="text-base">{t("workspace.observability.otelForm.selective.title")}</FormLabel>
+					<FormDescription>{t("workspace.observability.otelForm.selective.description")}</FormDescription>
 				</div>
 				<FormField
 					control={form.control}
 					name="selective_export.enabled"
 					render={({ field }) => (
-						<Switch
-							checked={field.value}
-							onCheckedChange={field.onChange}
-							disabled={!hasOtelAccess}
-							data-testid="otel-selective-export-toggle"
-						/>
+						<FormItem>
+							<FormControl>
+								<Switch
+									checked={field.value}
+									onCheckedChange={field.onChange}
+									disabled={!hasOtelAccess}
+									data-testid="otel-selective-export-enable-toggle"
+								/>
+							</FormControl>
+						</FormItem>
 					)}
 				/>
 			</div>
 			{enabled && (
 				<>
-					<div className="grid gap-4 sm:grid-cols-2">
+					<div className="grid gap-3 md:grid-cols-2">
 						<FormField
 							control={form.control}
 							name="selective_export.dry_run"
 							render={({ field }) => (
 								<FormItem className="flex items-center justify-between rounded-sm border p-3">
 									<div>
-										<FormLabel>Dry run</FormLabel>
-										<FormDescription>Evaluate and annotate decisions without dropping traces.</FormDescription>
+										<FormLabel>{t("workspace.observability.otelForm.selective.dryRun")}</FormLabel>
+										<FormDescription>{t("workspace.observability.otelForm.selective.dryRunDescription")}</FormDescription>
 									</div>
-									<Switch checked={field.value} onCheckedChange={field.onChange} disabled={!hasOtelAccess} />
+									<FormControl>
+										<Switch
+											checked={field.value}
+											onCheckedChange={field.onChange}
+											disabled={!hasOtelAccess}
+											data-testid="otel-selective-export-dry-run-toggle"
+										/>
+									</FormControl>
 								</FormItem>
 							)}
 						/>
-						<FormField
-							control={form.control}
-							name="selective_export.max_exports_per_minute"
-							render={({ field }) => (
-								<FormItem>
-									<SelectionLabel description="Process-wide limit across all rules. Zero means unlimited.">
-										Max exports / minute
-									</SelectionLabel>
-									<Input
-										type="number"
-										min={0}
-										max={10000}
-										disabled={!hasOtelAccess}
-										value={field.value}
-										onChange={(e) => field.onChange(Number(e.target.value))}
-									/>
-									<FormMessage />
-								</FormItem>
-							)}
-						/>
-					</div>
-					{fields.map((field, index) => {
-						const base = `selective_export.rules.${index}` as const;
-						return (
-							<div key={field.id} className="space-y-4 rounded-sm border p-4" data-testid={`otel-selective-export-rule-${index}`}>
-								<div className="flex items-center justify-between">
-									<span className="font-medium">Rule {index + 1}</span>
-									<Button
-										type="button"
-										variant="ghost"
-										size="icon"
-										disabled={!hasOtelAccess}
-										onClick={() => remove(index)}
-										data-testid={`otel-selective-export-rule-${index}-remove`}
-									>
-										<Trash2 className="size-4" />
-									</Button>
-								</div>
-								<div className="grid gap-4 md:grid-cols-3">
-									<FormField
-										control={form.control}
-										name={`${base}.id`}
-										render={({ field }) => (
-											<FormItem>
-												<SelectionLabel description="Stable identifier used in status metadata. It has no implicit matching meaning.">
-													Rule ID
-												</SelectionLabel>
-												<Input {...field} disabled={!hasOtelAccess} data-testid={`otel-selective-export-rule-${index}-id`} />
-												<FormMessage />
-											</FormItem>
-										)}
-									/>
-									<FormField
-										control={form.control}
-										name={`${base}.priority`}
-										render={({ field }) => (
-											<FormItem>
-												<SelectionLabel description="Higher values are evaluated first; evaluation stops at the first match.">
-													Priority
-												</SelectionLabel>
-												<Input
-													type="number"
-													min={-1000}
-													max={1000}
-													value={field.value}
-													onChange={(e) => field.onChange(Number(e.target.value))}
-													disabled={!hasOtelAccess}
-												/>
-												<FormMessage />
-											</FormItem>
-										)}
-									/>
-									<FormField
-										control={form.control}
-										name={`${base}.export_rate`}
-										render={({ field }) => (
-											<FormItem>
-												<SelectionLabel description="Deterministic fraction from 0 (drop every match) to 1 (export every match).">
-													Export rate
-												</SelectionLabel>
-												<Input
-													type="number"
-													min={0}
-													max={1}
-													step={0.01}
-													value={field.value}
-													onChange={(e) => field.onChange(Number(e.target.value))}
-													disabled={!hasOtelAccess}
-												/>
-												<FormMessage />
-											</FormItem>
-										)}
-									/>
-									{(["min_latency_ms", "max_latency_ms", "min_cost", "max_per_minute"] as const).map((key) => (
-										<FormField
-											key={key}
-											control={form.control}
-											name={`${base}.${key}`}
-											render={({ field }) => (
-												<FormItem>
-													<FormLabel>{key.replaceAll("_", " ")}</FormLabel>
-													<Input
-														type="number"
-														min={0}
-														value={field.value ?? ""}
-														onChange={(e) => field.onChange(e.target.value === "" ? undefined : Number(e.target.value))}
-														disabled={!hasOtelAccess}
-													/>
-													<FormMessage />
-												</FormItem>
-											)}
-										/>
-									))}
-								</div>
-								<div className="grid gap-4 md:grid-cols-2">
-									{(["request_types", "error_categories", "providers", "models", "routing_rules"] as const).map((key) => (
-										<FormField
-											key={key}
-											control={form.control}
-											name={`${base}.${key}`}
-											render={({ field }) => (
-												<FormItem>
-													<FormLabel>{key.replaceAll("_", " ")}</FormLabel>
-													<Input
-														value={(field.value ?? []).join(", ")}
-														onChange={(e) => field.onChange(csv(e.target.value))}
-														disabled={!hasOtelAccess}
-														placeholder="Comma-separated"
-													/>
-													<FormMessage />
-												</FormItem>
-											)}
-										/>
-									))}
-								</div>
-								<div className="grid gap-4 md:grid-cols-3">
-									{(["require_error", "require_fallback", "require_retry"] as const).map((key) => (
-										<FormField
-											key={key}
-											control={form.control}
-											name={`${base}.${key}`}
-											render={({ field }) => (
-												<FormItem>
-													<FormLabel>{key.replaceAll("_", " ")}</FormLabel>
-													<Select
-														value={field.value === undefined ? "any" : String(field.value)}
-														onValueChange={(value) => field.onChange(value === "any" ? undefined : value === "true")}
-														disabled={!hasOtelAccess}
-													>
-														<FormControl>
-															<SelectTrigger>
-																<SelectValue />
-															</SelectTrigger>
-														</FormControl>
-														<SelectContent>
-															<SelectItem value="any">Any</SelectItem>
-															<SelectItem value="true">Required</SelectItem>
-															<SelectItem value="false">Exclude</SelectItem>
-														</SelectContent>
-													</Select>
-													<FormMessage />
-												</FormItem>
-											)}
-										/>
-									))}
-								</div>
+						<div className="flex items-start gap-3 rounded-sm border p-3">
+							<CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600" />
+							<div>
+								<FormLabel>{t("workspace.observability.otelForm.selective.atomicEnabled")}</FormLabel>
+								<FormDescription>{t("workspace.observability.otelForm.selective.atomicDescription")}</FormDescription>
 							</div>
-						);
-					})}
-					<Button
-						type="button"
-						variant="outline"
-						size="sm"
-						onClick={addRule}
-						disabled={!hasOtelAccess || fields.length >= 32}
-						data-testid="otel-selective-export-add-rule"
-					>
-						<Plus className="size-4" /> Add rule
-					</Button>
+						</div>
+					</div>
+
+					<div>
+						<div className="mb-2 flex items-end justify-between gap-3">
+							<div>
+								<FormLabel>{t("workspace.observability.otelForm.selective.policies")}</FormLabel>
+								<FormDescription>{t("workspace.observability.otelForm.selective.policiesDescription")}</FormDescription>
+							</div>
+							<div className="flex flex-wrap justify-end gap-2">
+								<Button
+									type="button"
+									variant="ghost"
+									size="sm"
+									onClick={addBalancedSampling}
+									disabled={!hasOtelAccess || fields.length > 29}
+									data-testid="otel-selective-export-balanced-template"
+								>
+									{t("workspace.observability.otelForm.selective.balancedTemplate")}
+								</Button>
+								<Button
+									type="button"
+									variant="outline"
+									size="sm"
+									onClick={addPolicy}
+									disabled={!hasOtelAccess || fields.length >= 32}
+									data-testid="otel-selective-export-add-rule"
+								>
+									<Plus className="size-4" /> {t("workspace.observability.otelForm.selective.addPolicy")}
+								</Button>
+							</div>
+						</div>
+						<DragDropProvider
+							onDragOver={(event) => {
+								const { source, target } = event.operation;
+								if (!source || !target || source.id === target.id) return;
+								const sourceIndex = fields.findIndex((field) => field.id === source.id);
+								const targetIndex = fields.findIndex((field) => field.id === target.id);
+								if (sourceIndex < 0 || targetIndex < 0 || isCatchAllRule(rules[sourceIndex]) || isCatchAllRule(rules[targetIndex])) return;
+								move(sourceIndex, targetIndex);
+							}}
+						>
+							<div className="space-y-2">
+								{fields.map((field, index) => (
+									<SelectionRuleCard
+										key={field.id}
+										fieldID={field.id}
+										index={index}
+										rule={rules[index]}
+										form={form}
+										hasOtelAccess={hasOtelAccess}
+										onRemove={() => remove(index)}
+									/>
+								))}
+							</div>
+						</DragDropProvider>
+					</div>
+
+					<Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+						<CollapsibleTrigger asChild>
+							<Button type="button" variant="ghost" size="sm" className="px-0" data-testid="otel-selective-export-resource-controls">
+								<Settings2 className="size-4" /> {t("workspace.observability.otelForm.selective.advancedSettings")}
+								<ChevronDown className={cn("size-4 transition-transform", advancedOpen && "rotate-180")} />
+							</Button>
+						</CollapsibleTrigger>
+						<CollapsibleContent className="grid gap-4 rounded-sm border p-3 md:grid-cols-2">
+							<FormField
+								control={form.control}
+								name="selective_export.candidate_rate"
+								render={({ field }) => (
+									<FormItem>
+										<SelectionFieldLabel
+											label={t("workspace.observability.otelForm.selective.mediaCandidate")}
+											description={t("workspace.observability.otelForm.selective.mediaCandidateHelp")}
+										/>
+										<FormControl>
+											<Input
+												type="number"
+												min={0}
+												max={100}
+												step={0.1}
+												disabled={!hasOtelAccess}
+												data-testid="otel-selective-export-candidate-rate"
+												value={Math.round((field.value ?? 0) * 10000) / 100}
+												onChange={(event) => field.onChange(Number(event.target.value) / 100)}
+											/>
+										</FormControl>
+										<FormDescription>{t("workspace.observability.otelForm.selective.mediaCandidateDescription")}</FormDescription>
+										<FormMessage />
+									</FormItem>
+								)}
+							/>
+							<FormField
+								control={form.control}
+								name="selective_export.max_exports_per_minute"
+								render={({ field }) => (
+									<FormItem>
+										<SelectionFieldLabel
+											label={t("workspace.observability.otelForm.selective.processMax")}
+											description={t("workspace.observability.otelForm.selective.processMaxHelp")}
+										/>
+										<FormControl>
+											<Input
+												type="number"
+												min={0}
+												max={10000}
+												disabled={!hasOtelAccess}
+												data-testid="otel-selective-export-process-limit"
+												{...field}
+												onChange={(event) => field.onChange(Number(event.target.value))}
+											/>
+										</FormControl>
+										<FormDescription>{t("workspace.observability.otelForm.selective.processMaxDescription")}</FormDescription>
+										<FormMessage />
+									</FormItem>
+								)}
+							/>
+						</CollapsibleContent>
+					</Collapsible>
 				</>
 			)}
-		</section>
+		</div>
 	);
 }
 

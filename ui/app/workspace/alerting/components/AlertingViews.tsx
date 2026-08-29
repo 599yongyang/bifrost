@@ -24,8 +24,9 @@ import {
 	useUpdateAlertRuleMutation,
 } from "@/lib/store";
 import type { AlertChannel, AlertChannelFormType, AlertHistoryRecord, AlertRule, AlertScopeType, AlertStatus } from "@/lib/types/alerting";
+import { localize } from "@/lib/i18n/language";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
-import { BellRing, ChevronLeft, ChevronRight, Pencil, Plus, RefreshCw, Send, Trash2 } from "lucide-react";
+import { BellRing, ChevronLeft, ChevronRight, Pencil, Plus, RefreshCw, Send, SlidersHorizontal, Trash2 } from "lucide-react";
 import { FormEvent, ReactNode, useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -102,7 +103,7 @@ function ChannelDialog({
 	};
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="max-w-xl">
+			<DialogContent className="sm:max-w-xl">
 				<form onSubmit={submit} className="space-y-4">
 					<DialogHeader>
 						<DialogTitle>
@@ -184,7 +185,7 @@ function ChannelDialog({
 }
 
 export function AlertChannelsView() {
-	const canEdit = useRbac(RbacResource.Governance, RbacOperation.Update);
+	const canEdit = useRbac(RbacResource.AlertChannels, RbacOperation.Update);
 	const { data, isLoading } = useGetAlertChannelsQuery();
 	const [dialog, setDialog] = useState(false);
 	const [editing, setEditing] = useState<AlertChannel | null>(null);
@@ -361,7 +362,7 @@ function RuleDialog({
 	};
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+			<DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
 				<form onSubmit={submit} className="space-y-4">
 					<DialogHeader>
 						<DialogTitle>
@@ -369,7 +370,14 @@ function RuleDialog({
 						</DialogTitle>
 						<DialogDescription>{copy.rulesDescription}</DialogDescription>
 					</DialogHeader>
+					<div className="bg-muted/30 rounded-sm border p-3 text-sm">
+						<p className="font-medium">{copy.scope}</p>
+						<p className="text-muted-foreground mt-1 text-xs">{copy.rulesDescription}</p>
+					</div>
 					<div className="grid gap-4 md:grid-cols-2">
+						<div className="text-muted-foreground col-span-full text-xs font-semibold tracking-wide uppercase">
+							{localize("Identity and target", "规则与目标")}
+						</div>
 						<div>
 							<Label>{copy.name}</Label>
 							<Input data-testid="alert-rule-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
@@ -422,6 +430,9 @@ function RuleDialog({
 								value={form.target_id ?? ""}
 								onChange={(e) => setForm({ ...form, target_id: e.target.value })}
 							/>
+						</div>
+						<div className="col-span-full flex items-center gap-2 border-t pt-4 text-sm font-medium">
+							<SlidersHorizontal className="size-4" /> {localize("Reliability controls", "可靠性控制")}
 						</div>
 						<div>
 							<Label>{copy.window}</Label>
@@ -489,20 +500,24 @@ function RuleDialog({
 							/>
 						</div>
 					</div>
-					<div>
+					<div className="bg-muted/20 space-y-2 rounded-sm border p-4">
 						<Label>{copy.cel}</Label>
 						<Textarea
+							className="min-h-28 font-mono text-sm"
 							data-testid="alert-rule-cel"
 							value={form.cel_expression}
 							onChange={(e) => setForm({ ...form, cel_expression: e.target.value })}
 						/>
 						<p className="text-muted-foreground text-xs">{copy.celHelp}</p>
 					</div>
-					<div>
+					<div className="space-y-3 rounded-sm border p-4">
 						<Label>{copy.channels}</Label>
 						<div className="grid gap-2 sm:grid-cols-2">
 							{channels.map((channel) => (
-								<label key={channel.id} className="flex items-center gap-2 rounded border p-2">
+								<label
+									key={channel.id}
+									className="hover:bg-muted/50 flex cursor-pointer items-center gap-2 rounded border p-3 transition-colors duration-150"
+								>
 									<input
 										type="checkbox"
 										checked={form.channel_ids.includes(channel.id)}
@@ -520,7 +535,7 @@ function RuleDialog({
 							))}
 						</div>
 					</div>
-					<DialogFooter>
+					<DialogFooter className="bg-background/95 sticky bottom-0 -mx-6 border-t px-6 pb-0 backdrop-blur-sm">
 						<Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
 							{copy.cancel}
 						</Button>
@@ -535,7 +550,7 @@ function RuleDialog({
 }
 
 export function AlertRulesView() {
-	const canEdit = useRbac(RbacResource.Governance, RbacOperation.Update);
+	const canEdit = useRbac(RbacResource.AlertRules, RbacOperation.Update);
 	const { data } = useGetAlertRulesQuery();
 	const { data: channels } = useGetAlertChannelsQuery();
 	const { data: providers } = useGetProvidersQuery();
@@ -668,7 +683,7 @@ export function AlertRulesView() {
 }
 
 export function AlertHistoryView() {
-	const canEdit = useRbac(RbacResource.Governance, RbacOperation.Update);
+	const canEdit = useRbac(RbacResource.AlertHistory, RbacOperation.Update);
 	const [status, setStatus] = useState<AlertStatus | "all">("all");
 	const [scope, setScope] = useState<AlertScopeType | "all">("all");
 	const [channel, setChannel] = useState<"all" | "slack" | "microsoft_teams" | "wecom" | "pagerduty" | "webhook">("all");
@@ -786,11 +801,7 @@ export function AlertHistoryView() {
 						<DialogDescription>{copy.deliveryDetails}</DialogDescription>
 					</DialogHeader>
 					<pre className="bg-muted max-h-80 overflow-auto rounded p-3 text-xs">
-						{JSON.stringify(
-							{ status: detail?.status, detail: safeHistoryDetail(detail?.status_detail) ? copy.detailsHidden : "", input: detail?.input },
-							null,
-							2,
-						)}
+						{JSON.stringify({ status: detail?.status, detail: safeHistoryDetail(detail?.status_detail), input: detail?.input }, null, 2)}
 					</pre>
 				</DialogContent>
 			</Dialog>

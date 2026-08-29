@@ -155,10 +155,12 @@ func TestSelectionAnnotationUsesBifrostNamespace(t *testing.T) {
 
 func TestSelectiveExportConfigStorageAndRedactionRoundTrip(t *testing.T) {
 	required := true
+	candidateRate := 0.25
+	quality := 0.85
 	config := &Config{
 		Profiles: []*Profile{{Enabled: true, TracesEnabled: true, ServiceName: "test", CollectorURL: schemas.NewSecretVar("http://collector.test"), Headers: map[string]string{"Authorization": "secret"}}},
-		SelectiveExport: &SelectiveExportConfig{Enabled: true, DryRun: true, MaxExportsPerMinute: 10, Rules: []SelectionRule{{
-			ID: "fallbacks", RequestTypes: []schemas.RequestType{schemas.ResponsesRequest}, RequireFallback: &required, ExportRate: 0.5,
+		SelectiveExport: &SelectiveExportConfig{Enabled: true, DryRun: true, RequireCompleteRecord: &required, CandidateRate: &candidateRate, MaxExportsPerMinute: 10, Rules: []SelectionRule{{
+			ID: "fallbacks", RequestTypes: []schemas.RequestType{schemas.ResponsesRequest}, RequireFallback: &required, MinTechnicalQuality: &quality, ExportRate: 0.5,
 		}}},
 	}
 	stored, err := config.MarshalForStorage()
@@ -169,11 +171,24 @@ func TestSelectiveExportConfigStorageAndRedactionRoundTrip(t *testing.T) {
 	require.Len(t, decoded.SelectiveExport.Rules, 1)
 	assert.Equal(t, schemas.ResponsesRequest, decoded.SelectiveExport.Rules[0].RequestTypes[0])
 	assert.Equal(t, 0.5, decoded.SelectiveExport.Rules[0].ExportRate)
+	assert.Equal(t, 0.25, *decoded.SelectiveExport.CandidateRate)
+	assert.Equal(t, 0.85, *decoded.SelectiveExport.Rules[0].MinTechnicalQuality)
 
 	redacted := config.Redacted()
 	require.NotNil(t, redacted.SelectiveExport)
 	assert.Equal(t, "fallbacks", redacted.SelectiveExport.Rules[0].ID)
 	assert.NotEqual(t, "secret", redacted.Profiles[0].Headers["Authorization"])
+}
+
+func TestSelectiveExportCandidateRateControlsHeadMediaCapture(t *testing.T) {
+	zero := 0.0
+	selector, err := newTraceSelector(&SelectiveExportConfig{
+		Enabled: true, CandidateRate: &zero, Rules: []SelectionRule{{ID: "all", ExportRate: 1}},
+	})
+	require.NoError(t, err)
+	request := &schemas.BifrostRequest{RequestType: schemas.ImageGenerationRequest}
+	assert.False(t, selector.shouldCaptureCandidate("trace", request))
+	assert.True(t, selector.shouldCaptureCandidate("trace", &schemas.BifrostRequest{RequestType: schemas.ChatCompletionRequest}))
 }
 
 func int64Ptr(value int64) *int64 { return &value }

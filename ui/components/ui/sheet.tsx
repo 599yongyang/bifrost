@@ -109,7 +109,7 @@ function SheetContent({
 						onOpenAutoFocus?.(e);
 					}}
 					className={cn(
-						"bg-card data-[state=open]:animate-in data-[state=closed]:animate-out custom-scrollbar fixed z-50 flex flex-col shadow-lg transition-all ease-in-out overscroll-none data-[state=closed]:duration-100 data-[state=open]:duration-100",
+						"bg-card data-[state=open]:animate-in data-[state=closed]:animate-out custom-scrollbar fixed z-50 flex flex-col shadow-lg transition-[transform,opacity] [transition-timing-function:cubic-bezier(0.23,1,0.32,1)] overscroll-none data-[state=closed]:duration-140 data-[state=open]:duration-180 motion-reduce:transition-opacity",
 						side === "right" &&
 							"data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right top-2 right-0 bottom-2 h-auto w-full rounded-l-lg border-l sm:w-3/4",
 						side === "right" && (!expandable || !expanded) && "sm:max-w-2xl",

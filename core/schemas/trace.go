@@ -24,6 +24,7 @@ type Trace struct {
 	mediaStore            TraceMediaStore   // Bounded binary sidecar manager; never serialized into attrs/context
 	mediaStoreKey         string
 	redactionReplacements RedactionMapsByPhase
+	mediaCaptureOnce      *sync.Once
 	mu                    sync.Mutex // Mutex for thread-safe span operations
 }
 
@@ -152,6 +153,37 @@ func (t *Trace) TryAcquireMediaDecode() (func(), bool) {
 	return func() {}, true
 }
 
+// GetOrInitializeMediaCaptureDecision pins the head-capture decision to the
+// first request attempt so retries and hot reloads cannot change it mid-flight.
+func (t *Trace) GetOrInitializeMediaCaptureDecision(decide func() (bool, map[string]any)) (bool, map[string]any) {
+	if t == nil {
+		return false, nil
+	}
+	t.mu.Lock()
+	if t.mediaCaptureOnce == nil {
+		t.mediaCaptureOnce = &sync.Once{}
+	}
+	once := t.mediaCaptureOnce
+	t.mu.Unlock()
+	once.Do(func() {
+		capture, snapshots := decide()
+		t.mu.Lock()
+		if t.Attributes == nil {
+			t.Attributes = make(map[string]any)
+		}
+		t.Attributes[TraceAttrMediaCaptureEligible] = capture
+		if len(snapshots) > 0 {
+			t.Attributes[TraceAttrMediaPolicySnapshots] = snapshots
+		}
+		t.mu.Unlock()
+	})
+	t.mu.Lock()
+	capture, _ := t.Attributes[TraceAttrMediaCaptureEligible].(bool)
+	snapshots, _ := t.Attributes[TraceAttrMediaPolicySnapshots].(map[string]any)
+	t.mu.Unlock()
+	return capture, snapshots
+}
+
 // Trace-level attribute keys. Unlike span attributes, trace attributes are never
 // exported as OTEL/Datadog span attributes — observability connectors (BigQuery,
 // Datadog) read them directly off the completed trace.
@@ -161,7 +193,9 @@ const (
 	TraceAttrSessionID = "x-bf-session-id"
 	// TraceAttrDimensions holds the map[string]string of request dimensions
 	// parsed from x-bf-dim-* headers, keyed by bare dimension name.
-	TraceAttrDimensions = "bifrost.dimensions"
+	TraceAttrDimensions           = "bifrost.dimensions"
+	TraceAttrMediaCaptureEligible = "bifrost.internal.media_capture_eligible"
+	TraceAttrMediaPolicySnapshots = "bifrost.internal.media_capture_policy_snapshots"
 )
 
 // AddSpan adds a span to the trace in a thread-safe manner
@@ -505,6 +539,7 @@ func (t *Trace) Reset() {
 	t.PluginLogs = t.PluginLogs[:0]
 	t.mediaStore = nil
 	t.mediaStoreKey = ""
+	t.mediaCaptureOnce = nil
 }
 
 // AppendPluginLogs appends plugin log entries to the trace in a thread-safe manner.
@@ -1103,6 +1138,10 @@ const (
 	AttrBifrostUserEmail                = "bifrost.user.email"
 	AttrBifrostRetries                  = "bifrost.retries"
 	AttrBifrostFallbackIndex            = "bifrost.fallback_index"
+	AttrBifrostTimeoutSource            = "bifrost.timeout.source"
+	AttrBifrostConfiguredTimeout        = "bifrost.timeout.configured_seconds"
+	AttrBifrostTimeoutElapsedMs         = "bifrost.timeout.elapsed_ms"
+	AttrBifrostUpstreamResponded        = "bifrost.timeout.upstream_response_received"
 	AttrBifrostErrorFallbackRule        = "bifrost.error_fallback.rule"
 	AttrBifrostErrorFallbackCategory    = "bifrost.error_fallback.category"
 	AttrBifrostErrorFallbackMatchSource = "bifrost.error_fallback.match_source"

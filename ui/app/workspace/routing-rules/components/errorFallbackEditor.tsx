@@ -1,4 +1,6 @@
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ComboboxSelect } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -7,7 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { localize } from "@/lib/i18n/language";
 import { createDefaultRoutingErrorFallback, RoutingErrorFallbackCategory, RoutingErrorFallbackFormData } from "@/lib/types/routingRules";
 import { switchErrorFallbackMode } from "@/lib/utils/errorFallbackRules";
-import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { ArrowDown, ArrowUp, ChevronDown, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 
 const ERROR_CATEGORIES: RoutingErrorFallbackCategory[] = [
@@ -63,6 +66,7 @@ interface ErrorFallbackEditorProps {
 }
 
 export function ErrorFallbackEditor({ value, providerOptions, onChange }: ErrorFallbackEditorProps) {
+	const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
 	const updateRule = (index: number, update: (rule: RoutingErrorFallbackFormData) => RoutingErrorFallbackFormData) => {
 		onChange(value.map((rule, currentIndex) => (currentIndex === index ? update(rule) : rule)));
 	};
@@ -71,6 +75,7 @@ export function ErrorFallbackEditor({ value, providerOptions, onChange }: ErrorF
 		const next = createDefaultRoutingErrorFallback();
 		next.fallbacks = [""];
 		onChange([...value, next]);
+		setExpandedIndex(value.length);
 	};
 
 	return (
@@ -94,55 +99,19 @@ export function ErrorFallbackEditor({ value, providerOptions, onChange }: ErrorF
 				<p className="text-muted-foreground text-sm">{localize("No error-aware fallbacks configured", "未配置错误专用备用链")}</p>
 			) : (
 				value.map((rule, ruleIndex) => (
-					<div key={ruleIndex} className="space-y-4 rounded-lg border p-4" data-testid={`routing-rule-error-fallback-${ruleIndex}`}>
-						<div className="flex items-center justify-between gap-3">
-							<span className="text-sm font-semibold">{localize(`Error handling ${ruleIndex + 1}`, `出错处理 ${ruleIndex + 1}`)}</span>
-							<div className="flex items-center gap-2">
-								<Button
-									type="button"
-									variant="outline"
-									size="sm"
-									onClick={() =>
-										updateRule(ruleIndex, (current) =>
-											switchErrorFallbackMode(current, current.mode === "scenario" ? "legacy" : "scenario"),
-										)
-									}
-								>
-									{rule.mode === "scenario" ? localize("Expert rule", "专家规则") : localize("Scenario rule", "场景规则")}
-								</Button>
-								<Button
-									type="button"
-									variant="ghost"
-									size="sm"
-									onClick={() => onChange(value.filter((_, index) => index !== ruleIndex))}
-									aria-label={localize(`Remove error rule ${ruleIndex + 1}`, `删除第 ${ruleIndex + 1} 条错误规则`)}
-								>
-									<Trash2 className="h-4 w-4" />
-								</Button>
-							</div>
-						</div>
-
-						<div className="space-y-2">
-							<Label>{localize("Rule note (optional)", "规则备注（可选）")}</Label>
-							<Input
-								value={rule.name}
-								onChange={(event) => updateRule(ruleIndex, (current) => ({ ...current, name: event.target.value }))}
-								placeholder={localize("For example: Image safety block", "例如：图片安全拦截")}
-							/>
-						</div>
-
-						{rule.mode === "scenario" ? (
-							<ScenarioMatcher rule={rule} ruleIndex={ruleIndex} updateRule={updateRule} />
-						) : (
-							<ExpertMatcher rule={rule} ruleIndex={ruleIndex} updateRule={updateRule} />
-						)}
-
-						<FallbackTargets
-							fallbacks={rule.fallbacks}
-							providerOptions={providerOptions}
-							onChange={(fallbacks) => updateRule(ruleIndex, (current) => ({ ...current, fallbacks }))}
-						/>
-					</div>
+					<ErrorFallbackRuleCard
+						key={ruleIndex}
+						rule={rule}
+						ruleIndex={ruleIndex}
+						open={expandedIndex === ruleIndex}
+						onOpenChange={(open) => setExpandedIndex(open ? ruleIndex : null)}
+						providerOptions={providerOptions}
+						updateRule={updateRule}
+						onRemove={() => {
+							onChange(value.filter((_, index) => index !== ruleIndex));
+							setExpandedIndex(null);
+						}}
+					/>
 				))
 			)}
 
@@ -153,6 +122,96 @@ export function ErrorFallbackEditor({ value, providerOptions, onChange }: ErrorF
 				)}
 			</p>
 		</div>
+	);
+}
+
+function ErrorFallbackRuleCard({
+	rule,
+	ruleIndex,
+	open,
+	onOpenChange,
+	providerOptions,
+	updateRule,
+	onRemove,
+}: {
+	rule: RoutingErrorFallbackFormData;
+	ruleIndex: number;
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	providerOptions: Array<{ label: string; value: string; icon: ReactNode }>;
+	updateRule: (index: number, update: (rule: RoutingErrorFallbackFormData) => RoutingErrorFallbackFormData) => void;
+	onRemove: () => void;
+}) {
+	const title = rule.name.trim() || localize(`Error handling ${ruleIndex + 1}`, `出错处理 ${ruleIndex + 1}`);
+	const summary = rule.mode === "scenario" ? categoryLabel(rule.scenario) : localize("Expert matcher", "专家匹配");
+	const configuredTargets = rule.fallbacks.filter(Boolean).length;
+
+	return (
+		<Collapsible
+			open={open}
+			onOpenChange={onOpenChange}
+			className="bg-card overflow-hidden rounded-lg border"
+			data-testid={`routing-rule-error-fallback-${ruleIndex}`}
+		>
+			<div className="flex items-center gap-3 px-4 py-3">
+				<CollapsibleTrigger asChild>
+					<button type="button" className="min-w-0 flex-1 text-left">
+						<div className="flex items-center gap-2">
+							<span className="truncate text-sm font-semibold">{title}</span>
+							<Badge variant="outline">{summary}</Badge>
+						</div>
+						<p className="text-muted-foreground mt-1 text-xs">
+							{configuredTargets > 0
+								? localize(`${configuredTargets} fallback target${configuredTargets === 1 ? "" : "s"}`, `${configuredTargets} 个备用目标`)
+								: localize("No fallback target selected", "尚未选择备用目标")}
+						</p>
+					</button>
+				</CollapsibleTrigger>
+				<Button type="button" variant="ghost" size="icon" onClick={onRemove} aria-label={localize("Remove rule", "删除规则")}>
+					<Trash2 className="size-4" />
+				</Button>
+				<CollapsibleTrigger asChild>
+					<Button type="button" variant="ghost" size="icon" aria-label={localize("Edit rule", "编辑规则")}>
+						<ChevronDown className={cn("size-4 transition-transform duration-150", open && "rotate-180")} />
+					</Button>
+				</CollapsibleTrigger>
+			</div>
+
+			<CollapsibleContent className="space-y-4 border-t p-4">
+				<div className="flex items-end justify-between gap-3">
+					<div className="min-w-0 flex-1 space-y-2">
+						<Label>{localize("Rule note (optional)", "规则备注（可选）")}</Label>
+						<Input
+							value={rule.name}
+							onChange={(event) => updateRule(ruleIndex, (current) => ({ ...current, name: event.target.value }))}
+							placeholder={localize("For example: Image safety block", "例如：图片安全拦截")}
+						/>
+					</div>
+					<Button
+						type="button"
+						variant="outline"
+						size="sm"
+						onClick={() =>
+							updateRule(ruleIndex, (current) => switchErrorFallbackMode(current, current.mode === "scenario" ? "legacy" : "scenario"))
+						}
+					>
+						{rule.mode === "scenario" ? localize("Use expert matcher", "使用专家匹配") : localize("Use scenario matcher", "使用场景匹配")}
+					</Button>
+				</div>
+
+				{rule.mode === "scenario" ? (
+					<ScenarioMatcher rule={rule} ruleIndex={ruleIndex} updateRule={updateRule} />
+				) : (
+					<ExpertMatcher rule={rule} ruleIndex={ruleIndex} updateRule={updateRule} />
+				)}
+
+				<FallbackTargets
+					fallbacks={rule.fallbacks}
+					providerOptions={providerOptions}
+					onChange={(fallbacks) => updateRule(ruleIndex, (current) => ({ ...current, fallbacks }))}
+				/>
+			</CollapsibleContent>
+		</Collapsible>
 	);
 }
 

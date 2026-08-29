@@ -3,6 +3,7 @@ package logstore
 import (
 	"context"
 	"math/rand"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -62,7 +63,7 @@ func (c *LogsCleaner) StartCleanupRoutine() {
 	go func() {
 		// At the beginning, we will cleanup the logs
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
-		c.cleanupOldLogs(ctx)
+		c.cleanupOldLogsSafely(ctx)
 		cancel()
 		// Calculate initial delay with jitter
 		timer := time.NewTimer(calculateNextRunDuration())
@@ -72,7 +73,7 @@ func (c *LogsCleaner) StartCleanupRoutine() {
 			case <-timer.C:
 				// Run cleanup
 				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
-				c.cleanupOldLogs(ctx)
+				c.cleanupOldLogsSafely(ctx)
 				cancel()
 
 				// Reset timer with new jitter for next run
@@ -85,6 +86,15 @@ func (c *LogsCleaner) StartCleanupRoutine() {
 		}
 	}()
 	c.logger.Info("log cleanup routine started")
+}
+
+func (c *LogsCleaner) cleanupOldLogsSafely(ctx context.Context) {
+	defer func() {
+		if recovered := recover(); recovered != nil && c.logger != nil {
+			c.logger.Error("recovered log cleanup panic: panic_type=%T\n%s", recovered, debug.Stack())
+		}
+	}()
+	c.cleanupOldLogs(ctx)
 }
 
 // StopCleanupRoutine gracefully stops the cleanup goroutine

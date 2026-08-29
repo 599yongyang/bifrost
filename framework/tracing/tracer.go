@@ -42,11 +42,12 @@ const (
 // timeout, and drop counter. Isolating the budget per connector is what keeps a
 // misconfigured exporter from consuming the capacity that healthy connectors need.
 type obsPluginSlot struct {
-	plugin        schemas.ObservabilityPlugin
-	name          string
-	sem           chan struct{}
-	injectTimeout time.Duration
-	dropped       atomic.Int64
+	plugin              schemas.ObservabilityPlugin
+	name                string
+	sem                 chan struct{}
+	injectTimeout       time.Duration
+	dropped             atomic.Int64
+	capturePolicyPanics atomic.Int64
 }
 
 // resolveObservabilityLimits applies the tracer defaults to whatever limits a plugin's
@@ -425,7 +426,16 @@ func (t *Tracer) PopulateLLMRequestAttributes(handle schemas.SpanHandle, req *sc
 		return
 	}
 
-	attrs := PopulateRequestAttributesWithMedia(req, trace, span.SpanID)
+	captureTrace := trace
+	if isImageTracingRequestType(string(req.RequestType)) {
+		captureMedia, _ := trace.GetOrInitializeMediaCaptureDecision(func() (bool, map[string]any) {
+			return t.beginTraceMediaCapture(h.traceID, req)
+		})
+		if !captureMedia {
+			captureTrace = nil
+		}
+	}
+	attrs := PopulateRequestAttributesWithMedia(req, captureTrace, span.SpanID)
 	span.SetAttributes(attrs)
 
 	// Propagate input messages and request model to root span so observability backends (e.g. Langfuse)
@@ -475,7 +485,13 @@ func (t *Tracer) PopulateLLMResponseAttributes(ctx *schemas.BifrostContext, hand
 	if span == nil {
 		return
 	}
-	respAttrs := PopulateResponseAttributesWithMedia(resp, trace, span.SpanID)
+	captureTrace := trace
+	if captureMedia, exists := trace.GetAttribute(schemas.TraceAttrMediaCaptureEligible); exists {
+		if allowed, ok := captureMedia.(bool); ok && !allowed {
+			captureTrace = nil
+		}
+	}
+	respAttrs := PopulateResponseAttributesWithMedia(resp, captureTrace, span.SpanID)
 	for k, v := range respAttrs {
 		if k == schemas.AttrFinishReasons {
 			// Spec: gen_ai.response.finish_reasons (string[]) belongs on the GenAI (llm.call) span.
@@ -547,6 +563,59 @@ func (t *Tracer) PopulateLLMResponseAttributes(ctx *schemas.BifrostContext, hand
 		if v, ok := respAttrs[schemas.AttrFinishReasons]; ok {
 			rootSpan.SetAttribute(schemas.AttrFinishReasons, v)
 		}
+	}
+}
+
+func (t *Tracer) beginTraceMediaCapture(traceID string, req *schemas.BifrostRequest) (bool, map[string]any) {
+	loaded := t.obsPlugins.Load()
+	if loaded == nil || len(*loaded) == 0 {
+		return true, nil
+	}
+	foundPolicy := false
+	capture := false
+	snapshots := make(map[string]any)
+	for _, slot := range *loaded {
+		policy, ok := slot.plugin.(schemas.TraceMediaCapturePolicy)
+		if !ok {
+			continue
+		}
+		foundPolicy = true
+		decision, ok := t.safeBeginTraceMediaCapture(slot, policy, traceID, req)
+		if !ok {
+			continue
+		}
+		if decision.PolicySnapshot != nil {
+			snapshots[slot.name] = decision.PolicySnapshot
+		}
+		capture = capture || decision.Capture
+	}
+	if !foundPolicy {
+		return true, nil
+	}
+	return capture, snapshots
+}
+
+func (t *Tracer) safeBeginTraceMediaCapture(slot *obsPluginSlot, policy schemas.TraceMediaCapturePolicy, traceID string, req *schemas.BifrostRequest) (decision schemas.TraceMediaCaptureDecision, ok bool) {
+	ok = true
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			ok = false
+			count := slot.capturePolicyPanics.Add(1)
+			if t.logger != nil && (count == 1 || count%1000 == 0) {
+				t.logger.Error("observability media capture policy %s panicked and was disabled for request %s: panic_type=%T\n%s", slot.name, traceID, recovered, debug.Stack())
+			}
+		}
+	}()
+	return policy.BeginTraceMediaCapture(traceID, req), true
+}
+
+func isImageTracingRequestType(requestType string) bool {
+	switch schemas.RequestType(requestType) {
+	case schemas.ImageGenerationRequest, schemas.ImageGenerationStreamRequest,
+		schemas.ImageEditRequest, schemas.ImageEditStreamRequest, schemas.ImageVariationRequest:
+		return true
+	default:
+		return false
 	}
 }
 

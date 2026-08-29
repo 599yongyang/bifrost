@@ -795,6 +795,37 @@ func (p *OtelPlugin) GetName() string {
 	return PluginName
 }
 
+// BeginTraceMediaCapture applies the latest selective-export head sampling
+// before the tracer copies request-sized image payloads.
+func (p *OtelPlugin) BeginTraceMediaCapture(traceID string, request *schemas.BifrostRequest) schemas.TraceMediaCaptureDecision {
+	canCaptureMedia := false
+	for _, target := range p.targets {
+		if target != nil && !target.disableContentLogging && target.mediaUploader != nil {
+			canCaptureMedia = true
+			break
+		}
+	}
+	capture := canCaptureMedia && (p.selector == nil || p.selector.shouldCaptureCandidate(traceID, request))
+	if p.selector != nil && request != nil && isImageRequestType(request.RequestType) {
+		reason := "accepted"
+		if !capture {
+			reason = "sampled_out"
+			if !canCaptureMedia {
+				reason = "no_media_target"
+			}
+		}
+		for _, target := range p.targets {
+			if target != nil && target.metricsExporter != nil {
+				target.metricsExporter.RecordObservabilityEvent(context.Background(), "media_candidate", reason)
+			}
+		}
+	}
+	return schemas.TraceMediaCaptureDecision{
+		Capture:        capture,
+		PolicySnapshot: &selectorSnapshot{selector: p.selector},
+	}
+}
+
 // MarshalConfigForStorage implements schemas.ConfigMarshallerPlugin.
 func (p *OtelPlugin) MarshalConfigForStorage(raw map[string]any) (map[string]any, error) {
 	b, err := sonic.Marshal(raw)
@@ -1086,9 +1117,20 @@ func (p *OtelPlugin) Inject(ctx context.Context, trace *schemas.Trace) error {
 	if trace == nil {
 		return nil
 	}
-	decision := p.selector.decide(trace)
-	annotateSelectionDecision(trace, decision, p.selector != nil && p.selector.dryRun)
-	exportTrace := p.selector == nil || p.selector.dryRun || decision.selected
+	selector := p.selector
+	if snapshotsValue, exists := trace.GetAttribute(schemas.TraceAttrMediaPolicySnapshots); exists {
+		if snapshots, ok := snapshotsValue.(map[string]any); ok {
+			switch pinned := snapshots[PluginName].(type) {
+			case *selectorSnapshot:
+				selector = pinned.selector
+			case *traceSelector:
+				selector = pinned
+			}
+		}
+	}
+	decision := selector.decide(trace)
+	annotateSelectionDecision(trace, decision, selector != nil && selector.dryRun)
+	exportTrace := selector == nil || selector.dryRun || decision.selected
 	if !exportTrace {
 		for _, target := range p.targets {
 			p.persistExportState(ctx, trace, target, logstore.ObservationExportStatusNotExported, logstore.ObservationExportSourceAutomatic, decision.reason, decision.ruleID)
@@ -1107,6 +1149,13 @@ func (p *OtelPlugin) Inject(ctx context.Context, trace *schemas.Trace) error {
 			if t.metricsExporter != nil {
 				p.recordMetricsFromTrace(ctx, t.metricsExporter, trace)
 				p.recordMCPMetricsFromTrace(ctx, t.metricsExporter, trace)
+				if selector != nil {
+					event := "selection"
+					if selector.dryRun {
+						event = "selection_dry_run"
+					}
+					t.metricsExporter.RecordObservabilityEvent(ctx, event, decision.reason)
+				}
 			}
 			if !exportTrace {
 				return
@@ -1115,7 +1164,14 @@ func (p *OtelPlugin) Inject(ctx context.Context, trace *schemas.Trace) error {
 				return
 			}
 			mediaRefs, mediaOK := uploadTraceMedia(ctx, t, trace)
-			if !mediaOK && p.selector != nil && decision.selected && isImageRequestType(selectionFactsFromTrace(trace).requestType) {
+			if t.metricsExporter != nil && len(trace.MediaAttachments()) > 0 {
+				reason := "uploaded"
+				if !mediaOK {
+					reason = "failed"
+				}
+				t.metricsExporter.RecordObservabilityEvent(ctx, "media_upload", reason)
+			}
+			if !mediaOK && selector != nil && decision.selected && isImageRequestType(selectionFactsFromTrace(trace).requestType) {
 				p.persistExportState(ctx, trace, t, logstore.ObservationExportStatusFailed, logstore.ObservationExportSourceAutomatic, "media_upload_failed", decision.ruleID)
 				return
 			}
