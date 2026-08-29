@@ -14,8 +14,8 @@ instead of merging the v1 branch.
 | `5532b619e` | Image request observability | `reimplement` | `07da5a1c2`, `6abd87c04`; tracing/media tests |
 | `6db37a1db` | Safe selective image exports | `reimplement` | `1bf1a3b3b`, `6abd87c04`; OTEL selection/media tests |
 | `39c8c142a` | Selective-export rule UI | `adapt-to-v2` | `9f5c0bd8a`; OTEL schema and observability export UI tests |
-| `d436a76f4` | English/Chinese UI | `reimplement` | `a4fbd3e89`, `ac15335ba`; language/copy tests |
-| `9eedaa606` | Localization coverage | `reimplement` | `a4fbd3e89`, `ac15335ba`; navigation/dashboard/log copy tests |
+| `d436a76f4` | English/Chinese UI | `in-progress` | `a4fbd3e89`, `ac15335ba`, `f03c9dc3a`; language persistence plus fully localized routing/error/update surfaces |
+| `9eedaa606` | Localization coverage | `in-progress` | `f03c9dc3a`; repository-wide raw-English ratchet and per-feature zero-tolerance tests; remaining v2 surfaces are tracked by the baseline |
 | `380f5fce3` | Simplified selective-export policies | `adapt-to-v2` | `1bf1a3b3b`, `6760008ae`; candidate sampling, technical-quality, media-policy and UI tests |
 | `6332a7991` | LLM-log latency filters | `adapt-to-v2` | `4ed6d53a2`; log handler/model tests |
 | `885423f3a` | Manual Langfuse export | `reimplement` | `585665f5e`, `d2b59e37e`, `47f4a62b4`, `eebbbcde8`, `9f5c0bd8a` |
@@ -32,7 +32,7 @@ instead of merging the v1 branch.
 | `c0e37222f` | Harden alert evaluation/history UX | `reimplement` | `1cbf68c83`, `e969cc2ef`, `6fad88946`, `567a01c1c`, `72c667376`; alerting tests |
 | `5b400d2e3` | Moon maintenance/deployment guide | `reimplement` | `33053af6f`; `docs/MAINTENANCE.md` |
 | `ea74d890f` | Hide gateway identity from client errors | `adapt-to-v2` | `3d66e5d27`; error sanitizer tests |
-| `13bef5d0d` | Expand i18n coverage | `reimplement` | `a4fbd3e89`, `ac15335ba`; language/copy tests and timeout diagnostics |
+| `13bef5d0d` | Expand i18n coverage | `in-progress` | `a4fbd3e89`, `ac15335ba`, `f03c9dc3a`; routing/CEL metadata and validation errors localized; provider/config/MCP/virtual-key surfaces remain |
 | `2e49d0ed0` | Header-driven circuit breaker and UI | `reimplement` | `605364b32`, `9f9011a05`, `4ff400050`; circuit tests |
 | `5d1704e2d` | Error-aware fallback routing | `reimplement` | `96fcdce15`, `425ce08ef`, `f5b862d64`, `493672a89`, `28215607d`, `28c78eb46`, `93a653a4f`; direct HTTP, multipart, and lossless compact-editor coverage |
 | `423b4b401` | Plugin panic containment | `adapt-to-v2` | `b288c55d6`, `19336a043`, `28af37074`, `294804389`, `28c78eb46`; plugin, health-probe and cleaner panic tests |
@@ -66,6 +66,15 @@ inventory:
   adds a real browser workflow assertion for the latest OTEL policy editor.
 - `93a653a4f` keeps the simplified content-safety fallback editor while preserving unsupported
   error policies, advanced recognition conditions, and their ordering during unrelated rule edits.
+
+## Localization restoration status
+
+`f03c9dc3a` establishes a repository-wide raw-English ratchet and requires the complete routing-rule
+surface (list, editor, details, tree, CEL controls and metadata) to remain at zero detected raw
+English. It also localizes the global 404, 500 and rolling-upgrade states. The initial v2 scan found
+4,011 potential raw-English nodes; this phase lowers the locked baseline to 3,803. The remaining
+provider, configuration, MCP, virtual-key, observability and profiler surfaces are intentionally
+marked in progress rather than being claimed as fully migrated.
 
 These entries supersede earlier broad claims that the corresponding v1 behavior was already fully
 covered by the first v2 migration commits.
