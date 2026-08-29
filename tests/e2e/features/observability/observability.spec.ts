@@ -127,7 +127,7 @@ test.describe("Observability", () => {
     }) => {
       await observabilityPage.selectConnector("otel");
 
-      const toggle = observabilityPage.page.getByTestId("otel-selective-export-toggle");
+      const toggle = observabilityPage.page.getByTestId("otel-selective-export-enable-toggle");
       await expect(toggle).toBeVisible();
       if ((await toggle.getAttribute("aria-checked")) !== "true") await toggle.click();
 
@@ -135,11 +135,25 @@ test.describe("Observability", () => {
         observabilityPage.page.getByTestId("otel-selective-export-balanced-template"),
       ).toBeVisible();
       await expect(
-        observabilityPage.page.getByTestId("otel-selective-export-rule-0"),
-      ).toContainText("failed requests");
+        observabilityPage.page.getByTestId("otel-selective-export-rule-0-drag-handle"),
+      ).toBeVisible();
       await observabilityPage.page.getByTestId("otel-selective-export-rule-0-configure").click();
-      await expect(observabilityPage.page.getByText("Media candidate rate")).toBeVisible();
-      await expect(observabilityPage.page.getByText("Export rate").first()).toBeVisible();
+      await expect(
+        observabilityPage.page.getByTestId("otel-selective-export-rule-0-request-type"),
+      ).toBeVisible();
+      await expect(
+        observabilityPage.page.getByTestId("otel-selective-export-rule-0-more-conditions"),
+      ).toBeVisible();
+      await expect(
+        observabilityPage.page.getByTestId("otel-selective-export-rule-0-export-rate"),
+      ).toHaveValue("100");
+      await expect(
+        observabilityPage.page.getByTestId("otel-selective-export-rule-4-remove"),
+      ).toHaveCount(0);
+      await observabilityPage.page.getByTestId("otel-selective-export-resource-controls").click();
+      await expect(
+        observabilityPage.page.getByTestId("otel-selective-export-candidate-rate"),
+      ).toBeVisible();
     });
   });
 
