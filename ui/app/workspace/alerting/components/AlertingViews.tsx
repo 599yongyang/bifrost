@@ -184,7 +184,7 @@ function ChannelDialog({
 }
 
 export function AlertChannelsView() {
-	const canEdit = useRbac(RbacResource.Governance, RbacOperation.Update);
+	const canEdit = useRbac(RbacResource.AlertChannels, RbacOperation.Update);
 	const { data, isLoading } = useGetAlertChannelsQuery();
 	const [dialog, setDialog] = useState(false);
 	const [editing, setEditing] = useState<AlertChannel | null>(null);
@@ -535,7 +535,7 @@ function RuleDialog({
 }
 
 export function AlertRulesView() {
-	const canEdit = useRbac(RbacResource.Governance, RbacOperation.Update);
+	const canEdit = useRbac(RbacResource.AlertRules, RbacOperation.Update);
 	const { data } = useGetAlertRulesQuery();
 	const { data: channels } = useGetAlertChannelsQuery();
 	const { data: providers } = useGetProvidersQuery();
@@ -668,7 +668,7 @@ export function AlertRulesView() {
 }
 
 export function AlertHistoryView() {
-	const canEdit = useRbac(RbacResource.Governance, RbacOperation.Update);
+	const canEdit = useRbac(RbacResource.AlertHistory, RbacOperation.Update);
 	const [status, setStatus] = useState<AlertStatus | "all">("all");
 	const [scope, setScope] = useState<AlertScopeType | "all">("all");
 	const [channel, setChannel] = useState<"all" | "slack" | "microsoft_teams" | "wecom" | "pagerduty" | "webhook">("all");

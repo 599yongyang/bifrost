@@ -142,8 +142,8 @@ function PreviewPanels({
 }
 
 export function DailyReportsView() {
-	const canView = useRbac(RbacResource.Governance, RbacOperation.View);
-	const canUpdate = useRbac(RbacResource.Governance, RbacOperation.Update);
+	const canView = useRbac(RbacResource.AlertHistory, RbacOperation.View);
+	const canUpdate = useRbac(RbacResource.AlertHistory, RbacOperation.Update);
 	const permissions = dailyReportPermissions(canView, canUpdate);
 	const { data: settingsData } = useGetDailyReportSettingsQuery(undefined, { skip: !permissions.canView });
 	const { data: channelsData } = useGetAlertChannelsQuery(undefined, { skip: !permissions.canView });
