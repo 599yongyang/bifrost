@@ -9,8 +9,9 @@ import { baseRoutingFields } from "@/lib/config/celFieldsRouting";
 import { getOperatorLabel } from "@/lib/config/celOperatorsRouting";
 import { ProviderIconType, RenderProviderIcon } from "@/lib/constants/icons";
 import { getProviderLabel } from "@/lib/constants/logs";
+import { localize } from "@/lib/i18n/language";
 import { useGetCustomerQuery, useGetTeamQuery, useGetVirtualKeyQuery } from "@/lib/store/apis/governanceApi";
-import { RoutingRule } from "@/lib/types/routingRules";
+import { RoutingErrorFallback, RoutingRule } from "@/lib/types/routingRules";
 import { getScopeLabel } from "@/lib/utils/labels";
 import { formatDistanceToNow } from "date-fns";
 import { Check, Copy, GitMerge, Key } from "lucide-react";
@@ -34,7 +35,7 @@ function getFieldLabel(fieldName: string): string {
 	return field?.label ?? fieldName;
 }
 
-function formatRuleValue(value: any): string {
+function formatRuleValue(value: unknown): string {
 	if (Array.isArray(value)) return value.join(", ");
 	if (typeof value === "string") return value;
 	return String(value ?? "");
@@ -249,11 +250,60 @@ function FallbackChain({ fallbacks }: { fallbacks: string[] }) {
 	);
 }
 
+function ErrorFallbackRuleCard({ rule }: { rule: RoutingErrorFallback }) {
+	const matcherRows = rule.scenario
+		? [
+				{ label: localize("Scenario", "错误场景"), value: rule.scenario.replaceAll("_", " ") },
+				rule.supplement?.providers?.length ? { label: localize("Providers", "供应商"), value: rule.supplement.providers.join(", ") } : null,
+				rule.supplement?.error_types?.length
+					? { label: localize("Error types", "错误类型"), value: rule.supplement.error_types.join(", ") }
+					: null,
+				rule.supplement?.error_codes?.length
+					? { label: localize("Error codes", "错误代码"), value: rule.supplement.error_codes.join(", ") }
+					: null,
+				rule.supplement?.status_codes?.length
+					? { label: localize("Status codes", "状态码"), value: rule.supplement.status_codes.join(", ") }
+					: null,
+				rule.supplement?.message_contains_any?.length
+					? { label: localize("Message clues", "消息线索"), value: rule.supplement.message_contains_any.join(", ") }
+					: null,
+			]
+		: [
+				rule.when?.categories?.length ? { label: localize("Categories", "错误类别"), value: rule.when.categories.join(", ") } : null,
+				rule.when?.error_types?.length ? { label: localize("Error types", "错误类型"), value: rule.when.error_types.join(", ") } : null,
+				rule.when?.error_codes?.length ? { label: localize("Error codes", "错误代码"), value: rule.when.error_codes.join(", ") } : null,
+				rule.when?.status_codes?.length ? { label: localize("Status codes", "状态码"), value: rule.when.status_codes.join(", ") } : null,
+				rule.when?.message_contains?.length
+					? { label: localize("Message contains", "消息包含"), value: rule.when.message_contains.join(", ") }
+					: null,
+			];
+	const rows = matcherRows.filter((row): row is { label: string; value: string } => row !== null);
+
+	return (
+		<div className="space-y-3 rounded-lg border p-4">
+			<div className="flex items-center justify-between gap-2">
+				<span className="text-sm font-semibold">{rule.name?.trim() || localize("Unnamed error rule", "未命名错误规则")}</span>
+				<Badge variant="outline">{localize("Dedicated chain", "专用备用链")}</Badge>
+			</div>
+			<div className="space-y-2">
+				{rows.map((row) => (
+					<div key={row.label} className="grid grid-cols-3 gap-3 text-sm">
+						<span className="text-muted-foreground">{row.label}</span>
+						<span className="col-span-2 break-all">{row.value}</span>
+					</div>
+				))}
+			</div>
+			{rule.fallbacks.length > 0 ? <FallbackChain fallbacks={rule.fallbacks} /> : null}
+		</div>
+	);
+}
+
 // ─── main sheet ──────────────────────────────────────────────────────────────
 
 export function RoutingRuleInfoSheet({ rule, open, onOpenChange, onNavigate, hasPrev = false, hasNext = false }: Props) {
 	const targets = rule?.targets ?? [];
 	const fallbacks = rule?.fallbacks ?? [];
+	const errorFallbacks = rule?.error_fallbacks ?? [];
 	const hasQuery = rule?.query && (rule.query.rules?.length ?? 0) > 0;
 	// A rule can carry a CEL expression without a visual query (e.g. authored via the API).
 	// Only claim "matches all requests" when neither is present; otherwise the CEL section speaks for itself.
@@ -376,6 +426,21 @@ export function RoutingRuleInfoSheet({ rule, open, onOpenChange, onNavigate, has
 									<FallbackChain fallbacks={fallbacks} />
 								) : (
 									<p className="text-muted-foreground text-sm">No fallbacks configured</p>
+								)}
+							</div>
+
+							<DottedSeparator />
+
+							<div className="space-y-3">
+								<h3 className="text-sm font-semibold">{localize("Error-aware fallbacks", "错误专用备用链")}</h3>
+								{errorFallbacks.length > 0 ? (
+									<div className="space-y-3">
+										{errorFallbacks.map((errorFallback, index) => (
+											<ErrorFallbackRuleCard key={`${errorFallback.name || "error-fallback"}-${index}`} rule={errorFallback} />
+										))}
+									</div>
+								) : (
+									<p className="text-muted-foreground text-sm">{localize("No error-aware fallbacks configured", "未配置错误专用备用链")}</p>
 								)}
 							</div>
 

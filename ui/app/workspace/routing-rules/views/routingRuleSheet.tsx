@@ -4,6 +4,7 @@
  */
 
 import { CustomerSelector } from "@/components/entitySelectors/customerSelector";
+import { ErrorFallbackEditor } from "@/app/workspace/routing-rules/components/errorFallbackEditor";
 import { TeamSelector } from "@/components/entitySelectors/teamSelector";
 import { VirtualKeySelector } from "@/components/entitySelectors/virtualKeySelector";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,7 @@ import {
 	RoutingTargetFormData,
 } from "@/lib/types/routingRules";
 import { validateRateLimitAndBudgetRules, validateRoutingRules } from "@/lib/utils/celConverterRouting";
+import { toErrorFallbackFormData, toErrorFallbackPayload, validateErrorFallbackForms } from "@/lib/utils/errorFallbackRules";
 import { isValidRuleGroupType, normalizeRoutingRuleGroupQuery } from "@/lib/utils/routingRuleGroupQuery";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { Plus, Trash2, X } from "lucide-react";
@@ -124,6 +126,7 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 	// without a user directory, which hides the "User" scope option.
 	const UserPicker = getUserPicker();
 	const fallbacks = watch("fallbacks");
+	const errorFallbacks = watch("error_fallbacks");
 
 	// Get available providers from configured providers, plus any provider already
 	// referenced by the current targets, existing rules' targets, or rules' fallbacks
@@ -134,6 +137,14 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 			...(targets.map((t) => t.provider).filter(Boolean) as string[]),
 			...(rules.flatMap((r) => r.targets?.map((t) => t.provider).filter(Boolean) ?? []) as string[]),
 			...rules.flatMap((r) => (r.fallbacks ?? []).map((f) => f.split("/")[0]?.trim()).filter(Boolean)),
+			...rules.flatMap((r) =>
+				(r.error_fallbacks ?? []).flatMap((errorFallback) =>
+					errorFallback.fallbacks.map((fallback) => fallback.split("/")[0]?.trim()).filter(Boolean),
+				),
+			),
+			...(errorFallbacks ?? []).flatMap((errorFallback) =>
+				errorFallback.fallbacks.map((fallback) => fallback.split("/")[0]?.trim()).filter(Boolean),
+			),
 		]),
 	);
 	const providerOptions = availableProviders.map((prov) => ({
@@ -150,6 +161,7 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 			setValue("description", editingRule.description);
 			setValue("cel_expression", editingRule.cel_expression);
 			setValue("fallbacks", editingRule.fallbacks || []);
+			setValue("error_fallbacks", (editingRule.error_fallbacks || []).map(toErrorFallbackFormData));
 			setValue("scope", editingRule.scope);
 			setValue("scope_id", editingRule.scope_id || "");
 			setValue("priority", editingRule.priority);
@@ -263,6 +275,13 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 			const provider = fb.split("/")[0]?.trim();
 			return provider && provider.length > 0;
 		});
+		const errorFallbackForms = data.error_fallbacks || [];
+		const errorFallbackValidation = validateErrorFallbackForms(errorFallbackForms);
+		if (errorFallbackValidation.length > 0) {
+			toast.error(errorFallbackValidation.join("\n"));
+			return;
+		}
+		const normalizedErrorFallbacks = errorFallbackForms.map(toErrorFallbackPayload);
 
 		const payload = {
 			name: data.name,
@@ -275,6 +294,7 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 				weight,
 			})),
 			fallbacks: validFallbacks,
+			error_fallbacks: normalizedErrorFallbacks,
 			scope: data.scope,
 			scope_id: data.scope === "global" ? undefined : data.scope_id || undefined,
 			priority: data.priority,
@@ -303,7 +323,7 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 				onOpenChange(false);
 				onSuccess?.();
 			})
-			.catch((error: any) => {
+			.catch((error: unknown) => {
 				const message = getErrorMessage(error);
 				// A malformed CEL expression is a field-level problem — show it beneath the CEL
 				// editor rather than in a toast (which turns a syntax error into a jarring popup).
@@ -389,7 +409,7 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 								<Select
 									value={scope}
 									onValueChange={(value) => {
-										setValue("scope", value as any);
+										setValue("scope", value);
 										// Clear scope_id when scope changes
 										setValue("scope_id", "");
 									}}
@@ -629,6 +649,14 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 							</div>
 							<p className="text-muted-foreground text-xs">Fallbacks will be used in the order they are defined</p>
 						</div>
+
+						<Separator />
+
+						<ErrorFallbackEditor
+							value={errorFallbacks || []}
+							providerOptions={providerOptions}
+							onChange={(next) => setValue("error_fallbacks", next, { shouldDirty: true })}
+						/>
 					</div>
 					{/* Action Buttons */}
 					<div className="bg-card sticky bottom-0 flex justify-end gap-3 border-t px-4 py-4 md:px-8">
