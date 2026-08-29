@@ -158,15 +158,7 @@ func (g *GenericRouter) sendStreamError(ctx *fasthttp.RequestCtx, bifrostCtx *sc
 		bifrostErr = newBifrostErrorWithCode(nil, lib.ClientSafeInternalErrorMessage, fasthttp.StatusInternalServerError)
 	}
 
-	// Forward provider response headers from context so streaming error responses include them
-	if bifrostCtx != nil {
-		if headers, ok := bifrostCtx.Value(schemas.BifrostContextKeyProviderResponseHeaders).(map[string]string); ok {
-			for key, value := range headers {
-				ctx.Response.Header.Set(key, value)
-			}
-		}
-	}
-	// Routed identity after provider headers so a chained upstream's x-bifrost-* can't overwrite it.
+	// Record the response-header phase without exposing provider or routed identity details.
 	lib.ApplyBifrostErrorResponseHeaders(ctx, bifrostCtx, bifrostErr.ExtraFields)
 
 	// Set the HTTP status code from the provider error
@@ -181,7 +173,7 @@ func (g *GenericRouter) sendStreamError(ctx *fasthttp.RequestCtx, bifrostCtx *sc
 	// sendStreamError returns JSON, not SSE. StreamConfig.ErrorConverter is designed for
 	// in-stream SSE errors (e.g., Anthropic's returns a raw SSE string that would be
 	// double-escaped by JSON marshaling).
-	errorResponse := config.ErrorConverter(bifrostCtx, bifrostErr)
+	errorResponse := lib.ClientErrorPayload(config.ErrorConverter(bifrostCtx, bifrostErr))
 
 	errorJSON, err := sonic.Marshal(errorResponse)
 	if err != nil {
@@ -203,15 +195,7 @@ func (g *GenericRouter) sendError(ctx *fasthttp.RequestCtx, bifrostCtx *schemas.
 		bifrostErr = newBifrostErrorWithCode(nil, lib.ClientSafeInternalErrorMessage, fasthttp.StatusInternalServerError)
 	}
 
-	// Forward provider response headers from context so error responses include them
-	if bifrostCtx != nil {
-		if headers, ok := bifrostCtx.Value(schemas.BifrostContextKeyProviderResponseHeaders).(map[string]string); ok {
-			for key, value := range headers {
-				ctx.Response.Header.Set(key, value)
-			}
-		}
-	}
-	// Routed identity after provider headers so a chained upstream's x-bifrost-* can't overwrite it.
+	// Record the response-header phase without exposing provider or routed identity details.
 	lib.ApplyBifrostErrorResponseHeaders(ctx, bifrostCtx, bifrostErr.ExtraFields)
 
 	if bifrostErr.StatusCode != nil {
@@ -230,7 +214,7 @@ func (g *GenericRouter) sendError(ctx *fasthttp.RequestCtx, bifrostCtx *schemas.
 	ctx.SetContentType("application/json")
 
 	// Marshal the error for response and log the error for diagnostics
-	responseObj := errorConverter(bifrostCtx, bifrostErr)
+	responseObj := lib.ClientErrorPayload(errorConverter(bifrostCtx, bifrostErr))
 	errorBody, err := sonic.Marshal(responseObj)
 	if err != nil {
 		// Log the marshal failure and return a plain text error
@@ -267,24 +251,15 @@ func (g *GenericRouter) sendSuccess(ctx *fasthttp.RequestCtx, bifrostCtx *schema
 // tryStreamLargeResponse checks if large response mode was activated by the provider,
 // sets the transport marker, and streams the response directly to the client.
 // Returns true if the response was handled (caller should return).
-// extra carries the routed identity of the response being streamed; callers
-// without one (pre-chunk streaming paths) pass the zero value, which emits nothing.
+// extra remains available to the internal response-header phase; no provider
+// or routed identity values are exposed publicly.
 func (g *GenericRouter) tryStreamLargeResponse(ctx *fasthttp.RequestCtx, bifrostCtx *schemas.BifrostContext, extra schemas.BifrostResponseExtraFields) bool {
 	isLargeResponse, ok := bifrostCtx.Value(schemas.BifrostContextKeyLargeResponseMode).(bool)
 	if !ok || !isLargeResponse {
 		return false
 	}
-	// Routed-identity headers — large-response branches return early and skip
-	// the common footer that normally emits them.
+	// Preserve v2 overhead accounting on this early-return path.
 	lib.ApplyBifrostResponseHeaders(ctx, bifrostCtx, extra)
-	// Forward provider response headers before streaming — providers store them in
-	// context via BifrostContextKeyProviderResponseHeaders, but some early-return
-	// branches in the router skip the common footer that normally forwards them.
-	if headers, ok := bifrostCtx.Value(schemas.BifrostContextKeyProviderResponseHeaders).(map[string]string); ok {
-		for key, value := range headers {
-			ctx.Response.Header.Set(key, value)
-		}
-	}
 	if g.streamLargeResponse(ctx, bifrostCtx) {
 		ctx.SetUserValue(lib.FastHTTPUserValueLargeResponseMode, true)
 	}

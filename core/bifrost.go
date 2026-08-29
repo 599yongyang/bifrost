@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -5151,6 +5152,18 @@ func (bifrost *Bifrost) prepareFallbackRequest(req *schemas.BifrostRequest, fall
 		tmp.Model = fallback.Model
 		fallbackReq.ImageGenerationRequest = &tmp
 	}
+	if req.ImageEditRequest != nil {
+		tmp := *req.ImageEditRequest
+		tmp.Provider = fallback.Provider
+		tmp.Model = fallback.Model
+		fallbackReq.ImageEditRequest = &tmp
+	}
+	if req.ImageVariationRequest != nil {
+		tmp := *req.ImageVariationRequest
+		tmp.Provider = fallback.Provider
+		tmp.Model = fallback.Model
+		fallbackReq.ImageVariationRequest = &tmp
+	}
 	if req.VideoGenerationRequest != nil {
 		tmp := *req.VideoGenerationRequest
 		tmp.Provider = fallback.Provider
@@ -5487,6 +5500,119 @@ func (bifrost *Bifrost) handleStreamRequest(ctx *schemas.BifrostContext, req *sc
 	return nil, primaryErr
 }
 
+// validateImageResponse rejects successful-looking image responses that do not
+// contain a usable image. Some OpenAI-compatible providers return HTTP 200 with
+// only revised_prompt or usage metadata when generation failed internally.
+func validateImageResponse(requestType schemas.RequestType, response *schemas.BifrostResponse) *schemas.BifrostError {
+	switch requestType {
+	case schemas.ImageGenerationRequest, schemas.ImageEditRequest, schemas.ImageVariationRequest:
+	default:
+		return nil
+	}
+
+	if response == nil || response.ImageGenerationResponse == nil {
+		return invalidImageResponseError("response contains no image data")
+	}
+	if len(response.ImageGenerationResponse.Data) == 0 {
+		return invalidImageResponseError("response contains no generated images")
+	}
+	for index, image := range response.ImageGenerationResponse.Data {
+		if strings.TrimSpace(image.URL) == "" && strings.TrimSpace(image.B64JSON) == "" {
+			return invalidImageResponseError(fmt.Sprintf("image %d has neither url nor b64_json", index))
+		}
+	}
+	return nil
+}
+
+func invalidImageResponseError(reason string) *schemas.BifrostError {
+	statusCode := fasthttp.StatusBadGateway
+	errorType := "invalid_image_response"
+	allowFallbacks := true
+	return &schemas.BifrostError{
+		StatusCode:     &statusCode,
+		Type:           &errorType,
+		AllowFallbacks: &allowFallbacks,
+		Error: &schemas.ErrorField{
+			Type:    &errorType,
+			Message: "upstream provider returned an invalid image response: " + reason,
+		},
+	}
+}
+
+// attachUpstreamRequestID copies a small allowlist of provider response headers
+// into internal error metadata for operator troubleshooting. Public HTTP error
+// wrappers strip these fields before they reach API callers.
+func attachUpstreamRequestID(ctx *schemas.BifrostContext, bifrostErr *schemas.BifrostError) {
+	if ctx == nil || bifrostErr == nil {
+		return
+	}
+	headers, ok := ctx.Value(schemas.BifrostContextKeyProviderResponseHeaders).(map[string]string)
+	if !ok {
+		return
+	}
+	if bifrostErr.ExtraFields.UpstreamResponseHeaders == nil {
+		bifrostErr.ExtraFields.UpstreamResponseHeaders = filterUpstreamResponseHeaders(headers)
+	}
+	if bifrostErr.ExtraFields.UpstreamRequestID != "" {
+		return
+	}
+	for _, preferredName := range []string{"x-client-request-id", "x-request-id"} {
+		if value := strings.TrimSpace(bifrostErr.ExtraFields.UpstreamResponseHeaders[preferredName]); value != "" {
+			bifrostErr.ExtraFields.UpstreamRequestID = value
+			return
+		}
+	}
+	requestIDHeaders := make([]string, 0, len(bifrostErr.ExtraFields.UpstreamResponseHeaders))
+	for name := range bifrostErr.ExtraFields.UpstreamResponseHeaders {
+		if isUpstreamRequestIDHeader(name) {
+			requestIDHeaders = append(requestIDHeaders, name)
+		}
+	}
+	sort.Strings(requestIDHeaders)
+	if len(requestIDHeaders) > 0 {
+		bifrostErr.ExtraFields.UpstreamRequestID = bifrostErr.ExtraFields.UpstreamResponseHeaders[requestIDHeaders[0]]
+	}
+}
+
+func filterUpstreamResponseHeaders(headers map[string]string) map[string]string {
+	var filtered map[string]string
+	for name, value := range headers {
+		canonicalName := strings.ToLower(strings.TrimSpace(name))
+		if !isSafeUpstreamResponseHeader(canonicalName) {
+			continue
+		}
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if len(value) > 1024 {
+			value = value[:1024]
+		}
+		if filtered == nil {
+			filtered = make(map[string]string)
+		}
+		filtered[canonicalName] = value
+	}
+	return filtered
+}
+
+func isSafeUpstreamResponseHeader(name string) bool {
+	if isUpstreamRequestIDHeader(name) {
+		return true
+	}
+	switch name {
+	case "retry-after":
+		return true
+	}
+	return strings.HasPrefix(name, "ratelimit-") || strings.HasPrefix(name, "x-ratelimit-")
+}
+
+// isUpstreamRequestIDHeader accepts conventional and provider-specific forms
+// such as x-request-id, x-amzn-requestid, and x-vendor-request-id.
+func isUpstreamRequestIDHeader(name string) bool {
+	return strings.HasSuffix(strings.ReplaceAll(strings.ToLower(name), "-", ""), "requestid")
+}
+
 // tryRequest is a generic function that handles common request processing logic
 // It consolidates queue setup, plugin pipeline execution, enqueue logic, and response handling
 func (bifrost *Bifrost) tryRequest(ctx *schemas.BifrostContext, req *schemas.BifrostRequest) (*schemas.BifrostResponse, *schemas.BifrostError) {
@@ -5664,8 +5790,21 @@ func (bifrost *Bifrost) tryRequest(ctx *schemas.BifrostContext, req *schemas.Bif
 		// Accumulator is complete once the provider returns; stamp before post-hooks
 		// so logging reads it off ExtraFields.
 		populateLatencyExtraFields(msg.Context, result)
-		resp, bifrostErr := pipeline.RunPostLLMHooks(msg.Context, result, nil, pluginCount)
+		providerResultErr := validateImageResponse(req.RequestType, result)
+		attachUpstreamRequestID(msg.Context, providerResultErr)
+		postHookResult := result
+		if providerResultErr != nil {
+			// Treat an HTTP-200 response without image bytes as a provider failure,
+			// while preserving the attempt identity already stamped by the worker.
+			providerResultErr.PopulateExtraFields(req.RequestType, provider, model, model)
+			if result != nil {
+				providerResultErr.PopulateRoutingInfo(result.GetExtraFields().RoutingInfo)
+			}
+			postHookResult = nil
+		}
+		resp, bifrostErr := pipeline.RunPostLLMHooks(msg.Context, postHookResult, providerResultErr, pluginCount)
 		if bifrostErr != nil {
+			attachUpstreamRequestID(msg.Context, bifrostErr)
 			bifrostErr.PopulateExtraFields(req.RequestType, provider, model, model)
 		} else if resp != nil {
 			resp.PopulateExtraFields(req.RequestType, provider, model, model)
@@ -5693,6 +5832,7 @@ func (bifrost *Bifrost) tryRequest(ctx *schemas.BifrostContext, req *schemas.Bif
 		return resp, nil
 	case bifrostErrVal := <-msg.Err:
 		bifrostErrPtr := &bifrostErrVal
+		attachUpstreamRequestID(msg.Context, bifrostErrPtr)
 		// Worker->caller goroutine-hop latency on the error path too.
 		if !msg.sentAt.IsZero() {
 			msg.Context.StampWorkerHandoff(time.Since(msg.sentAt))
@@ -5703,6 +5843,7 @@ func (bifrost *Bifrost) tryRequest(ctx *schemas.BifrostContext, req *schemas.Bif
 		}
 		resp, bifrostErrPtr = pipeline.RunPostLLMHooks(msg.Context, nil, bifrostErrPtr, pluginCount)
 		if bifrostErrPtr != nil {
+			attachUpstreamRequestID(msg.Context, bifrostErrPtr)
 			bifrostErrPtr.PopulateExtraFields(req.RequestType, provider, model, model)
 		} else if resp != nil {
 			resp.PopulateExtraFields(req.RequestType, provider, model, model)
@@ -5834,6 +5975,7 @@ func (bifrost *Bifrost) tryStreamRequest(ctx *schemas.BifrostContext, req *schem
 			shortCircuitRequestType := req.RequestType
 			// Create a post hook runner cause pipeline object is put back in the pool on defer
 			pipelinePostHookRunner := func(ctx *schemas.BifrostContext, result *schemas.BifrostResponse, err *schemas.BifrostError) (*schemas.BifrostResponse, *schemas.BifrostError) {
+				attachUpstreamRequestID(ctx, err)
 				if result != nil {
 					result.PopulateExtraFields(shortCircuitRequestType, provider, model, model)
 				}
@@ -5845,6 +5987,7 @@ func (bifrost *Bifrost) tryStreamRequest(ctx *schemas.BifrostContext, req *schem
 					drainAndAttachPluginLogs(ctx)
 				}
 				if bifrostErr != nil {
+					attachUpstreamRequestID(ctx, bifrostErr)
 					bifrostErr.PopulateExtraFields(shortCircuitRequestType, provider, model, model)
 					return nil, bifrostErr
 				} else if resp != nil {
@@ -5913,9 +6056,11 @@ func (bifrost *Bifrost) tryStreamRequest(ctx *schemas.BifrostContext, req *schem
 		}
 		// Handle short-circuit with error
 		if shortCircuit.Error != nil {
+			attachUpstreamRequestID(ctx, shortCircuit.Error)
 			shortCircuit.Error.PopulateExtraFields(req.RequestType, provider, model, model)
 			resp, bifrostErr := pipeline.RunPostLLMHooks(ctx, nil, shortCircuit.Error, preCount)
 			if bifrostErr != nil {
+				attachUpstreamRequestID(ctx, bifrostErr)
 				bifrostErr.PopulateExtraFields(req.RequestType, provider, model, model)
 			} else if resp != nil {
 				resp.PopulateExtraFields(req.RequestType, provider, model, model)
@@ -6014,6 +6159,7 @@ func (bifrost *Bifrost) tryStreamRequest(ctx *schemas.BifrostContext, req *schem
 		bifrost.releaseChannelMessage(msg)
 		return stream, nil
 	case bifrostErrVal := <-msg.Err:
+		attachUpstreamRequestID(ctx, &bifrostErrVal)
 		if bifrostErrVal.Error != nil {
 			bifrost.logger.Debug("error while executing stream request: %s", bifrostErrVal.Error.Message)
 		} else {
@@ -6024,6 +6170,7 @@ func (bifrost *Bifrost) tryStreamRequest(ctx *schemas.BifrostContext, req *schem
 		// On error we will complete post-hooks
 		recoveredResp, recoveredErr := pipeline.RunPostLLMHooks(ctx, nil, &bifrostErrVal, len(*bifrost.llmPlugins.Load()))
 		if recoveredErr != nil {
+			attachUpstreamRequestID(ctx, recoveredErr)
 			recoveredErr.PopulateExtraFields(req.RequestType, provider, model, model)
 		} else if recoveredResp != nil {
 			recoveredResp.PopulateExtraFields(req.RequestType, provider, model, model)
@@ -6083,6 +6230,7 @@ func executeRequestWithRetries[T any](
 	logger schemas.Logger,
 ) (result T, bifrostError *schemas.BifrostError) {
 	var attempts int
+	ctx.SetValue(schemas.BifrostContextKeyConfiguredRequestTimeoutSeconds, config.NetworkConfig.DefaultRequestTimeoutInSeconds)
 
 	// Emit the terminal routing-engine entry on every return path — including
 	// early returns from key-selection failures and tracer-missing — so the
@@ -6459,7 +6607,7 @@ func executeRequestWithRetries[T any](
 		emptyStream := false
 		if bifrostError == nil {
 			if streamChan, ok := any(result).(chan *schemas.BifrostStreamChunk); ok {
-				checkedStream, drainDone, firstChunkErr := providerUtils.CheckFirstStreamChunkForError(ctx, streamChan)
+				checkedStream, drainDone, firstChunkErr := providerUtils.CheckFirstStreamChunkForError(ctx, requestType, streamChan)
 				if firstChunkErr != nil {
 					<-drainDone
 					// The dead stream's teardown (ReleaseStreamingResponse) claimed the
@@ -6488,6 +6636,29 @@ func executeRequestWithRetries[T any](
 					result = any(checkedStream).(T)
 				}
 			}
+		}
+
+		if bifrostError != nil && bifrostError.ExtraFields.TimeoutSource != "" {
+			bifrostError.ExtraFields.ConfiguredTimeoutSeconds = config.NetworkConfig.DefaultRequestTimeoutInSeconds
+			builder := logger.LogHTTPRequest(schemas.LogLevelError, "provider request transport failure").
+				Str("request_id", GetStringFromContext(ctx, schemas.BifrostContextKeyRequestID)).
+				Str("provider", string(providerKey)).
+				Str("model", model).
+				Str("routing_rule_id", GetStringFromContext(ctx, schemas.BifrostContextKeyGovernanceRoutingRuleID)).
+				Str("routing_rule_name", GetStringFromContext(ctx, schemas.BifrostContextKeyGovernanceRoutingRuleName)).
+				Str("timeout_source", string(bifrostError.ExtraFields.TimeoutSource)).
+				Int("configured_timeout_seconds", bifrostError.ExtraFields.ConfiguredTimeoutSeconds).
+				Int64("elapsed_ms", bifrostError.ExtraFields.ElapsedMS)
+			if fallbackIndex, ok := ctx.Value(schemas.BifrostContextKeyFallbackIndex).(int); ok {
+				builder = builder.Int("fallback_index", fallbackIndex)
+			}
+			if bifrostError.ExtraFields.UpstreamResponseReceived != nil {
+				builder = builder.Str("upstream_response_received", strconv.FormatBool(*bifrostError.ExtraFields.UpstreamResponseReceived))
+			}
+			if bifrostError.Error != nil && bifrostError.Error.Error != nil {
+				builder = builder.Str("cause", safeNetworkErrorForLog(bifrostError.Error.Error))
+			}
+			builder.Send()
 		}
 
 		// Check if result is a streaming channel - if so, defer span completion
@@ -7113,6 +7284,7 @@ func (bifrost *Bifrost) requestWorker(provider schemas.Provider, config *schemas
 				attemptRequestType := req.RequestType
 				pipeline := bifrost.getPluginPipeline()
 				postHookRunner := func(ctx *schemas.BifrostContext, result *schemas.BifrostResponse, err *schemas.BifrostError) (*schemas.BifrostResponse, *schemas.BifrostError) {
+					attachUpstreamRequestID(ctx, err)
 					// Populate extra fields before RunPostLLMHooks so plugins (e.g. logging)
 					// can read requestType/provider/model from the chunk or error.
 					// Uses the per-attempt snapshot — capturing the outer resolvedModel by
@@ -7130,6 +7302,7 @@ func (bifrost *Bifrost) requestWorker(provider schemas.Provider, config *schemas
 						drainAndAttachPluginLogs(ctx)
 					}
 					if bifrostErr != nil {
+						attachUpstreamRequestID(ctx, bifrostErr)
 						bifrostErr.PopulateExtraFields(attemptRequestType, provider.GetProviderKey(), originalModelRequested, attemptResolvedModel)
 						bifrostErr.PopulateRoutingInfo(perAttemptRoutingInfo)
 						return nil, bifrostErr

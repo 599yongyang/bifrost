@@ -2,6 +2,8 @@ package utils
 
 import (
 	"context"
+	"net/http"
+	"strings"
 
 	schemas "github.com/maximhq/bifrost/core/schemas"
 )
@@ -21,13 +23,16 @@ import (
 // closed when the wrapper goroutine finishes forwarding the source stream.
 //
 // If the source channel is closed immediately (empty stream), it returns a
-// nil channel with nil error. drainDone is already closed.
+// nil channel with nil error for non-image requests. Empty image generation
+// and edit streams return invalid_image_response so callers can retry or fall
+// back instead of treating a zero-chunk provider response as success.
 //
 // The ctx argument cancels the background forwarding goroutine if the consumer
 // abandons the returned wrapped channel. On ctx.Done the goroutine drains the
 // source stream so the upstream provider's blocked send can exit cleanly.
 func CheckFirstStreamChunkForError(
 	ctx context.Context,
+	requestType schemas.RequestType,
 	stream chan *schemas.BifrostStreamChunk,
 ) (chan *schemas.BifrostStreamChunk, <-chan struct{}, *schemas.BifrostError) {
 	firstChunk, ok := <-stream
@@ -36,6 +41,9 @@ func CheckFirstStreamChunkForError(
 		// can distinguish this from a live stream channel.
 		done := make(chan struct{})
 		close(done)
+		if requestType == schemas.ImageGenerationStreamRequest || requestType == schemas.ImageEditStreamRequest {
+			return nil, done, invalidImageStreamResponseError("upstream provider returned an empty image stream")
+		}
 		return nil, done, nil
 	}
 
@@ -50,6 +58,18 @@ func CheckFirstStreamChunkForError(
 			}
 		}()
 		return nil, done, firstChunk.BifrostError
+	}
+
+	if image := firstChunk.BifrostImageGenerationStreamResponse; image != nil &&
+		(image.Type == schemas.ImageGenerationEventTypeCompleted || image.Type == schemas.ImageEditEventTypeCompleted) &&
+		strings.TrimSpace(image.URL) == "" && strings.TrimSpace(image.B64JSON) == "" {
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			for range stream {
+			}
+		}()
+		return nil, done, invalidImageStreamResponseError("upstream provider completed image generation without url or b64_json")
 	}
 
 	// First chunk is valid data — wrap channel to re-inject it
@@ -72,4 +92,19 @@ func CheckFirstStreamChunkForError(
 		}
 	}()
 	return wrapped, done, nil
+}
+
+func invalidImageStreamResponseError(message string) *schemas.BifrostError {
+	statusCode := http.StatusBadGateway
+	errorType := "invalid_image_response"
+	allowFallbacks := true
+	return &schemas.BifrostError{
+		StatusCode:     &statusCode,
+		Type:           &errorType,
+		AllowFallbacks: &allowFallbacks,
+		Error: &schemas.ErrorField{
+			Type:    &errorType,
+			Message: message,
+		},
+	}
 }

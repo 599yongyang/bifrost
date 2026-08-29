@@ -2,6 +2,8 @@ package webhooks
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/maximhq/bifrost/core/schemas"
@@ -106,19 +108,85 @@ func renderPayload(job *logstore.AsyncJob, event tables.WebhookEvent, includeRes
 	}
 	if includeResponse && job.Response != "" {
 		if len(job.Response) <= maxResponseBytes {
-			data.Response = json.RawMessage(job.Response)
+			response, err := clientSafeWebhookPayload(job.Response)
+			if err != nil {
+				return nil, fmt.Errorf("sanitize webhook response: %w", err)
+			}
+			data.Response = response
 		} else {
 			data.ResponseOmitted = true
 		}
 	}
 	if includeResponse && job.Error != "" {
 		if len(job.Error) <= maxResponseBytes {
-			data.Error = json.RawMessage(job.Error)
+			errorPayload, err := clientSafeWebhookPayload(job.Error)
+			if err != nil {
+				return nil, fmt.Errorf("sanitize webhook error: %w", err)
+			}
+			data.Error = errorPayload
 		} else {
 			data.ErrorOmitted = true
 		}
 	}
 	return json.Marshal(eventEnvelope{Event: event, CreatedAt: now, Data: data})
+}
+
+func clientSafeWebhookPayload(raw string) (json.RawMessage, error) {
+	var payload interface{}
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return nil, err
+	}
+	encoded, err := json.Marshal(sanitizeWebhookValue(payload))
+	if err != nil {
+		return nil, err
+	}
+	return encoded, nil
+}
+
+func sanitizeWebhookValue(value interface{}) interface{} {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		cleaned := make(map[string]interface{}, len(typed))
+		originalModel := ""
+		if extra, ok := typed["extra_fields"].(map[string]interface{}); ok {
+			originalModel, _ = extra["original_model_requested"].(string)
+		}
+		for key, child := range typed {
+			lowerKey := strings.ToLower(key)
+			if lowerKey == "extra_fields" || lowerKey == "system_fingerprint" || lowerKey == "is_bifrost_error" || strings.Contains(lowerKey, "bifrost") {
+				continue
+			}
+			cleaned[key] = sanitizeWebhookValue(child)
+		}
+		if originalModel != "" {
+			if _, hasModel := cleaned["model"]; hasModel {
+				cleaned["model"] = originalModel
+			}
+		}
+		return cleaned
+	case []interface{}:
+		cleaned := make([]interface{}, len(typed))
+		for index, child := range typed {
+			cleaned[index] = sanitizeWebhookValue(child)
+		}
+		return cleaned
+	case string:
+		switch typed {
+		case "bifrost_http_client_timeout":
+			return "configured_provider_timeout"
+		case "bifrost_context_deadline":
+			return "request_context_deadline"
+		}
+		return strings.NewReplacer(
+			"Bifrost HTTP client reached the configured provider timeout", "provider request reached the configured timeout",
+			"request exceeded the Bifrost context deadline", "request exceeded the configured deadline",
+			"Bifrost", "gateway",
+			"bifrost", "gateway",
+			"BIFROST", "GATEWAY",
+		).Replace(typed)
+	default:
+		return value
+	}
 }
 
 // renderExpiredPayload builds the degraded delivery body used when the async

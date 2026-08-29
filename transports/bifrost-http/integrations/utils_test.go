@@ -11,7 +11,6 @@ import (
 	"github.com/maximhq/bifrost/core/providers/bedrock"
 	"github.com/maximhq/bifrost/core/providers/gemini"
 	"github.com/maximhq/bifrost/core/schemas"
-	"github.com/maximhq/bifrost/transports/bifrost-http/lib"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/valyala/fasthttp"
@@ -171,10 +170,9 @@ func TestSendStreamError_OpenAIErrorFormat(t *testing.T) {
 	err := sonic.Unmarshal(ctx.Response.Body(), &result)
 	require.NoError(t, err)
 
-	assert.Contains(t, result, "is_bifrost_error")
+	assert.NotContains(t, result, "is_bifrost_error")
 	assert.Contains(t, result, "status_code")
 	assert.Contains(t, result, "error")
-	assert.Equal(t, false, result["is_bifrost_error"])
 
 	errorObj, ok := result["error"].(map[string]interface{})
 	require.True(t, ok)
@@ -266,11 +264,9 @@ func TestSendStreamError_BedrockErrorFormat(t *testing.T) {
 	assert.Equal(t, "validation error", result.Message)
 }
 
-// TestSendStreamError_ForwardsProviderHeaders verifies that provider response headers
-// stored in the BifrostContext are forwarded to the HTTP response. This ensures
-// clients receive provider-specific headers (e.g., x-amzn-requestid for Bedrock,
-// x-request-id for Anthropic) even in error scenarios.
-func TestSendStreamError_ForwardsProviderHeaders(t *testing.T) {
+// TestSendStreamError_HidesProviderHeaders verifies that provider response
+// headers stored in the BifrostContext stay internal on error paths.
+func TestSendStreamError_HidesProviderHeaders(t *testing.T) {
 	router := newTestGenericRouter()
 	ctx := &fasthttp.RequestCtx{}
 	bifrostCtx := newTestBifrostContext()
@@ -297,15 +293,13 @@ func TestSendStreamError_ForwardsProviderHeaders(t *testing.T) {
 	router.sendStreamError(ctx, bifrostCtx, config, bifrostErr)
 
 	assert.Equal(t, 400, ctx.Response.StatusCode())
-	assert.Equal(t, "req-123", string(ctx.Response.Header.Peek("x-amzn-requestid")))
-	assert.Equal(t, "ValidationException", string(ctx.Response.Header.Peek("x-amzn-errortype")))
+	assert.Empty(t, string(ctx.Response.Header.Peek("x-amzn-requestid")))
+	assert.Empty(t, string(ctx.Response.Header.Peek("x-amzn-errortype")))
 }
 
-// TestTryStreamLargeResponse_AppliesRoutedIdentityHeaders verifies that
-// large-response early returns (speech audio, transcription, image bytes)
-// carry the routed-identity headers even though they skip the common footer
-// in handleNonStreamingRequest that normally emits them.
-func TestTryStreamLargeResponse_AppliesRoutedIdentityHeaders(t *testing.T) {
+// TestTryStreamLargeResponse_HidesRoutedIdentityHeaders verifies that
+// large-response early returns do not expose provider or routing details.
+func TestTryStreamLargeResponse_HidesRoutedIdentityHeaders(t *testing.T) {
 	router := newTestGenericRouter()
 	ctx := &fasthttp.RequestCtx{}
 	bifrostCtx := newTestBifrostContext()
@@ -326,10 +320,14 @@ func TestTryStreamLargeResponse_AppliesRoutedIdentityHeaders(t *testing.T) {
 	handled := router.tryStreamLargeResponse(ctx, bifrostCtx, extra)
 
 	require.True(t, handled, "large response mode active — call must handle the response")
-	assert.Equal(t, "openai", string(ctx.Response.Header.Peek(lib.HeaderBifrostProvider)))
-	assert.Equal(t, "tts-1", string(ctx.Response.Header.Peek(lib.HeaderBifrostResolvedModel)))
-	assert.Equal(t, string(schemas.SpeechRequest), string(ctx.Response.Header.Peek(lib.HeaderBifrostRequestType)))
-	assert.Equal(t, "openai", string(ctx.Response.Header.Peek(lib.HeaderBifrostRoutingInfoProvider)))
-	assert.Equal(t, "tts-1", string(ctx.Response.Header.Peek(lib.HeaderBifrostRoutingInfoModel)))
-	assert.Equal(t, "openai-key", string(ctx.Response.Header.Peek(lib.HeaderBifrostRoutingInfoKey)))
+	ctx.Response.Header.VisitAll(func(key, _ []byte) {
+		name := strings.ToLower(string(key))
+		assert.False(t, strings.HasPrefix(name, "x-bifrost-"), "leaked Bifrost header %q", name)
+		assert.NotContains(t, name, "provider")
+		assert.NotContains(t, name, "routing")
+		assert.NotContains(t, name, "fallback")
+		assert.NotContains(t, name, "resolved-model")
+		assert.NotContains(t, name, "key-alias")
+		assert.NotEqual(t, "x-amzn-requestid", name)
+	})
 }

@@ -192,3 +192,65 @@ func TestStreamRetryAfterFirstChunkError(t *testing.T) {
 		t.Fatalf("retried stream content = %q, want %q", content, "hello")
 	}
 }
+
+func TestImageGenerationFallbackAfterInvalidPrimaryImageResponse(t *testing.T) {
+	var primaryHits atomic.Int32
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		primaryHits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"created":1724200000,"data":[{"revised_prompt":"a ceramic coffee cup"}]}`)
+	}))
+	defer primary.Close()
+
+	var fallbackHits atomic.Int32
+	fallback := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fallbackHits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"created":1724200001,"data":[{"url":"https://images.example.test/fallback.png"}]}`)
+	}))
+	defer fallback.Close()
+
+	account := NewMockAccount()
+	account.AddProviderWithBaseURL(schemas.OpenAI, 1, 1, primary.URL)
+	account.AddProviderWithBaseURL(schemas.XAI, 1, 1, fallback.URL)
+	account.configs[schemas.OpenAI].NetworkConfig.MaxRetries = 0
+	account.configs[schemas.XAI].NetworkConfig.MaxRetries = 0
+	account.SetKeysForProvider(schemas.OpenAI, []schemas.Key{
+		{ID: "primary-image-key", Value: *schemas.NewSecretVar("sk-primary-image"), Models: schemas.WhiteList{"*"}, Weight: 100},
+	})
+	account.SetKeysForProvider(schemas.XAI, []schemas.Key{
+		{ID: "fallback-image-key", Value: *schemas.NewSecretVar("sk-fallback-image"), Models: schemas.WhiteList{"*"}, Weight: 100},
+	})
+	client := newStreamTestClient(t, account)
+
+	ctx := schemas.NewBifrostContext(context.Background(), time.Now().Add(30*time.Second))
+	resp, bifrostErr := client.ImageGenerationRequest(ctx, &schemas.BifrostImageGenerationRequest{
+		Provider: schemas.OpenAI,
+		Model:    "gpt-image-1",
+		Input:    &schemas.ImageGenerationInput{Prompt: "a ceramic coffee cup"},
+		Fallbacks: []schemas.Fallback{
+			{Provider: schemas.XAI, Model: "grok-2-image"},
+		},
+	})
+	if bifrostErr != nil {
+		t.Fatalf("image fallback failed (primary hits=%d fallback hits=%d): %s", primaryHits.Load(), fallbackHits.Load(), bifrostErr.Error.Message)
+	}
+	if got := primaryHits.Load(); got != 1 {
+		t.Fatalf("primary server hits = %d, want 1", got)
+	}
+	if got := fallbackHits.Load(); got != 1 {
+		t.Fatalf("fallback server hits = %d, want 1", got)
+	}
+	if resp == nil || len(resp.Data) != 1 || resp.Data[0].URL != "https://images.example.test/fallback.png" {
+		t.Fatalf("fallback image response = %+v, want one valid fallback image url", resp)
+	}
+	if !resp.ExtraFields.RoutingInfo.IsFallback {
+		t.Fatal("expected returned image response to be marked as fallback-served")
+	}
+	if resp.ExtraFields.RoutingInfo.PrimaryProvider == nil || *resp.ExtraFields.RoutingInfo.PrimaryProvider != schemas.OpenAI {
+		t.Fatalf("primary provider = %v, want %s", resp.ExtraFields.RoutingInfo.PrimaryProvider, schemas.OpenAI)
+	}
+	if resp.ExtraFields.RoutingInfo.PrimaryModel == nil || *resp.ExtraFields.RoutingInfo.PrimaryModel != "gpt-image-1" {
+		t.Fatalf("primary model = %v, want gpt-image-1", resp.ExtraFields.RoutingInfo.PrimaryModel)
+	}
+}

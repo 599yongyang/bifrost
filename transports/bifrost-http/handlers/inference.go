@@ -28,15 +28,13 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-// forwardProviderHeaders forwards provider response headers to the HTTP response.
-func forwardProviderHeaders(ctx *fasthttp.RequestCtx, headers map[string]string) {
-	for key, value := range headers {
-		ctx.Response.Header.Set(key, value)
-	}
+// forwardProviderHeaders preserves existing response-path call sites without
+// exposing upstream provider headers to public clients.
+func forwardProviderHeaders(_ *fasthttp.RequestCtx, _ map[string]string) {
 }
 
-// forwardProviderHeadersFromContext extracts provider response headers from the bifrost context
-// and forwards them to the HTTP response. This ensures error responses also include provider headers.
+// forwardProviderHeadersFromContext preserves the error-path call sites while
+// keeping provider response headers internal.
 func forwardProviderHeadersFromContext(ctx *fasthttp.RequestCtx, bifrostCtx *schemas.BifrostContext) {
 	if headers, ok := bifrostCtx.Value(schemas.BifrostContextKeyProviderResponseHeaders).(map[string]string); ok {
 		forwardProviderHeaders(ctx, headers)
@@ -1960,13 +1958,8 @@ func (h *CompletionHandler) handleStreamingResponse(ctx *fasthttp.RequestCtx, bi
 	ctx.Response.Header.Set("Cache-Control", "no-cache")
 	ctx.Response.Header.Set("Connection", "keep-alive")
 
-	// Forward provider response headers stored in context by streaming handlers
-	if headers, ok := bifrostCtx.Value(schemas.BifrostContextKeyProviderResponseHeaders).(map[string]string); ok {
-		forwardProviderHeaders(ctx, headers)
-	}
-
-	// Routed-identity headers from the context snapshot — routing is final once
-	// the stream channel is returned, before any chunk arrives.
+	// Record the v2 response-header overhead phase without exposing provider or
+	// routed identity details.
 	lib.ApplyBifrostStreamResponseHeaders(ctx, bifrostCtx, requestType)
 
 	// Signal to tracing middleware that trace completion should be deferred
@@ -2124,7 +2117,7 @@ func (h *CompletionHandler) handleStreamingResponse(ctx *fasthttp.RequestCtx, bi
 						var structuredErr *schemas.StreamInterceptionError
 						if errors.As(err, &structuredErr) && structuredErr != nil {
 							if sanitized := lib.SanitizeBifrostErrorForClient(structuredErr.BifrostError); sanitized != nil {
-								errorPayload = sanitized
+								errorPayload = lib.ClientErrorResponse(sanitized)
 							}
 						}
 						errorJSON, marshalErr := sonic.Marshal(errorPayload)

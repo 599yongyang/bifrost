@@ -3006,7 +3006,7 @@ func HandleOpenAITranscriptionStreamRequest(
 			}, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.SetErrorLatency(providerUtils.NewBifrostTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
+			return nil, providerUtils.ClassifyTransportError(ctx, client.ReadTimeout, err, latency)
 		}
 		return nil, providerUtils.SetErrorLatency(providerUtils.NewBifrostOperationError(schemas.ErrProviderDoRequest, err), latency)
 	}
@@ -3457,7 +3457,7 @@ func HandleOpenAIImageGenerationStreaming(
 			}, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.SetErrorLatency(providerUtils.NewBifrostTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
+			return nil, providerUtils.ClassifyTransportError(ctx, activeClient.ReadTimeout, err, latency)
 		}
 		return nil, providerUtils.SetErrorLatency(providerUtils.NewBifrostOperationError(schemas.ErrProviderDoRequest, err), latency)
 	}
@@ -5064,7 +5064,7 @@ func HandleOpenAIImageEditStreamRequest(
 			}, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.SetErrorLatency(providerUtils.NewBifrostTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
+			return nil, providerUtils.ClassifyTransportError(ctx, client.ReadTimeout, err, latency)
 		}
 		return nil, providerUtils.SetErrorLatency(providerUtils.NewBifrostOperationError(schemas.ErrProviderDoRequest, err), latency)
 	}
@@ -7747,7 +7747,7 @@ func (provider *OpenAIProvider) PassthroughStream(
 			}, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.SetErrorLatency(providerUtils.NewBifrostTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
+			return nil, providerUtils.ClassifyTransportError(ctx, activeClient.ReadTimeout, err, latency)
 		}
 		return nil, providerUtils.SetErrorLatency(providerUtils.NewBifrostOperationError(schemas.ErrProviderDoRequest, err), latency)
 	}
