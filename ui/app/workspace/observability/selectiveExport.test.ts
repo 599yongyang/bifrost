@@ -5,6 +5,8 @@ import { normalizeSelectiveExportForForm } from "./selectiveExport";
 const fallback: OtelFormSchema["selective_export"] = {
 	enabled: false,
 	dry_run: false,
+	require_complete_record: true,
+	candidate_rate: 1,
 	max_exports_per_minute: 500,
 	rules: [
 		{

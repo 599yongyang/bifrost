@@ -18,13 +18,15 @@ const profile = {
 };
 
 describe("otel selective export schema", () => {
-	it("serializes only fields implemented by the v2 backend", () => {
+	it("serializes the latest atomic media selection fields", () => {
 		const parsed = otelFormSchema.parse({
 			enabled: true,
 			profiles: [profile],
 			selective_export: {
 				enabled: true,
 				dry_run: false,
+				require_complete_record: true,
+				candidate_rate: 0.75,
 				max_exports_per_minute: 20,
 				rules: [
 					{
@@ -38,6 +40,7 @@ describe("otel selective export schema", () => {
 						models: [],
 						routing_rules: [],
 						min_cost: 0.01,
+						min_technical_quality: 0.85,
 						export_rate: 0.5,
 						max_per_minute: 5,
 					},
@@ -45,9 +48,9 @@ describe("otel selective export schema", () => {
 			},
 		});
 		const json = JSON.stringify(parsed.selective_export);
-		expect(json).not.toContain("candidate_rate");
-		expect(json).not.toContain("technical_quality");
-		expect(json).not.toContain("require_complete_record");
+		expect(json).toContain('"candidate_rate":0.75');
+		expect(json).toContain('"min_technical_quality":0.85');
+		expect(json).toContain('"require_complete_record":true');
 		expect(parsed.selective_export.rules[0].require_error).toBe(true);
 	});
 
@@ -69,7 +72,14 @@ describe("otel selective export schema", () => {
 		const result = otelFormSchema.safeParse({
 			enabled: true,
 			profiles: [profile],
-			selective_export: { enabled: true, dry_run: false, max_exports_per_minute: 0, rules: [rule, { ...rule }] },
+			selective_export: {
+				enabled: true,
+				dry_run: false,
+				require_complete_record: true,
+				candidate_rate: 1,
+				max_exports_per_minute: 0,
+				rules: [rule, { ...rule }],
+			},
 		});
 		expect(result.success).toBe(false);
 	});

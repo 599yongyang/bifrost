@@ -155,6 +155,19 @@ const balancedSelectionRules = (): OtelFormSchema["selective_export"]["rules"] =
 		max_per_minute: 100,
 	},
 	{
+		id: "complete-success",
+		priority: 15,
+		request_types: [],
+		require_error: false,
+		min_technical_quality: 0.85,
+		error_categories: [],
+		providers: [],
+		models: [],
+		routing_rules: [],
+		export_rate: 0.1,
+		max_per_minute: 100,
+	},
+	{
 		id: "default",
 		priority: 10,
 		request_types: [],
@@ -170,6 +183,8 @@ const balancedSelectionRules = (): OtelFormSchema["selective_export"]["rules"] =
 const emptySelectiveExport = (): OtelFormSchema["selective_export"] => ({
 	enabled: false,
 	dry_run: false,
+	require_complete_record: true,
+	candidate_rate: 1,
 	max_exports_per_minute: 0,
 	rules: balancedSelectionRules(),
 });
@@ -409,6 +424,7 @@ function policySummary(rule: OtelFormSchema["selective_export"]["rules"][number]
 	if (rule.require_fallback === true) conditions.push("fallbacks");
 	if (rule.require_retry === true) conditions.push("retries");
 	if (rule.min_latency_ms !== undefined) conditions.push(`latency ≥ ${rule.min_latency_ms} ms`);
+	if (rule.min_technical_quality !== undefined) conditions.push(`completeness ≥ ${Math.round(rule.min_technical_quality * 100)}%`);
 	if (rule.error_categories.length) conditions.push(rule.error_categories.join(", "));
 	if (rule.providers.length) conditions.push(`providers: ${rule.providers.join(", ")}`);
 	const match = conditions.length ? conditions.join(" · ") : "all remaining requests";
@@ -480,7 +496,28 @@ function SelectiveExportSection({
 							<Settings2 className="size-4" /> Balanced template
 						</Button>
 					</div>
-					<div className="grid gap-4 sm:grid-cols-2">
+					<div className="grid gap-4 sm:grid-cols-3">
+						<FormField
+							control={form.control}
+							name="selective_export.candidate_rate"
+							render={({ field }) => (
+								<FormItem>
+									<SelectionLabel description="Head-sample image candidates before Bifrost copies or decodes their media payloads.">
+										Media candidate rate
+									</SelectionLabel>
+									<Input
+										type="number"
+										min={0}
+										max={1}
+										step={0.01}
+										disabled={!hasOtelAccess}
+										value={field.value}
+										onChange={(e) => field.onChange(Number(e.target.value))}
+									/>
+									<FormMessage />
+								</FormItem>
+							)}
+						/>
 						<FormField
 							control={form.control}
 							name="selective_export.dry_run"
@@ -588,7 +625,7 @@ function SelectiveExportSection({
 												</FormItem>
 											)}
 										/>
-										{(["min_latency_ms", "max_latency_ms", "min_cost", "max_per_minute"] as const).map((key) => (
+										{(["min_latency_ms", "max_latency_ms", "min_cost", "min_technical_quality", "max_per_minute"] as const).map((key) => (
 											<FormField
 												key={key}
 												control={form.control}
@@ -599,6 +636,8 @@ function SelectiveExportSection({
 														<Input
 															type="number"
 															min={0}
+															max={key === "min_technical_quality" ? 1 : undefined}
+															step={key === "min_technical_quality" ? 0.01 : undefined}
 															value={field.value ?? ""}
 															onChange={(e) => field.onChange(e.target.value === "" ? undefined : Number(e.target.value))}
 															disabled={!hasOtelAccess}

@@ -43,6 +43,8 @@ export function normalizeSelectiveExportForForm(selection: LegacySelectiveExport
 	return {
 		enabled: source.enabled ?? false,
 		dry_run: source.dry_run ?? false,
+		require_complete_record: true,
+		candidate_rate: bounded(source.candidate_rate, 1, 0, 1),
 		max_exports_per_minute: Math.round(bounded(source.max_exports_per_minute, 0, 0, 10_000)),
 		rules: normalizedRules,
 	};

@@ -476,6 +476,19 @@ type ObservabilityPlugin interface {
 	Inject(ctx context.Context, trace *Trace) error
 }
 
+// TraceMediaCaptureDecision is a cheap head-sampling decision made before
+// tracing copies multipart bytes or decodes base64 output.
+type TraceMediaCaptureDecision struct {
+	Capture        bool
+	PolicySnapshot any
+}
+
+// TraceMediaCapturePolicy lets an observability connector prevent unselected
+// image payloads from entering the bounded trace media store.
+type TraceMediaCapturePolicy interface {
+	BeginTraceMediaCapture(traceID string, request *BifrostRequest) TraceMediaCaptureDecision
+}
+
 // ObservabilityLimits configures how the tracer bounds a single observability plugin's
 // Inject calls: how many may run concurrently, and how long any one call is allowed to take.
 // Resolved from the plugin's generic PluginConfig.SemaphoreSize/InjectTimeout — plugins

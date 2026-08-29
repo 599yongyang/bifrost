@@ -1023,6 +1023,7 @@ export const otelSelectionRuleSchema = z
 		models: z.array(z.string().trim().min(1)).default([]),
 		routing_rules: z.array(z.string().trim().min(1)).default([]),
 		min_cost: z.number().min(0).optional(),
+		min_technical_quality: z.number().min(0).max(1).optional(),
 		export_rate: z.number().min(0).max(1),
 		max_per_minute: z.number().int().min(0).max(10000).default(0),
 	})
@@ -1039,6 +1040,8 @@ export const otelSelectiveExportSchema = z
 	.object({
 		enabled: z.boolean().default(false),
 		dry_run: z.boolean().default(false),
+		require_complete_record: z.literal(true).default(true),
+		candidate_rate: z.number().min(0).max(1).default(1),
 		max_exports_per_minute: z.number().int().min(0).max(10000).default(0),
 		rules: z.array(otelSelectionRuleSchema).max(32).default([]),
 	})
@@ -1059,7 +1062,14 @@ export const otelSelectiveExportSchema = z
 export const otelFormSchema = z.object({
 	enabled: z.boolean().default(true),
 	profiles: z.array(otelConfigSchema).min(1, "At least one profile is required"),
-	selective_export: otelSelectiveExportSchema.default({ enabled: false, dry_run: false, max_exports_per_minute: 0, rules: [] }),
+	selective_export: otelSelectiveExportSchema.default({
+		enabled: false,
+		dry_run: false,
+		require_complete_record: true,
+		candidate_rate: 1,
+		max_exports_per_minute: 0,
+		rules: [],
+	}),
 });
 
 // Maxim Configuration Schema

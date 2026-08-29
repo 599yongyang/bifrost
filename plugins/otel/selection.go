@@ -16,30 +16,33 @@ import (
 // Selection happens once before fan-out, so a record is either sent to all profiles
 // or dropped from all profiles. Metrics remain unaffected.
 type SelectiveExportConfig struct {
-	Enabled             bool            `json:"enabled"`
-	DryRun              bool            `json:"dry_run,omitempty"`
-	MaxExportsPerMinute int             `json:"max_exports_per_minute,omitempty"`
-	Rules               []SelectionRule `json:"rules,omitempty"`
+	Enabled               bool            `json:"enabled"`
+	DryRun                bool            `json:"dry_run,omitempty"`
+	RequireCompleteRecord *bool           `json:"require_complete_record,omitempty"`
+	CandidateRate         *float64        `json:"candidate_rate,omitempty"`
+	MaxExportsPerMinute   int             `json:"max_exports_per_minute,omitempty"`
+	Rules                 []SelectionRule `json:"rules,omitempty"`
 }
 
 // SelectionRule is an ordered first-match rule. Values inside a dimension are ORed;
 // populated dimensions are ANDed. ExportRate uses a stable request/rule hash.
 type SelectionRule struct {
-	ID              string                `json:"id"`
-	Priority        int                   `json:"priority"`
-	RequestTypes    []schemas.RequestType `json:"request_types,omitempty"`
-	MinLatencyMS    *int64                `json:"min_latency_ms,omitempty"`
-	MaxLatencyMS    *int64                `json:"max_latency_ms,omitempty"`
-	RequireError    *bool                 `json:"require_error,omitempty"`
-	RequireFallback *bool                 `json:"require_fallback,omitempty"`
-	RequireRetry    *bool                 `json:"require_retry,omitempty"`
-	ErrorCategories []string              `json:"error_categories,omitempty"`
-	Providers       []string              `json:"providers,omitempty"`
-	Models          []string              `json:"models,omitempty"`
-	RoutingRules    []string              `json:"routing_rules,omitempty"`
-	MinCost         *float64              `json:"min_cost,omitempty"`
-	ExportRate      float64               `json:"export_rate"`
-	MaxPerMinute    int                   `json:"max_per_minute,omitempty"`
+	ID                  string                `json:"id"`
+	Priority            int                   `json:"priority"`
+	RequestTypes        []schemas.RequestType `json:"request_types,omitempty"`
+	MinLatencyMS        *int64                `json:"min_latency_ms,omitempty"`
+	MaxLatencyMS        *int64                `json:"max_latency_ms,omitempty"`
+	RequireError        *bool                 `json:"require_error,omitempty"`
+	RequireFallback     *bool                 `json:"require_fallback,omitempty"`
+	RequireRetry        *bool                 `json:"require_retry,omitempty"`
+	ErrorCategories     []string              `json:"error_categories,omitempty"`
+	Providers           []string              `json:"providers,omitempty"`
+	Models              []string              `json:"models,omitempty"`
+	RoutingRules        []string              `json:"routing_rules,omitempty"`
+	MinCost             *float64              `json:"min_cost,omitempty"`
+	MinTechnicalQuality *float64              `json:"min_technical_quality,omitempty"`
+	ExportRate          float64               `json:"export_rate"`
+	MaxPerMinute        int                   `json:"max_per_minute,omitempty"`
 }
 
 const (
@@ -61,9 +64,12 @@ var supportedErrorCategories = []string{
 
 type traceSelector struct {
 	dryRun              bool
+	candidateRate       float64
 	maxExportsPerMinute int
 	rules               []SelectionRule
 }
+
+type selectorSnapshot struct{ selector *traceSelector }
 
 type selectionQuotaLedger struct {
 	mu         sync.Mutex
@@ -86,6 +92,16 @@ func newTraceSelector(config *SelectiveExportConfig) (*traceSelector, error) {
 	}
 	if config.MaxExportsPerMinute < 0 {
 		return nil, fmt.Errorf("selective_export max_exports_per_minute must be non-negative")
+	}
+	candidateRate := 1.0
+	if config.CandidateRate != nil {
+		candidateRate = *config.CandidateRate
+	}
+	if candidateRate < 0 || candidateRate > 1 {
+		return nil, fmt.Errorf("selective_export candidate_rate must be between 0 and 1")
+	}
+	if config.RequireCompleteRecord != nil && !*config.RequireCompleteRecord {
+		return nil, fmt.Errorf("selective_export require_complete_record cannot be false; selected image records are atomic")
 	}
 
 	rules := slices.Clone(config.Rules)
@@ -135,12 +151,15 @@ func newTraceSelector(config *SelectiveExportConfig) (*traceSelector, error) {
 		if rule.MinCost != nil && *rule.MinCost < 0 {
 			return nil, fmt.Errorf("selective_export rule %q min_cost must be non-negative", rule.ID)
 		}
+		if rule.MinTechnicalQuality != nil && (*rule.MinTechnicalQuality < 0 || *rule.MinTechnicalQuality > 1) {
+			return nil, fmt.Errorf("selective_export rule %q min_technical_quality must be between 0 and 1", rule.ID)
+		}
 		if rule.MaxPerMinute < 0 {
 			return nil, fmt.Errorf("selective_export rule %q max_per_minute must be non-negative", rule.ID)
 		}
 	}
 	slices.SortStableFunc(rules, func(a, b SelectionRule) int { return b.Priority - a.Priority })
-	return &traceSelector{dryRun: config.DryRun, maxExportsPerMinute: config.MaxExportsPerMinute, rules: rules}, nil
+	return &traceSelector{dryRun: config.DryRun, candidateRate: candidateRate, maxExportsPerMinute: config.MaxExportsPerMinute, rules: rules}, nil
 }
 
 type selectionDecision struct {
@@ -154,6 +173,11 @@ func (s *traceSelector) decide(trace *schemas.Trace) selectionDecision {
 		return selectionDecision{selected: true, reason: "selection_disabled"}
 	}
 	facts := selectionFactsFromTrace(trace)
+	if eligible, exists := trace.GetAttribute(schemas.TraceAttrMediaCaptureEligible); exists {
+		if allowed, ok := eligible.(bool); ok && !allowed && isImageRequestType(facts.requestType) {
+			return selectionDecision{reason: "not_candidate"}
+		}
+	}
 	for i := range s.rules {
 		rule := &s.rules[i]
 		if !rule.matches(facts) {
@@ -257,17 +281,18 @@ func resetSelectionQuotaLedgerForTest() {
 }
 
 type selectionFacts struct {
-	requestType     schemas.RequestType
-	latencyMS       int64
-	hasError        bool
-	isFallback      bool
-	hasRetry        bool
-	errorCategory   string
-	provider        string
-	model           string
-	routingRuleID   string
-	routingRuleName string
-	cost            float64
+	requestType      schemas.RequestType
+	latencyMS        int64
+	hasError         bool
+	isFallback       bool
+	hasRetry         bool
+	errorCategory    string
+	provider         string
+	model            string
+	routingRuleID    string
+	routingRuleName  string
+	cost             float64
+	technicalQuality float64
 }
 
 func selectionFactsFromTrace(trace *schemas.Trace) selectionFacts {
@@ -295,6 +320,7 @@ func selectionFactsFromTrace(trace *schemas.Trace) selectionFacts {
 	facts.routingRuleID = getStringAttr(span.Attributes, schemas.AttrBifrostRoutingRuleID)
 	facts.routingRuleName = getStringAttr(span.Attributes, schemas.AttrBifrostRoutingRuleName)
 	facts.cost = getFloat64Attr(span.Attributes, schemas.AttrUsageCost)
+	facts.technicalQuality = technicalQualityScore(span)
 	return facts
 }
 
@@ -345,7 +371,67 @@ func (r *SelectionRule) matches(facts selectionFacts) bool {
 	if len(r.RoutingRules) > 0 && !containsFold(r.RoutingRules, facts.routingRuleID) && !containsFold(r.RoutingRules, facts.routingRuleName) {
 		return false
 	}
-	return r.MinCost == nil || facts.cost >= *r.MinCost
+	if r.MinCost != nil && facts.cost < *r.MinCost {
+		return false
+	}
+	return r.MinTechnicalQuality == nil || facts.technicalQuality >= *r.MinTechnicalQuality
+}
+
+func (s *traceSelector) shouldCaptureCandidate(traceID string, request *schemas.BifrostRequest) bool {
+	if s == nil || s.dryRun || request == nil || !isImageRequestType(request.RequestType) {
+		return true
+	}
+	return stableSelection(traceID, "media-candidate", s.candidateRate)
+}
+
+func technicalQualityScore(span *schemas.Span) float64 {
+	if span == nil || span.Status == schemas.SpanStatusError {
+		return 0
+	}
+	score := 0.4
+	inputN := 1
+	if raw := getStringAttr(span.Attributes, schemas.AttrBifrostImageInput); raw != "" {
+		var input struct {
+			N int `json:"n"`
+		}
+		if schemas.Unmarshal([]byte(raw), &input) == nil && input.N > 0 {
+			inputN = input.N
+		}
+	}
+	var output struct {
+		ImageCount int              `json:"image_count"`
+		Images     []map[string]any `json:"images"`
+	}
+	rawOutput := getStringAttr(span.Attributes, schemas.AttrBifrostImageOutput)
+	if rawOutput == "" || schemas.Unmarshal([]byte(rawOutput), &output) != nil || len(output.Images) == 0 {
+		return score
+	}
+	score += 0.1
+	if output.ImageCount == inputN || len(output.Images) == inputN {
+		score += 0.1
+	}
+	allUsable, revisedPrompt := true, false
+	for _, image := range output.Images {
+		status, _ := image["capture_status"].(string)
+		urlValue, _ := image["url"].(string)
+		mediaRef, _ := image["media_ref"].(string)
+		if urlValue == "" && mediaRef == "" && status != "captured" {
+			allUsable = false
+		}
+		if value, _ := image["revised_prompt"].(string); value != "" {
+			revisedPrompt = true
+		}
+	}
+	if allUsable {
+		score += 0.3
+	}
+	if revisedPrompt {
+		score += 0.05
+	}
+	if getIntAttr(span.Attributes, schemas.AttrBifrostFallbackIndex) == 0 {
+		score += 0.05
+	}
+	return score
 }
 
 func containsRequestType(values []schemas.RequestType, target schemas.RequestType) bool {

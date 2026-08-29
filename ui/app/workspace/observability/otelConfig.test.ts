@@ -32,6 +32,8 @@ describe("buildOtelPluginConfig", () => {
 			selective_export: {
 				enabled: true,
 				dry_run: false,
+				require_complete_record: true,
+				candidate_rate: 1,
 				max_exports_per_minute: 500,
 				rules: [
 					{
