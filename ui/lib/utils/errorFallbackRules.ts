@@ -9,14 +9,15 @@ const emptyWhen = () => ({ categories: [], error_codes: [], error_types: [], sta
 export function toContentSafetyErrorFallbackFormData(rules: RoutingErrorFallback[]): RoutingErrorFallbackFormData[] {
 	const configured = rules.find((rule) => rule.scenario === "content_policy" || rule.when?.categories?.includes("content_policy"));
 	if (!configured) return [];
+	const form = toErrorFallbackFormData(configured);
 	return [
 		{
+			...form,
+			// The compact UI edits only targets; the original wire contract remains
+			// authoritative for every condition it does not expose.
 			mode: "scenario",
-			name: configured.name || "content-safety",
 			scenario: "content_policy",
-			supplement: emptySupplement(),
-			when: emptyWhen(),
-			fallbacks: configured.fallbacks || [],
+			originalContentSafetyRule: structuredClone(configured),
 		},
 	];
 }
@@ -47,13 +48,17 @@ export function toErrorFallbackFormData(rule: RoutingErrorFallback): RoutingErro
 }
 
 export function toErrorFallbackPayload(rule: RoutingErrorFallbackFormData): RoutingErrorFallback {
+	const fallbacks = rule.fallbacks.map(normalizeFallbackString).filter(hasFallbackProvider);
+	if (rule.originalContentSafetyRule) {
+		return { ...structuredClone(rule.originalContentSafetyRule), fallbacks };
+	}
 	if (rule.mode === "legacy" && rule.originalLegacyRule && legacyFormIsUntouched(rule, rule.originalLegacyRule)) {
 		return structuredClone(rule.originalLegacyRule);
 	}
 
 	const base = {
 		name: rule.name?.trim() || undefined,
-		fallbacks: rule.fallbacks.map(normalizeFallbackString).filter(hasFallbackProvider),
+		fallbacks,
 	};
 	if (rule.mode === "legacy") {
 		return {
@@ -81,6 +86,34 @@ export function toErrorFallbackPayload(rule: RoutingErrorFallbackFormData): Rout
 		scenario: rule.scenario,
 		supplement: hasSupplement ? supplement : undefined,
 	};
+}
+
+// The compact UI owns only the first content-safety rule. Every hidden rule is
+// an opaque compatibility contract and must retain its original position.
+export function mergeContentSafetyErrorFallbacks(
+	existing: RoutingErrorFallback[],
+	forms: RoutingErrorFallbackFormData[],
+): RoutingErrorFallback[] {
+	const nextContentSafety = forms[0] ? toErrorFallbackPayload(forms[0]) : undefined;
+	let replaced = false;
+	const merged: RoutingErrorFallback[] = [];
+
+	for (const rule of existing) {
+		if (!isContentSafetyRule(rule)) {
+			merged.push(structuredClone(rule));
+			continue;
+		}
+		if (!nextContentSafety) continue;
+		if (!replaced) {
+			merged.push(nextContentSafety);
+			replaced = true;
+		} else {
+			merged.push(structuredClone(rule));
+		}
+	}
+
+	if (nextContentSafety && !replaced) merged.push(nextContentSafety);
+	return merged;
 }
 
 export function switchErrorFallbackMode(
@@ -111,7 +144,12 @@ export function validateErrorFallbackForms(rules: RoutingErrorFallbackFormData[]
 			...rule.supplement.status_codes,
 			...rule.supplement.message_contains_any,
 		];
-		if (rule.mode === "scenario" && rule.supplement.providers.length > 0 && supplementSignals.length === 0) {
+		if (
+			rule.mode === "scenario" &&
+			!rule.originalContentSafetyRule &&
+			rule.supplement.providers.length > 0 &&
+			supplementSignals.length === 0
+		) {
 			errors.push(`${label} limits providers but has no supplemental recognition clue`);
 		}
 
@@ -120,6 +158,10 @@ export function validateErrorFallbackForms(rules: RoutingErrorFallbackFormData[]
 		if (new Set(fallbacks).size !== fallbacks.length) errors.push(`${label} contains duplicate fallback targets`);
 	});
 	return errors;
+}
+
+function isContentSafetyRule(rule: RoutingErrorFallback): boolean {
+	return rule.scenario === "content_policy" || Boolean(rule.when?.categories?.includes("content_policy"));
 }
 
 function legacyFormIsUntouched(form: RoutingErrorFallbackFormData, original: RoutingErrorFallback): boolean {
