@@ -8,6 +8,7 @@ type BifrostTranscriptionRequest struct {
 	Input          *TranscriptionInput      `json:"input,omitempty"`
 	Params         *TranscriptionParameters `json:"params,omitempty"`
 	Fallbacks      []Fallback               `json:"fallbacks,omitempty"`
+	ErrorFallbacks []ErrorFallbackRule      `json:"error_fallbacks,omitempty"`
 	RawRequestBody []byte                   `json:"-"` // set bifrost-use-raw-request-body to true in ctx to use the raw request body. Bifrost will directly send this to the downstream provider.
 }
 

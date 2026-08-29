@@ -276,6 +276,13 @@ const (
 	BifrostContextKeyGovernanceIncludeOnlyKeys           BifrostContextKey = "bf-governance-include-only-keys"        // []string (to store the include-only key IDs for provider config routing (set by bifrost governance plugin - DO NOT SET THIS MANUALLY))
 	BifrostContextKeyNumberOfRetries                     BifrostContextKey = "bifrost-number-of-retries"              // int (to store the number of retries (set by bifrost - DO NOT SET THIS MANUALLY))
 	BifrostContextKeyFallbackIndex                       BifrostContextKey = "bifrost-fallback-index"                 // int (to store the fallback index (set by bifrost - DO NOT SET THIS MANUALLY)) 0 for primary, 1 for first fallback, etc.
+	BifrostContextKeyErrorFallbackRuleName               BifrostContextKey = "bifrost-error-fallback-rule-name"       // string (matched error_fallbacks rule, set by bifrost)
+	BifrostContextKeyErrorFallbackCategory               BifrostContextKey = "bifrost-error-fallback-category"        // string (normalized failure category that selected the dedicated chain)
+	BifrostContextKeyErrorFallbackMatchSource            BifrostContextKey = "bifrost-error-fallback-match-source"    // string (matcher path that selected the dedicated chain)
+	BifrostContextKeyErrorFallbackMatchDetail            BifrostContextKey = "bifrost-error-fallback-match-detail"    // string (safe detector/matcher identifier, never raw upstream content)
+	BifrostContextKeyErrorFallbackMatchedBy              BifrostContextKey = "bifrost-error-fallback-matched-by"      // string (response_signal, structured, provider_pack, message_pack, supplement, or legacy_when)
+	BifrostContextKeyErrorFallbackPack                   BifrostContextKey = "bifrost-error-fallback-pack"            // string (stable built-in recognition-pack identifier)
+	BifrostContextKeyErrorFallbackPatternID              BifrostContextKey = "bifrost-error-fallback-pattern-id"      // string (stable safe pattern identifier; never raw upstream content)
 	BifrostContextKeyResolvedAlias                       BifrostContextKey = "bifrost-resolved-alias"                 // *ResolvedAlias (set by bifrost after key-level alias resolution — providers read this for model_family routing and provider-specific overrides; nil/absent when no alias matched)
 	BifrostContextKeyRoutingInfo                         BifrostContextKey = "bifrost-routing-info"                   // RoutingInfo (set by bifrost per stream attempt - DO NOT SET THIS MANUALLY) - streams carry RoutingInfo only on chunks, so the transport reads this snapshot to emit routed-identity response headers before the first chunk
 	BifrostContextKeyStreamEndIndicator                  BifrostContextKey = "bifrost-stream-end-indicator"           // bool (set by bifrost - DO NOT SET THIS MANUALLY)
@@ -516,6 +523,55 @@ type Fallback struct {
 	Model    string        `json:"model"`
 }
 
+// FailureCategory is a normalized classification of an upstream failure used
+// to select a dedicated error fallback chain.
+type FailureCategory string
+
+const (
+	FailureCategoryContentPolicy        FailureCategory = "content_policy"
+	FailureCategoryUnsupportedOperation FailureCategory = "unsupported_operation"
+	FailureCategoryRateLimit            FailureCategory = "rate_limit"
+	FailureCategoryAuthentication       FailureCategory = "authentication"
+	FailureCategoryBilling              FailureCategory = "billing"
+	FailureCategoryPermission           FailureCategory = "permission"
+	FailureCategoryTimeout              FailureCategory = "timeout"
+	FailureCategoryProviderUnavailable  FailureCategory = "provider_unavailable"
+	FailureCategoryNetwork              FailureCategory = "network"
+	FailureCategoryInvalidRequest       FailureCategory = "invalid_request"
+	FailureCategoryInternal             FailureCategory = "internal"
+	FailureCategoryUnknown              FailureCategory = "unknown"
+)
+
+// ErrorFallbackCondition is the legacy, fully explicit matcher. Populated
+// fields are ANDed; values within each field are ORed.
+type ErrorFallbackCondition struct {
+	Categories      []FailureCategory `json:"categories,omitempty"`
+	ErrorCodes      []string          `json:"error_codes,omitempty"`
+	ErrorTypes      []string          `json:"error_types,omitempty"`
+	StatusCodes     []int             `json:"status_codes,omitempty"`
+	MessageContains []string          `json:"message_contains,omitempty"`
+}
+
+// ErrorFallbackSupplement extends a built-in scenario with provider-specific
+// clues. Providers scope the supplement and the remaining fields are ORed.
+type ErrorFallbackSupplement struct {
+	Providers          []ModelProvider `json:"providers,omitempty"`
+	ErrorCodes         []string        `json:"error_codes,omitempty"`
+	ErrorTypes         []string        `json:"error_types,omitempty"`
+	StatusCodes        []int           `json:"status_codes,omitempty"`
+	MessageContainsAny []string        `json:"message_contains_any,omitempty"`
+}
+
+// ErrorFallbackRule replaces ordinary fallbacks with a dedicated chain when
+// its scenario, supplement, or legacy condition matches an upstream failure.
+type ErrorFallbackRule struct {
+	Name       string                   `json:"name,omitempty"`
+	Scenario   FailureCategory          `json:"scenario,omitempty"`
+	Supplement *ErrorFallbackSupplement `json:"supplement,omitempty"`
+	When       ErrorFallbackCondition   `json:"when,omitempty"`
+	Fallbacks  []Fallback               `json:"fallbacks,omitempty"`
+}
+
 // BifrostRequest is the request struct for all bifrost requests.
 // only ONE of the following fields should be set:
 // - ListModelsRequest
@@ -739,6 +795,48 @@ func (br *BifrostRequest) GetRequestFields() (provider ModelProvider, model stri
 	return "", "", nil
 }
 
+// GetErrorFallbacks returns the error-aware fallback policy carried by the
+// active request. Operations that do not support ordinary fallbacks return nil.
+func (br *BifrostRequest) GetErrorFallbacks() []ErrorFallbackRule {
+	if br == nil {
+		return nil
+	}
+	switch {
+	case br.TextCompletionRequest != nil:
+		return br.TextCompletionRequest.ErrorFallbacks
+	case br.ChatRequest != nil:
+		return br.ChatRequest.ErrorFallbacks
+	case br.ResponsesRequest != nil:
+		return br.ResponsesRequest.ErrorFallbacks
+	case br.CountTokensRequest != nil:
+		return br.CountTokensRequest.ErrorFallbacks
+	case br.CompactionRequest != nil:
+		return br.CompactionRequest.ErrorFallbacks
+	case br.EmbeddingRequest != nil:
+		return br.EmbeddingRequest.ErrorFallbacks
+	case br.RerankRequest != nil:
+		return br.RerankRequest.ErrorFallbacks
+	case br.OCRRequest != nil:
+		return br.OCRRequest.ErrorFallbacks
+	case br.SpeechRequest != nil:
+		return br.SpeechRequest.ErrorFallbacks
+	case br.TranscriptionRequest != nil:
+		return br.TranscriptionRequest.ErrorFallbacks
+	case br.ImageGenerationRequest != nil:
+		return br.ImageGenerationRequest.ErrorFallbacks
+	case br.ImageEditRequest != nil:
+		return br.ImageEditRequest.ErrorFallbacks
+	case br.ImageVariationRequest != nil:
+		return br.ImageVariationRequest.ErrorFallbacks
+	case br.VideoGenerationRequest != nil:
+		return br.VideoGenerationRequest.ErrorFallbacks
+	case br.VideoEditRequest != nil:
+		return br.VideoEditRequest.ErrorFallbacks
+	default:
+		return nil
+	}
+}
+
 func (br *BifrostRequest) SetProvider(provider ModelProvider) {
 	switch {
 	case br.ListModelsRequest != nil:
@@ -893,6 +991,46 @@ func (br *BifrostRequest) SetFallbacks(fallbacks []Fallback) {
 		br.VideoGenerationRequest.Fallbacks = fallbacks
 	case br.VideoEditRequest != nil:
 		br.VideoEditRequest.Fallbacks = fallbacks
+	}
+}
+
+// SetErrorFallbacks replaces the error-aware fallback policy on the active
+// request. Passing nil preserves nil rather than creating an empty slice.
+func (br *BifrostRequest) SetErrorFallbacks(errorFallbacks []ErrorFallbackRule) {
+	if br == nil {
+		return
+	}
+	switch {
+	case br.TextCompletionRequest != nil:
+		br.TextCompletionRequest.ErrorFallbacks = errorFallbacks
+	case br.ChatRequest != nil:
+		br.ChatRequest.ErrorFallbacks = errorFallbacks
+	case br.ResponsesRequest != nil:
+		br.ResponsesRequest.ErrorFallbacks = errorFallbacks
+	case br.CountTokensRequest != nil:
+		br.CountTokensRequest.ErrorFallbacks = errorFallbacks
+	case br.CompactionRequest != nil:
+		br.CompactionRequest.ErrorFallbacks = errorFallbacks
+	case br.EmbeddingRequest != nil:
+		br.EmbeddingRequest.ErrorFallbacks = errorFallbacks
+	case br.RerankRequest != nil:
+		br.RerankRequest.ErrorFallbacks = errorFallbacks
+	case br.OCRRequest != nil:
+		br.OCRRequest.ErrorFallbacks = errorFallbacks
+	case br.SpeechRequest != nil:
+		br.SpeechRequest.ErrorFallbacks = errorFallbacks
+	case br.TranscriptionRequest != nil:
+		br.TranscriptionRequest.ErrorFallbacks = errorFallbacks
+	case br.ImageGenerationRequest != nil:
+		br.ImageGenerationRequest.ErrorFallbacks = errorFallbacks
+	case br.ImageEditRequest != nil:
+		br.ImageEditRequest.ErrorFallbacks = errorFallbacks
+	case br.ImageVariationRequest != nil:
+		br.ImageVariationRequest.ErrorFallbacks = errorFallbacks
+	case br.VideoGenerationRequest != nil:
+		br.VideoGenerationRequest.ErrorFallbacks = errorFallbacks
+	case br.VideoEditRequest != nil:
+		br.VideoEditRequest.ErrorFallbacks = errorFallbacks
 	}
 }
 
@@ -2035,6 +2173,12 @@ func (e *ErrorField) UnmarshalJSON(data []byte) error {
 // BifrostErrorExtraFields contains additional fields in an error response.
 type BifrostErrorExtraFields struct {
 	RoutingInfo RoutingInfo `json:"routing_info"`
+	// BaseProvider is the built-in provider family backing a custom provider.
+	// It is internal-only and used by provider-specific recognition packs.
+	BaseProvider ModelProvider `json:"-"`
+	// FailureSignals is a bounded internal summary captured before raw upstream
+	// fields are stripped. It is never serialized, persisted, or returned.
+	FailureSignals FailureRecognitionSignals `json:"-"`
 	// Deprecated: use RoutingInfo.Provider. Still populated for backward
 	// compatibility; new consumers should read from RoutingInfo.
 	Provider ModelProvider `json:"provider,omitempty"`
@@ -2077,6 +2221,14 @@ type BifrostErrorExtraFields struct {
 	// the provider actually billed us for. Nil when the failure consumed no
 	// tokens (e.g. 401/403/429 before the model ran).
 	BilledUsage *BifrostLLMUsage `json:"billed_usage,omitempty"`
+}
+
+// FailureRecognitionSignals contains bounded provider-error metadata used only
+// for in-process fallback classification.
+type FailureRecognitionSignals struct {
+	ErrorCodes []string
+	ErrorTypes []string
+	Messages   []string
 }
 
 // TimeoutSource identifies which boundary reported a timeout without exposing

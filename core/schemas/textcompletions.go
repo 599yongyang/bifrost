@@ -11,6 +11,7 @@ type BifrostTextCompletionRequest struct {
 	Input          *TextCompletionInput      `json:"input,omitempty"`
 	Params         *TextCompletionParameters `json:"params,omitempty"`
 	Fallbacks      []Fallback                `json:"fallbacks,omitempty"`
+	ErrorFallbacks []ErrorFallbackRule       `json:"error_fallbacks,omitempty"`
 	RawRequestBody []byte                    `json:"-"` // set bifrost-use-raw-request-body to true in ctx to use the raw request body. Bifrost will directly send this to the downstream provider.
 }
 
@@ -56,11 +57,12 @@ func (r *BifrostTextCompletionRequest) ToBifrostChatRequest() *BifrostChatReques
 		params.Seed = r.Params.Seed
 	}
 	return &BifrostChatRequest{
-		Provider:  r.Provider,
-		Model:     r.Model,
-		Fallbacks: r.Fallbacks,
-		Input:     []ChatMessage{message},
-		Params:    &params,
+		Provider:       r.Provider,
+		Model:          r.Model,
+		Fallbacks:      r.Fallbacks,
+		ErrorFallbacks: r.ErrorFallbacks,
+		Input:          []ChatMessage{message},
+		Params:         &params,
 	}
 }
 

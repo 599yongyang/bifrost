@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/fasthttp/router"
+	"github.com/maximhq/bifrost/core/schemas"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/maximhq/bifrost/framework/configstore"
@@ -21,7 +23,15 @@ type mockRoutingManager struct {
 	reloadedConfig *complexity.AnalyzerConfig
 	reloadCalls    int
 	reloadErr      error
+	reloadIDs      []string
 }
+
+func (m *mockRoutingManager) ReloadRoutingRule(_ context.Context, id string) error {
+	m.reloadIDs = append(m.reloadIDs, id)
+	return m.reloadErr
+}
+
+func (m *mockRoutingManager) RemoveRoutingRule(context.Context, string) error { return nil }
 
 func (m *mockRoutingManager) ReloadComplexityAnalyzerConfig(_ context.Context, config *complexity.AnalyzerConfig) error {
 	m.reloadCalls++
@@ -263,5 +273,123 @@ func TestRoutingRoutesServeCanonicalAndLegacyPaths(t *testing.T) {
 				t.Fatalf("%s %s registrations = %d, want 1", pair.method, path, got)
 			}
 		}
+	}
+}
+
+func TestCreateRoutingRulePersistsAndReturnsErrorFallbacks(t *testing.T) {
+	SetLogger(&mockLogger{})
+	store := setupPricingOverrideHandlerStore(t)
+	manager := &mockRoutingManager{}
+	handler := &RoutingHandler{configStore: store, routingManager: manager}
+
+	reqCtx := newTestRequestCtx(`{
+		"name":"image-safe-fallback",
+		"cel_expression":"true",
+		"targets":[{"provider":"openai","model":"gpt-image-1","weight":1}],
+		"error_fallbacks":[{
+			"name":" content policy ",
+			"scenario":"CONTENT_POLICY",
+			"supplement":{"providers":[" Custom-Provider "],"message_contains_any":[" unsafe "]},
+			"fallbacks":[" Custom-Safety/image-model "]
+		}]
+	}`)
+	handler.createRoutingRule(reqCtx)
+
+	require.Equal(t, fasthttp.StatusOK, reqCtx.Response.StatusCode(), string(reqCtx.Response.Body()))
+	require.Len(t, manager.reloadIDs, 1)
+	rules, err := store.GetRoutingRules(context.Background())
+	require.NoError(t, err)
+	require.Len(t, rules, 1)
+	require.Len(t, rules[0].ParsedErrorFallbacks, 1)
+	stored := rules[0].ParsedErrorFallbacks[0]
+	assert.Equal(t, "content policy", stored.Name)
+	assert.Equal(t, "content_policy", stored.Scenario)
+	require.NotNil(t, stored.Supplement)
+	assert.Equal(t, []string{"custom-provider"}, stored.Supplement.Providers)
+	assert.Equal(t, []string{"unsafe"}, stored.Supplement.MessageContainsAny)
+	assert.Equal(t, []string{"custom-safety/image-model"}, stored.Fallbacks)
+	assert.Contains(t, string(reqCtx.Response.Body()), `"error_fallbacks"`)
+}
+
+func TestUpdateRoutingRuleCanExplicitlyClearErrorFallbacks(t *testing.T) {
+	SetLogger(&mockLogger{})
+	store := setupPricingOverrideHandlerStore(t)
+	manager := &mockRoutingManager{}
+	handler := &RoutingHandler{configStore: store, routingManager: manager}
+	enabled := true
+	rule := &tables.TableRoutingRule{
+		ID: "routing-clear-error-fallbacks", Name: "clear policy", Enabled: &enabled,
+		CelExpression: "true", Scope: "global",
+		Targets: []tables.TableRoutingTarget{{Provider: schemas.Ptr("openai"), Model: schemas.Ptr("gpt-4o"), Weight: 1}},
+		ParsedErrorFallbacks: []tables.TableRoutingErrorFallback{{
+			Scenario: "timeout", Fallbacks: []string{"anthropic/claude-sonnet-4"},
+		}},
+	}
+	require.NoError(t, store.CreateRoutingRule(context.Background(), rule))
+
+	reqCtx := newTestRequestCtx(`{"error_fallbacks":[]}`)
+	reqCtx.SetUserValue("rule_id", rule.ID)
+	handler.updateRoutingRule(reqCtx)
+	require.Equal(t, fasthttp.StatusOK, reqCtx.Response.StatusCode(), string(reqCtx.Response.Body()))
+
+	stored, err := store.GetRoutingRule(context.Background(), rule.ID)
+	require.NoError(t, err)
+	assert.Empty(t, stored.ParsedErrorFallbacks)
+	assert.Nil(t, stored.ErrorFallbacks)
+	require.Len(t, manager.reloadIDs, 1)
+}
+
+func TestRoutingRuleGetAndListExposeLegacyRawOnlyErrorFallbacks(t *testing.T) {
+	SetLogger(&mockLogger{})
+	store := setupPricingOverrideHandlerStore(t)
+	handler := &RoutingHandler{configStore: store, routingManager: &mockRoutingManager{}}
+	enabled := true
+	raw := `[{"when":{"status_codes":[429]},"fallbacks":["anthropic/claude-sonnet-4"]}]`
+	rule := &tables.TableRoutingRule{
+		ID: "routing-raw-error-fallbacks", Name: "legacy raw policy", Enabled: &enabled,
+		CelExpression: "true", Scope: "global", ErrorFallbacks: &raw,
+		Targets: []tables.TableRoutingTarget{{Provider: schemas.Ptr("openai"), Model: schemas.Ptr("gpt-4o"), Weight: 1}},
+	}
+	require.NoError(t, store.CreateRoutingRule(context.Background(), rule))
+
+	getCtx := newTestRequestCtx("")
+	getCtx.SetUserValue("rule_id", rule.ID)
+	handler.getRoutingRule(getCtx)
+	require.Equal(t, fasthttp.StatusOK, getCtx.Response.StatusCode(), string(getCtx.Response.Body()))
+	assert.Contains(t, string(getCtx.Response.Body()), `"error_fallbacks":[{"when":{"status_codes":[429]}`)
+
+	listCtx := newTestRequestCtx("")
+	handler.getRoutingRules(listCtx)
+	require.Equal(t, fasthttp.StatusOK, listCtx.Response.StatusCode(), string(listCtx.Response.Body()))
+	assert.Contains(t, string(listCtx.Response.Body()), `"error_fallbacks":[{"when":{"status_codes":[429]}`)
+}
+
+func TestRoutingRuleRejectsInvalidErrorFallbackContracts(t *testing.T) {
+	SetLogger(&mockLogger{})
+	tests := []struct {
+		name       string
+		policyJSON string
+		want       string
+	}{
+		{"unknown scenario", `{"scenario":"made_up","fallbacks":["openai/gpt-4o"]}`, "scenario"},
+		{"scenario and when", `{"scenario":"timeout","when":{"status_codes":[504]},"fallbacks":["openai/gpt-4o"]}`, "both scenario and when"},
+		{"empty when", `{"when":{},"fallbacks":["openai/gpt-4o"]}`, "either scenario or when"},
+		{"bad status", `{"when":{"status_codes":[99]},"fallbacks":["openai/gpt-4o"]}`, "valid HTTP status"},
+		{"empty matcher", `{"when":{"error_codes":[" "]},"fallbacks":["openai/gpt-4o"]}`, "must not be empty"},
+		{"empty supplement", `{"scenario":"timeout","supplement":{"providers":["openai"]},"fallbacks":["openai/gpt-4o"]}`, "non-provider matcher"},
+		{"invalid fallback", `{"scenario":"timeout","fallbacks":["not-a-provider"]}`, "provider/model"},
+		{"duplicate fallback", `{"scenario":"timeout","fallbacks":["openai/GPT-4O","openai/gpt-4o"]}`, "duplicates an earlier"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := setupPricingOverrideHandlerStore(t)
+			handler := &RoutingHandler{configStore: store, routingManager: &mockRoutingManager{}}
+			body := `{"name":"invalid-policy","cel_expression":"true","targets":[{"provider":"openai","model":"gpt-4o","weight":1}],"error_fallbacks":[` + tt.policyJSON + `]}`
+			reqCtx := newTestRequestCtx(body)
+			handler.createRoutingRule(reqCtx)
+			require.Equal(t, fasthttp.StatusBadRequest, reqCtx.Response.StatusCode(), string(reqCtx.Response.Body()))
+			assert.Contains(t, string(reqCtx.Response.Body()), tt.want)
+		})
 	}
 }

@@ -3684,6 +3684,58 @@ func TestRDBConfigStore_SyncRoutingRules(t *testing.T) {
 	}
 }
 
+func TestRDBConfigStoreRoutingRuleErrorFallbacksRoundTrip(t *testing.T) {
+	store := setupRDBTestStore(t)
+	ctx := context.Background()
+	rule := routingRuleFixture("rule-error-fallbacks", 0, "openai")
+	rule.ParsedErrorFallbacks = []tables.TableRoutingErrorFallback{{
+		Name:     "content policy",
+		Scenario: "content_policy",
+		Supplement: &tables.TableRoutingErrorFallbackSupplement{
+			Providers:          []string{"openai"},
+			MessageContainsAny: []string{"unsafe"},
+		},
+		Fallbacks: []string{"azure/gpt-image-1"},
+	}}
+
+	require.NoError(t, store.CreateRoutingRule(ctx, rule))
+	got, err := store.GetRoutingRule(ctx, rule.ID)
+	require.NoError(t, err)
+	require.Len(t, got.ParsedErrorFallbacks, 1)
+	assert.Equal(t, "content_policy", got.ParsedErrorFallbacks[0].Scenario)
+	require.NotNil(t, got.ParsedErrorFallbacks[0].Supplement)
+	assert.Equal(t, []string{"openai"}, got.ParsedErrorFallbacks[0].Supplement.Providers)
+	require.NotNil(t, got.ErrorFallbacks)
+
+	got.ParsedErrorFallbacks[0].Fallbacks = []string{"bedrock/stability.sd3-large"}
+	require.NoError(t, store.UpdateRoutingRule(ctx, got))
+	updated, err := store.GetRoutingRule(ctx, rule.ID)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"bedrock/stability.sd3-large"}, updated.ParsedErrorFallbacks[0].Fallbacks)
+
+	updated.ParsedErrorFallbacks = []tables.TableRoutingErrorFallback{}
+	require.NoError(t, store.UpdateRoutingRule(ctx, updated))
+	cleared, err := store.GetRoutingRule(ctx, rule.ID)
+	require.NoError(t, err)
+	assert.Empty(t, cleared.ParsedErrorFallbacks)
+	assert.Nil(t, cleared.ErrorFallbacks, "explicit empty parsed slice must clear persisted error fallbacks")
+}
+
+func TestRDBConfigStoreRoutingRuleRawOnlyErrorFallbacks(t *testing.T) {
+	store := setupRDBTestStore(t)
+	ctx := context.Background()
+	rule := routingRuleFixture("rule-raw-error-fallbacks", 0, "openai")
+	raw := `[{"when":{"status_codes":[429]},"fallbacks":["anthropic/claude-sonnet-4"]}]`
+	rule.ErrorFallbacks = &raw
+
+	require.NoError(t, store.CreateRoutingRule(ctx, rule))
+	got, err := store.GetRoutingRule(ctx, rule.ID)
+	require.NoError(t, err)
+	require.Len(t, got.ParsedErrorFallbacks, 1)
+	assert.Equal(t, []int{429}, got.ParsedErrorFallbacks[0].When.StatusCodes)
+	assert.Equal(t, []string{"anthropic/claude-sonnet-4"}, got.ParsedErrorFallbacks[0].Fallbacks)
+}
+
 // TestUpsertModelPricesBatch_InputCostPerQuerySurvivesResync guards the ON CONFLICT DO UPDATE
 // column list. Create() writes every column, so a first sync looks correct even when a field is
 // missing from pricingSyncUpdateColumns - the value only disappears on the next resync of an

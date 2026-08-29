@@ -12,6 +12,44 @@ export interface RoutingTarget {
 	weight: number;
 }
 
+export type RoutingErrorFallbackCategory =
+	| "content_policy"
+	| "unsupported_operation"
+	| "rate_limit"
+	| "authentication"
+	| "billing"
+	| "permission"
+	| "timeout"
+	| "provider_unavailable"
+	| "network"
+	| "invalid_request"
+	| "internal"
+	| "unknown";
+
+export interface RoutingErrorFallbackCondition {
+	categories?: RoutingErrorFallbackCategory[];
+	error_codes?: string[];
+	error_types?: string[];
+	status_codes?: number[];
+	message_contains?: string[];
+}
+
+export interface RoutingErrorFallbackSupplement {
+	providers?: string[];
+	error_codes?: string[];
+	error_types?: string[];
+	status_codes?: number[];
+	message_contains_any?: string[];
+}
+
+export interface RoutingErrorFallback {
+	name?: string;
+	scenario?: RoutingErrorFallbackCategory;
+	supplement?: RoutingErrorFallbackSupplement;
+	when?: RoutingErrorFallbackCondition;
+	fallbacks: string[];
+}
+
 export interface RoutingRule {
 	id: string;
 	name: string;
@@ -19,6 +57,7 @@ export interface RoutingRule {
 	cel_expression: string;
 	targets: RoutingTarget[];
 	fallbacks?: string[];
+	error_fallbacks?: RoutingErrorFallback[];
 	scope: "global" | "team" | "customer" | "virtual_key" | "user";
 	scope_id?: string;
 	priority: number;
@@ -35,6 +74,7 @@ export interface CreateRoutingRuleRequest {
 	cel_expression?: string;
 	targets: RoutingTarget[];
 	fallbacks?: string[];
+	error_fallbacks?: RoutingErrorFallback[];
 	scope: string;
 	scope_id?: string;
 	priority: number;
