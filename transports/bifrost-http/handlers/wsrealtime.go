@@ -141,7 +141,13 @@ func (h *WSRealtimeHandler) handleUpgrade(ctx *fasthttp.RequestCtx) {
 			Model:    model,
 		},
 	}
-	h.client.RunPreRequestHooks(preReqCtx, preReq)
+	if preRequestErr := h.client.RunPreRequestHooksWithError(preReqCtx, preReq); preRequestErr != nil {
+		preReqCancel()
+		// The upgrade has not happened yet, so reject the handshake with a
+		// generic response. Provider/plugin panic details remain server-side.
+		SendError(ctx, fasthttp.StatusInternalServerError, "internal server error")
+		return
+	}
 	routedProvider, routedModel, _ := preReq.GetRequestFields()
 	if routedProvider == "" {
 		// Mirror the empty-provider check in core handleRequest. No routing layer

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"runtime/debug"
 	"slices"
 
 	"github.com/maximhq/bifrost/core/schemas"
@@ -41,14 +42,29 @@ func InferPluginTypes(plugin schemas.BasePlugin) []schemas.PluginType {
 
 // InstantiatePlugin creates a plugin instance but does NOT register it
 // Registration is done separately via Config.RegisterPlugin()
-func InstantiatePlugin(ctx context.Context, name string, path *string, pluginConfig any, bifrostConfig *lib.Config) (schemas.BasePlugin, error) {
+func InstantiatePlugin(ctx context.Context, name string, path *string, pluginConfig any, bifrostConfig *lib.Config) (plugin schemas.BasePlugin, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			if logger != nil {
+				logger.Error("recovered plugin instantiation panic: requested_name=%s custom=%t panic_type=%T\n%s", name, path != nil, recovered, debug.Stack())
+			}
+			plugin = nil
+			err = fmt.Errorf("plugin %s initialization failed unexpectedly", name)
+		}
+	}()
 	// Custom plugin (has path)
 	if path != nil {
-		return loadCustomPlugin(ctx, path, pluginConfig, bifrostConfig)
+		plugin, err = loadCustomPlugin(ctx, path, pluginConfig, bifrostConfig)
+	} else {
+		plugin, err = loadBuiltinPlugin(ctx, name, pluginConfig, bifrostConfig)
 	}
-
-	// Built-in plugin (by name)
-	return loadBuiltinPlugin(ctx, name, pluginConfig, bifrostConfig)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = lib.SafePluginName(plugin); err != nil {
+		return nil, fmt.Errorf("plugin %s returned an invalid instance: %w", name, err)
+	}
+	return plugin, nil
 }
 
 // loadBuiltinPlugin instantiates a built-in plugin by name
@@ -372,17 +388,21 @@ func (s *BifrostHTTPServer) loadCustomPlugins(ctx context.Context) error {
 		}
 
 		// Ensure plugin is not nil before using it (defensive check)
-		if plugin == nil {
-			logger.Error("plugin %s instantiated but returned nil", cfg.Name)
+		pluginName, nameErr := lib.SafePluginName(plugin)
+		if nameErr != nil {
+			logger.Error("plugin %s returned an invalid instance: %v", cfg.Name, nameErr)
 			s.Config.UpdatePluginOverallStatus(cfg.Name, cfg.Name, schemas.PluginStatusError,
-				[]string{fmt.Sprintf("plugin %s instantiated but returned nil", cfg.Name)}, []schemas.PluginType{})
+				[]string{fmt.Sprintf("plugin %s returned an invalid instance", cfg.Name)}, []schemas.PluginType{})
 			continue
 		}
 
 		// Register enabled plugin and mark as active
-		s.Config.ReloadPlugin(plugin)
-		s.Config.SetPluginOrderInfo(plugin.GetName(), cfg.Placement, cfg.Order)
-		s.Config.UpdatePluginOverallStatus(plugin.GetName(), cfg.Name, schemas.PluginStatusActive,
+		if err := s.Config.ReloadPlugin(plugin); err != nil {
+			logger.Error("failed to register plugin %s: %v", cfg.Name, err)
+			continue
+		}
+		s.Config.SetPluginOrderInfo(pluginName, cfg.Placement, cfg.Order)
+		s.Config.UpdatePluginOverallStatus(pluginName, cfg.Name, schemas.PluginStatusActive,
 			[]string{fmt.Sprintf("plugin %s initialized successfully", cfg.Name)}, InferPluginTypes(plugin))
 	}
 	return nil

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -30,23 +31,84 @@ import (
 var loggingSkipPaths = []string{"/health", "/_next", "/api/dev/"}
 var realtimeTransportPaths = buildRealtimeTransportPathSet()
 
+var errTransportPluginPanic = errors.New("transport plugin panicked")
+
+// PanicRecoveryMiddleware is a final process-safety boundary. It deliberately
+// logs only routing metadata and the panic type/stack; request bodies, headers,
+// and the recovered value are excluded.
+func PanicRecoveryMiddleware(next fasthttp.RequestHandler) fasthttp.RequestHandler {
+	return func(ctx *fasthttp.RequestCtx) {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				if logger != nil {
+					logger.Error("recovered HTTP handler panic: method=%s path=%s panic_type=%T\n%s", ctx.Method(), ctx.Path(), recovered, debug.Stack())
+				}
+				ctx.Response.Reset()
+				setSecurityHeaders(ctx)
+				SendError(ctx, fasthttp.StatusInternalServerError, "internal server error")
+			}
+		}()
+		next(ctx)
+	}
+}
+
 // SecurityHeadersMiddleware sets security-related HTTP headers on every response.
 // This should wrap the outermost handler so all responses (API, UI, errors) include these headers.
 func SecurityHeadersMiddleware() schemas.BifrostHTTPMiddleware {
 	return func(next fasthttp.RequestHandler) fasthttp.RequestHandler {
 		return func(ctx *fasthttp.RequestCtx) {
-			ctx.Response.Header.Set("X-Frame-Options", "DENY")
-			ctx.Response.Header.Set("X-Content-Type-Options", "nosniff")
-			ctx.Response.Header.Set("Referrer-Policy", "strict-origin-when-cross-origin")
-			ctx.Response.Header.Set("Content-Security-Policy", "frame-ancestors 'none'")
-			ctx.Response.Header.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-			// Only set HSTS when serving over HTTPS (detected via reverse proxy header or direct TLS)
-			if string(ctx.Request.Header.Peek("X-Forwarded-Proto")) == "https" || ctx.IsTLS() {
-				ctx.Response.Header.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
-			}
+			setSecurityHeaders(ctx)
 			next(ctx)
 		}
 	}
+}
+
+func setSecurityHeaders(ctx *fasthttp.RequestCtx) {
+	ctx.Response.Header.Set("X-Frame-Options", "DENY")
+	ctx.Response.Header.Set("X-Content-Type-Options", "nosniff")
+	ctx.Response.Header.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+	ctx.Response.Header.Set("Content-Security-Policy", "frame-ancestors 'none'")
+	ctx.Response.Header.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+	if string(ctx.Request.Header.Peek("X-Forwarded-Proto")) == "https" || ctx.IsTLS() {
+		ctx.Response.Header.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+	}
+}
+
+func safeTransportPluginName(plugin schemas.BasePlugin, phase string) (name string, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			if logger != nil {
+				logger.Error("recovered transport plugin name panic: phase=%s panic_type=%T\n%s", phase, recovered, debug.Stack())
+			}
+			err = errTransportPluginPanic
+		}
+	}()
+	return plugin.GetName(), nil
+}
+
+func recoverTransportHookPanic(phase, pluginName string, err *error) {
+	if recovered := recover(); recovered != nil {
+		if logger != nil {
+			logger.Error("recovered transport plugin panic: phase=%s plugin=%s panic_type=%T\n%s", phase, pluginName, recovered, debug.Stack())
+		}
+		*err = errTransportPluginPanic
+	}
+}
+
+func sendTransportHookError(ctx *fasthttp.RequestCtx, err error) {
+	if errors.Is(err, errTransportPluginPanic) {
+		SendError(ctx, fasthttp.StatusInternalServerError, "internal server error")
+		return
+	}
+	ctx.SetStatusCode(fasthttp.StatusInternalServerError)
+	ctx.SetBodyString(err.Error())
+}
+
+func setSafeTransportFailure(resp *schemas.HTTPResponse) {
+	resp.StatusCode = fasthttp.StatusInternalServerError
+	clear(resp.Headers)
+	resp.Headers["content-type"] = "application/json"
+	resp.Body = []byte(`{"error":"internal server error"}`)
 }
 
 // clientForwardedIP returns the client-supplied originating IP from reverse-proxy
@@ -426,15 +488,23 @@ func TransportPreAuthInterceptorMiddleware(config *lib.Config) schemas.BifrostHT
 			fasthttpToHTTPRequest(ctx, req)
 			// Run plugin pre-auth interceptors
 			for _, plugin := range plugins {
-				pluginName := plugin.GetName()
-				pluginCtx := bifrostCtx.WithPluginScope(&pluginName)
-				resp, err := plugin.HTTPTransportPreAuthHook(pluginCtx, req)
-				pluginCtx.ReleasePluginScope()
+				pluginName, err := safeTransportPluginName(plugin, "transportpreauthhook")
+				if err != nil {
+					appendTransportPluginLogs(ctx, bifrostCtx.DrainPluginLogs())
+					sendTransportHookError(ctx, err)
+					return
+				}
+				var resp *schemas.HTTPResponse
+				func() {
+					pluginCtx := bifrostCtx.WithPluginScope(&pluginName)
+					defer pluginCtx.ReleasePluginScope()
+					defer recoverTransportHookPanic("transportpreauthhook", pluginName, &err)
+					resp, err = plugin.HTTPTransportPreAuthHook(pluginCtx, req)
+				}()
 				if err != nil {
 					// Short-circuit with error — drain plugin logs before returning
 					appendTransportPluginLogs(ctx, bifrostCtx.DrainPluginLogs())
-					ctx.SetStatusCode(fasthttp.StatusInternalServerError)
-					ctx.SetBodyString(err.Error())
+					sendTransportHookError(ctx, err)
 					return
 				}
 				if resp != nil {
@@ -488,17 +558,25 @@ func TransportInterceptorMiddleware(config *lib.Config) schemas.BifrostHTTPMiddl
 			fasthttpToHTTPRequest(ctx, req)
 			// Run plugin interceptors
 			for _, plugin := range plugins {
-				pluginName := plugin.GetName()
-				pluginCtx := bifrostCtx.WithPluginScope(&pluginName)
-				st, sh := startTransportPluginSpan(ctx, pluginName, "transportprehook")
-				resp, err := plugin.HTTPTransportPreHook(pluginCtx, req)
-				endTransportPluginSpan(st, sh, err)
-				pluginCtx.ReleasePluginScope()
+				pluginName, err := safeTransportPluginName(plugin, "transportprehook")
+				if err != nil {
+					appendTransportPluginLogs(ctx, bifrostCtx.DrainPluginLogs())
+					sendTransportHookError(ctx, err)
+					return
+				}
+				var resp *schemas.HTTPResponse
+				func() {
+					pluginCtx := bifrostCtx.WithPluginScope(&pluginName)
+					defer pluginCtx.ReleasePluginScope()
+					st, sh := startTransportPluginSpan(ctx, pluginName, "transportprehook")
+					defer func() { endTransportPluginSpan(st, sh, err) }()
+					defer recoverTransportHookPanic("transportprehook", pluginName, &err)
+					resp, err = plugin.HTTPTransportPreHook(pluginCtx, req)
+				}()
 				if err != nil {
 					// Short-circuit with error — drain plugin logs before returning
 					appendTransportPluginLogs(ctx, bifrostCtx.DrainPluginLogs())
-					ctx.SetStatusCode(fasthttp.StatusInternalServerError)
-					ctx.SetBodyString(err.Error())
+					sendTransportHookError(ctx, err)
 					return
 				}
 				if resp != nil {
@@ -609,14 +687,23 @@ func runTransportPostHooks(ctx *fasthttp.RequestCtx, plugins []schemas.HTTPTrans
 	// Run http post-hooks in reverse order
 	for i := len(plugins) - 1; i >= 0; i-- {
 		plugin := plugins[i]
-		pluginName := plugin.GetName()
-		pluginCtx := bifrostCtx.WithPluginScope(&pluginName)
-		st, sh := startTransportPluginSpan(ctx, pluginName, "transportposthook")
-		err := plugin.HTTPTransportPostHook(pluginCtx, req, httpResp)
-		endTransportPluginSpan(st, sh, err)
-		pluginCtx.ReleasePluginScope()
+		pluginName, err := safeTransportPluginName(plugin, "transportposthook")
+		if err == nil {
+			func() {
+				pluginCtx := bifrostCtx.WithPluginScope(&pluginName)
+				defer pluginCtx.ReleasePluginScope()
+				st, sh := startTransportPluginSpan(ctx, pluginName, "transportposthook")
+				defer func() { endTransportPluginSpan(st, sh, err) }()
+				defer recoverTransportHookPanic("transportposthook", pluginName, &err)
+				err = plugin.HTTPTransportPostHook(pluginCtx, req, httpResp)
+			}()
+		}
 		if err != nil {
-			logger.Warn("error in HTTPTransportPostHook for plugin %s: %s", pluginName, err.Error())
+			if errors.Is(err, errTransportPluginPanic) {
+				setSafeTransportFailure(httpResp)
+			} else {
+				logger.Warn("error in HTTPTransportPostHook for plugin %s: %s", pluginName, err.Error())
+			}
 			// Drain plugin logs before returning on error
 			appendTransportPluginLogs(ctx, bifrostCtx.DrainPluginLogs())
 			if shouldApplyShortCircuit {
@@ -664,17 +751,26 @@ func runTransportPostHooksCaptured(capturedReq *schemas.HTTPRequest, capturedRes
 	// Run http post-hooks in reverse order
 	for i := len(plugins) - 1; i >= 0; i-- {
 		plugin := plugins[i]
-		pluginName := plugin.GetName()
-		pluginCtx := bifrostCtx.WithPluginScope(&pluginName)
-		var sh schemas.SpanHandle
-		if spanTracer != nil {
-			_, sh = spanTracer.StartSpanID(spanParentCtx, transportPluginSpanName(pluginName, "transportposthook"), schemas.SpanKindPlugin)
+		pluginName, err := safeTransportPluginName(plugin, "transportposthook")
+		if err == nil {
+			func() {
+				pluginCtx := bifrostCtx.WithPluginScope(&pluginName)
+				defer pluginCtx.ReleasePluginScope()
+				var sh schemas.SpanHandle
+				if spanTracer != nil {
+					_, sh = spanTracer.StartSpanID(spanParentCtx, transportPluginSpanName(pluginName, "transportposthook"), schemas.SpanKindPlugin)
+				}
+				defer func() { endTransportPluginSpan(spanTracer, sh, err) }()
+				defer recoverTransportHookPanic("transportposthook", pluginName, &err)
+				err = plugin.HTTPTransportPostHook(pluginCtx, req, httpResp)
+			}()
 		}
-		err := plugin.HTTPTransportPostHook(pluginCtx, req, httpResp)
-		endTransportPluginSpan(spanTracer, sh, err)
-		pluginCtx.ReleasePluginScope()
 		if err != nil {
-			logger.Warn("error in HTTPTransportPostHook for plugin %s: %s", pluginName, err.Error())
+			if errors.Is(err, errTransportPluginPanic) {
+				setSafeTransportFailure(httpResp)
+			} else {
+				logger.Warn("error in HTTPTransportPostHook for plugin %s: %s", pluginName, err.Error())
+			}
 			if postHookLogs := bifrostCtx.DrainPluginLogs(); len(postHookLogs) > 0 {
 				allLogs = append(allLogs, postHookLogs...)
 			}

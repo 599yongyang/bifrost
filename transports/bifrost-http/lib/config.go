@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime/debug"
 	"slices"
 	"sort"
 	"strings"
@@ -5501,9 +5502,11 @@ func (c *Config) GetPluginOrder() []string {
 	if plugins == nil {
 		return nil
 	}
-	names := make([]string, len(*plugins))
-	for i, p := range *plugins {
-		names[i] = p.GetName()
+	names := make([]string, 0, len(*plugins))
+	for _, plugin := range *plugins {
+		if name, err := SafePluginName(plugin); err == nil {
+			names = append(names, name)
+		}
 	}
 	return names
 }
@@ -5525,7 +5528,11 @@ func (c *Config) GetLoadedPluginNames() []string {
 	seen := make(map[string]struct{}, len(*plugins))
 	names := make([]string, 0, len(*plugins))
 	for _, p := range *plugins {
-		name := schemas.SanitizePluginSpanName(p.GetName())
+		pluginName, err := SafePluginName(p)
+		if err != nil {
+			continue
+		}
+		name := schemas.SanitizePluginSpanName(pluginName)
 		if name == "" {
 			continue
 		}
@@ -5544,23 +5551,53 @@ type pluginChunkInterceptor struct {
 	plugins []schemas.HTTPTransportPlugin
 }
 
+func newTransportStreamPluginPanicError() error {
+	status := 500
+	errorType := "internal_server_error"
+	return &schemas.StreamInterceptionError{BifrostError: &schemas.BifrostError{
+		IsBifrostError: true,
+		StatusCode:     &status,
+		Type:           &errorType,
+		Error: &schemas.ErrorField{
+			Type:    &errorType,
+			Message: ClientSafeInternalErrorMessage,
+		},
+	}}
+}
+
 // InterceptChunk processes a chunk through all plugin HTTPTransportStreamChunkHook methods.
 // Plugins are called in reverse order (same as PostHook) so modifications chain correctly.
 func (i *pluginChunkInterceptor) InterceptChunk(ctx *schemas.BifrostContext, req *schemas.HTTPRequest, stream *schemas.BifrostStreamChunk) (*schemas.BifrostStreamChunk, error) {
 	for j := len(i.plugins) - 1; j >= 0; j-- {
 		plugin := i.plugins[j]
-		pluginName := plugin.GetName()
+		pluginName, err := SafePluginName(plugin)
+		if err != nil {
+			return nil, newTransportStreamPluginPanicError()
+		}
 		var (
-			modified *schemas.BifrostStreamChunk
-			err      error
+			modified = stream
+			hookErr  error
 		)
 		func() {
 			pluginCtx := ctx.WithPluginScope(&pluginName)
 			defer pluginCtx.ReleasePluginScope()
-			modified, err = plugin.HTTPTransportStreamChunkHook(pluginCtx, req, stream)
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					if logger != nil {
+						logger.Error("recovered transport stream plugin panic: plugin=%s panic_type=%T\n%s", pluginName, recovered, debug.Stack())
+					}
+					modified = nil
+					hookErr = newTransportStreamPluginPanicError()
+				}
+			}()
+			modified, hookErr = plugin.HTTPTransportStreamChunkHook(pluginCtx, req, stream)
 		}()
-		if err != nil {
-			return modified, fmt.Errorf("failed to intercept chunk with plugin %s: %w", pluginName, err)
+		if hookErr != nil {
+			var panicErr *schemas.StreamInterceptionError
+			if errors.As(hookErr, &panicErr) {
+				return modified, hookErr
+			}
+			return modified, fmt.Errorf("failed to intercept chunk with plugin %s: %w", pluginName, hookErr)
 		}
 		if modified == nil {
 			return nil, nil // Plugin wants to skip this chunk
@@ -5757,6 +5794,10 @@ func (c *Config) rebuildInterfaceCaches() {
 	var httpTransport []schemas.HTTPTransportPlugin
 
 	for _, p := range *basePlugins {
+		pluginName, err := SafePluginName(p)
+		if err != nil {
+			continue
+		}
 		if llmPlugin, ok := p.(schemas.LLMPlugin); ok {
 			llm = append(llm, llmPlugin)
 		}
@@ -5768,7 +5809,7 @@ func (c *Config) rebuildInterfaceCaches() {
 		}
 		if cm, ok := p.(schemas.ConfigMarshallerPlugin); ok {
 			// RegisterConfigMarshaller adds/updates atomically without clearing other entries
-			c.RegisterConfigMarshaller(p.GetName(), cm)
+			c.RegisterConfigMarshaller(pluginName, cm)
 		}
 	}
 
@@ -5820,7 +5861,8 @@ func (c *Config) IsPluginLoaded(name string) bool {
 	}
 
 	for _, p := range *basePlugins {
-		if p.GetName() == name {
+		pluginName, err := SafePluginName(p)
+		if err == nil && pluginName == name {
 			return true
 		}
 	}
@@ -5956,10 +5998,12 @@ func (c *Config) GetPluginStatusByName(name string) (schemas.PluginStatus, bool)
 // If a plugin with the same name exists, it will be replaced (atomic find-and-replace)
 // If no plugin exists with that name, it will be added
 func (c *Config) ReloadPlugin(plugin schemas.BasePlugin) error {
+	name, err := SafePluginName(plugin)
+	if err != nil {
+		return fmt.Errorf("cannot reload plugin: %w", err)
+	}
 	c.pluginsMu.Lock()
 	defer c.pluginsMu.Unlock()
-
-	name := plugin.GetName()
 
 	for {
 		oldPlugins := c.BasePlugins.Load()
@@ -5972,7 +6016,11 @@ func (c *Config) ReloadPlugin(plugin schemas.BasePlugin) error {
 
 			replaced := false
 			for _, p := range *oldPlugins {
-				if p.GetName() == name {
+				existingName, nameErr := SafePluginName(p)
+				if nameErr != nil {
+					continue
+				}
+				if existingName == name {
 					newPlugins = append(newPlugins, plugin) // Replace with new
 					replaced = true
 				} else {
@@ -6006,15 +6054,21 @@ func (c *Config) UnregisterPlugin(name string) error {
 
 		newPlugins := make([]schemas.BasePlugin, 0, len(*oldPlugins))
 		found := false
+		removedCorrupted := false
 		for _, p := range *oldPlugins {
-			if p.GetName() == name {
+			pluginName, err := SafePluginName(p)
+			if err != nil {
+				removedCorrupted = true
+				continue
+			}
+			if pluginName == name {
 				found = true
 				continue
 			}
 			newPlugins = append(newPlugins, p)
 		}
 
-		if !found {
+		if !found && !removedCorrupted {
 			return plugins.ErrPluginNotFound
 		}
 
@@ -6061,8 +6115,18 @@ func (c *Config) SortAndRebuildPlugins() {
 		return
 	}
 
-	sorted := make([]schemas.BasePlugin, len(*oldPlugins))
-	copy(sorted, *oldPlugins)
+	type namedPlugin struct {
+		plugin schemas.BasePlugin
+		name   string
+	}
+	named := make([]namedPlugin, 0, len(*oldPlugins))
+	for _, plugin := range *oldPlugins {
+		name, err := SafePluginName(plugin)
+		if err != nil {
+			continue
+		}
+		named = append(named, namedPlugin{plugin: plugin, name: name})
+	}
 
 	groupRank := map[schemas.PluginPlacement]int{
 		schemas.PluginPlacementPreBuiltin:  0,
@@ -6071,9 +6135,9 @@ func (c *Config) SortAndRebuildPlugins() {
 	}
 	defaultRank := 2 // Unknown placements default to post_builtin (least privileged)
 
-	sort.SliceStable(sorted, func(i, j int) bool {
-		iInfo := c.pluginOrderMap[sorted[i].GetName()]
-		jInfo := c.pluginOrderMap[sorted[j].GetName()]
+	sort.SliceStable(named, func(i, j int) bool {
+		iInfo := c.pluginOrderMap[named[i].name]
+		jInfo := c.pluginOrderMap[named[j].name]
 		iRank, iOk := groupRank[iInfo.Placement]
 		if !iOk {
 			iRank = defaultRank
@@ -6087,6 +6151,10 @@ func (c *Config) SortAndRebuildPlugins() {
 		}
 		return iInfo.Order < jInfo.Order
 	})
+	sorted := make([]schemas.BasePlugin, len(named))
+	for i := range named {
+		sorted[i] = named[i].plugin
+	}
 
 	c.BasePlugins.Store(&sorted)
 	c.rebuildInterfaceCaches()
@@ -6105,7 +6173,8 @@ func FindPluginAs[T any](c *Config, name string) (T, error) {
 	}
 
 	for _, p := range *basePlugins {
-		if p.GetName() == name {
+		pluginName, err := SafePluginName(p)
+		if err == nil && pluginName == name {
 			if typed, ok := p.(T); ok {
 				return typed, nil
 			}
@@ -6114,6 +6183,35 @@ func FindPluginAs[T any](c *Config, name string) (T, error) {
 	}
 
 	return zero, fmt.Errorf("plugin %s not found", name)
+}
+
+// SafePluginName contains plugin-provided GetName implementations. It never
+// includes the recovered value in logs or returned errors.
+func SafePluginName(plugin schemas.BasePlugin) (name string, err error) {
+	if plugin == nil {
+		return "", fmt.Errorf("plugin instance is nil")
+	}
+	value := reflect.ValueOf(plugin)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Ptr, reflect.Slice:
+		if value.IsNil() {
+			return "", fmt.Errorf("plugin instance is nil")
+		}
+	}
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			if logger != nil {
+				logger.Error("recovered plugin GetName panic: panic_type=%T\n%s", recovered, debug.Stack())
+			}
+			name = ""
+			err = fmt.Errorf("plugin name resolution failed unexpectedly")
+		}
+	}()
+	name = plugin.GetName()
+	if strings.TrimSpace(name) == "" {
+		return "", fmt.Errorf("plugin name is empty")
+	}
+	return name, nil
 }
 
 // FindLLMPlugin is a convenience wrapper for finding LLM plugins

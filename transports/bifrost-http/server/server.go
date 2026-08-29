@@ -1926,7 +1926,10 @@ func (s *BifrostHTTPServer) updatePluginErrorStatus(name, step string, originalE
 
 // SyncLoadedPlugin syncs a loaded plugin to the Bifrost client and updates the plugin status
 func (s *BifrostHTTPServer) SyncLoadedPlugin(ctx context.Context, name string, plugin schemas.BasePlugin, placement *schemas.PluginPlacement, order *int) error {
-	pluginName := plugin.GetName()
+	pluginName, err := lib.SafePluginName(plugin)
+	if err != nil {
+		return s.updatePluginErrorStatus(name, "registering", err)
+	}
 	if pluginName == circuitbreaker.PluginName {
 		// Circuit breaker observes the provider/model produced by every routing
 		// layer, so API-provided ordering cannot move it ahead of selection.
@@ -2033,13 +2036,17 @@ func (s *BifrostHTTPServer) RemovePlugin(ctx context.Context, displayName string
 	}
 
 	// 2. Update Bifrost client
-	if err := s.Client.RemovePlugin(name, InferPluginTypes(plugin)); err != nil {
-		logger.Warn("failed to reload bifrost config after plugin removal: %v", err)
+	if s.Client != nil {
+		if err := s.Client.RemovePlugin(name, InferPluginTypes(plugin)); err != nil {
+			logger.Warn("failed to reload bifrost config after plugin removal: %v", err)
+		}
 	}
 	if name == circuitbreaker.PluginName {
 		// A disabled or deleted breaker must immediately restore the full key
 		// pool. ReloadClientConfig does not touch this independently managed hook.
-		s.Client.SetKeyPoolFilter(nil)
+		if s.Client != nil {
+			s.Client.SetKeyPoolFilter(nil)
+		}
 	}
 
 	// 3. Reload observability plugins if necessary
@@ -2786,7 +2793,7 @@ func (s *BifrostHTTPServer) Bootstrap(ctx context.Context) error {
 	logger.Debug("server read buffer size: %d", s.Config.ServerConfig.ReadBufferSize)
 	// Create fasthttp server instance
 	s.Server = &fasthttp.Server{
-		Handler:            handlers.SecurityHeadersMiddleware()(s.CORSMiddleware.Middleware()(handlers.RequestDecompressionMiddleware(s.Config)(s.Router.Handler))),
+		Handler:            handlers.PanicRecoveryMiddleware(handlers.SecurityHeadersMiddleware()(s.CORSMiddleware.Middleware()(handlers.RequestDecompressionMiddleware(s.Config)(s.Router.Handler)))),
 		MaxRequestBodySize: s.Config.ClientConfig.MaxRequestBodySizeMB * 1024 * 1024,
 		ReadBufferSize:     s.Config.ServerConfig.ReadBufferSize,
 	}
