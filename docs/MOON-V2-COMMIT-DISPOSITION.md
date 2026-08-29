@@ -34,7 +34,7 @@ instead of merging the v1 branch.
 | `ea74d890f` | Hide gateway identity from client errors | `adapt-to-v2` | `3d66e5d27`; error sanitizer tests |
 | `13bef5d0d` | Expand i18n coverage | `reimplement` | `a4fbd3e89`, `ac15335ba`; language/copy tests and timeout diagnostics |
 | `2e49d0ed0` | Header-driven circuit breaker and UI | `reimplement` | `605364b32`, `9f9011a05`, `4ff400050`; circuit tests |
-| `5d1704e2d` | Error-aware fallback routing | `reimplement` | `96fcdce15`, `425ce08ef`, `f5b862d64`, `493672a89`, `28215607d`, `28c78eb46`; direct HTTP and multipart coverage |
+| `5d1704e2d` | Error-aware fallback routing | `reimplement` | `96fcdce15`, `425ce08ef`, `f5b862d64`, `493672a89`, `28215607d`, `28c78eb46`, `93a653a4f`; direct HTTP, multipart, and lossless compact-editor coverage |
 | `423b4b401` | Plugin panic containment | `adapt-to-v2` | `b288c55d6`, `19336a043`, `28af37074`, `294804389`, `28c78eb46`; plugin, health-probe and cleaner panic tests |
 | `c0da8aa63` | Routing-rule request statistics | `adapt-to-v2` | `e722cb079`, `4ed6d53a2`; ranking/redaction tests |
 | `e56260d0c` | Preserve error-fallback policies at runtime | `reimplement` | `28215607d`; unary/stream fallback tests |
@@ -64,6 +64,8 @@ inventory:
   isolation before request-sized image payloads are copied.
 - `72c667376` restores the separate Alert Rules, Alert Channels, and Alert History RBAC resources and
   adds a real browser workflow assertion for the latest OTEL policy editor.
+- `93a653a4f` keeps the simplified content-safety fallback editor while preserving unsupported
+  error policies, advanced recognition conditions, and their ordering during unrelated rule edits.
 
 These entries supersede earlier broad claims that the corresponding v1 behavior was already fully
 covered by the first v2 migration commits.
