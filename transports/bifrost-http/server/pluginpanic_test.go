@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/maximhq/bifrost/core/schemas"
@@ -20,6 +21,13 @@ func (*panickingPluginLoader) VerifyBasePlugin(string) (string, error) { return 
 
 var _ dynamicplugins.PluginLoader = (*panickingPluginLoader)(nil)
 
+type failingPluginLoader struct{}
+
+func (*failingPluginLoader) LoadPlugin(string, any) (schemas.BasePlugin, error) {
+	return nil, errors.New("incompatible plugin toolchain")
+}
+func (*failingPluginLoader) VerifyBasePlugin(string) (string, error) { return "", nil }
+
 type panickingNamePlugin struct{}
 
 func (*panickingNamePlugin) GetName() string { panic("secret name panic") }
@@ -35,6 +43,29 @@ func TestInstantiatePluginContainsBuiltinAndCustomPanics(t *testing.T) {
 	_, err = InstantiatePlugin(context.Background(), "custom-panic", &path, nil, config)
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), "secret")
+}
+
+func TestLoadCustomPluginsContinuesAfterPluginLoadFailure(t *testing.T) {
+	previousLogger := logger
+	logger = noopTestLogger{}
+	t.Cleanup(func() { logger = previousLogger })
+
+	path := "/tmp/incompatible-plugin.so"
+	config := &lib.Config{
+		PluginLoader: &failingPluginLoader{},
+		PluginConfigs: []*schemas.PluginConfig{{
+			Name:    "incompatible-custom-plugin",
+			Enabled: true,
+			Path:    &path,
+		}},
+	}
+	server := &BifrostHTTPServer{Config: config}
+
+	require.NoError(t, server.loadCustomPlugins(context.Background()))
+	status, ok := config.GetPluginStatusByName("incompatible-custom-plugin")
+	require.True(t, ok)
+	require.Equal(t, schemas.PluginStatusError, status.Status)
+	require.Empty(t, config.GetLoadedLLMPlugins())
 }
 
 func TestSyncLoadedPluginContainsGetNamePanic(t *testing.T) {

@@ -72,6 +72,11 @@ docker save "bifrost-moon:$RELEASE_VERSION" \
 Dockerfile 会验证主程序动态链接到 glibc。禁止为该镜像添加静态链接参数；静态宿主不
 支持 Go 动态插件。
 
+宿主会在 `plugin.Open` 前读取 `.so` 的 Go build metadata，并拒绝 Go 版本、目标平台或
+build mode 不匹配的文件。单个自定义插件不兼容时，插件状态记为 `error`，Bifrost 基础
+服务继续启动，以便管理员通过 UI/API 修正路径。Moon 插件处于 `error` 时只代表基础网关
+可用；Moon 路由、请求清洗、身份隐藏和图片兼容能力均不应视为可用。
+
 ## v2 构建缓存约束
 
 Moon v2 只使用一个缓存根目录，禁止再创建 `.gocache`、`.tmp-go-cache*` 或按

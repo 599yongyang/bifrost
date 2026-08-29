@@ -2,9 +2,12 @@ package plugins
 
 import (
 	"context"
+	"debug/buildinfo"
 	"fmt"
 	"net/http"
 	"plugin"
+	"runtime"
+	"runtime/debug"
 	"strings"
 
 	"github.com/maximhq/bifrost/core/network"
@@ -25,6 +28,46 @@ func NewSharedObjectPluginLoader(allow *network.Allowlist) *SharedObjectPluginLo
 	return &SharedObjectPluginLoader{downloadClient: NewPluginDownloadClient(allow)}
 }
 
+func validatePluginBuildInfo(info *debug.BuildInfo, hostGoVersion, hostGOOS, hostGOARCH string) error {
+	if info == nil {
+		return fmt.Errorf("plugin build metadata is missing")
+	}
+	if info.GoVersion != hostGoVersion {
+		return fmt.Errorf(
+			"incompatible Go plugin toolchain: plugin was built with Go %s but host uses %s; rebuild the plugin with the host toolchain",
+			info.GoVersion,
+			hostGoVersion,
+		)
+	}
+
+	settings := make(map[string]string, len(info.Settings))
+	for _, setting := range info.Settings {
+		settings[setting.Key] = setting.Value
+	}
+	if settings["-buildmode"] != "plugin" {
+		return fmt.Errorf("invalid Go plugin build mode %q: expected %q", settings["-buildmode"], "plugin")
+	}
+	pluginGOOS, pluginGOARCH := settings["GOOS"], settings["GOARCH"]
+	if pluginGOOS != hostGOOS || pluginGOARCH != hostGOARCH {
+		return fmt.Errorf(
+			"incompatible Go plugin target: plugin is %s/%s but host is %s/%s",
+			pluginGOOS,
+			pluginGOARCH,
+			hostGOOS,
+			hostGOARCH,
+		)
+	}
+	return nil
+}
+
+func validatePluginBinary(path, hostGoVersion, hostGOOS, hostGOARCH string) error {
+	info, err := buildinfo.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("failed to read Go plugin build metadata: %w", err)
+	}
+	return validatePluginBuildInfo(info, hostGoVersion, hostGOOS, hostGOARCH)
+}
+
 func (l *SharedObjectPluginLoader) openPlugin(dp *DynamicPlugin) (*plugin.Plugin, error) {
 	// Checking if path is URL or file path
 	if strings.HasPrefix(dp.Path, "http") {
@@ -38,6 +81,9 @@ func (l *SharedObjectPluginLoader) openPlugin(dp *DynamicPlugin) (*plugin.Plugin
 			return nil, err
 		}
 		dp.Path = tempPath
+	}
+	if err := validatePluginBinary(dp.Path, runtime.Version(), runtime.GOOS, runtime.GOARCH); err != nil {
+		return nil, err
 	}
 	pluginObj, err := plugin.Open(dp.Path)
 	if err != nil {
