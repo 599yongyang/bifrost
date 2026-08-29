@@ -73,32 +73,32 @@ type ChannelMessage struct {
 type Bifrost struct {
 	ctx                 *schemas.BifrostContext
 	cancel              context.CancelFunc
-	account             schemas.Account                     // account interface
-	llmPlugins          atomic.Pointer[[]schemas.LLMPlugin] // list of llm plugins
-	mcpPlugins          atomic.Pointer[[]schemas.MCPPlugin] // list of mcp plugins
-	providers           atomic.Pointer[[]schemas.Provider]  // list of providers
-	requestQueues       sync.Map                            // provider request queues (thread-safe), stores *ProviderQueue
-	waitGroups          sync.Map                            // wait groups for each provider (thread-safe)
-	oldWorkerCleanups   sync.WaitGroup                      // tracks async cleanup of old workers after provider updates
-	retiredWorkerWaits  sync.Map                            // provider old-worker cleanup wait groups (thread-safe), stores *sync.WaitGroup
-	providerLifecycleMu sync.RWMutex                        // prevents provider updates from racing with shutdown cleanup waits
-	providerMutexes     sync.Map                            // mutexes for each provider to prevent concurrent updates (thread-safe)
-	channelMessagePool  sync.Pool                           // Pool for ChannelMessage objects, initial pool size is set in Init
-	responseChannelPool sync.Pool                           // Pool for response channels, initial pool size is set in Init
-	errorChannelPool    sync.Pool                           // Pool for error channels, initial pool size is set in Init
-	responseStreamPool  sync.Pool                           // Pool for response stream channels, initial pool size is set in Init
-	pluginPipelinePool  sync.Pool                           // Pool for PluginPipeline objects
-	bifrostRequestPool  sync.Pool                           // Pool for BifrostRequest objects
-	logger              schemas.Logger                      // logger instance, default logger is used if not provided
-	tracer              atomic.Value                        // tracer for distributed tracing (stores schemas.Tracer, NoOpTracer if not configured)
-	modelCatalog        schemas.ModelInfoProvider           // model pricing/capability catalog exposed to plugins via ctx.GetModelInfo (nil if not configured); set once from BifrostConfig at Init
-	MCPManager          mcp.MCPManagerInterface             // MCP integration manager (nil if MCP not configured)
-	mcpCredStore        schemas.MCPCredentialStore          // Per-call credential resolver for MCP tool execution (wraps oauth2Provider for OAuth-flavored auth types)
-	mcpInitOnce         sync.Once                           // Ensures MCP manager is initialized only once
-	dropExcessRequests  atomic.Bool                         // If true, in cases where the queue is full, requests will not wait for the queue to be empty and will be dropped instead.
-	keySelector         schemas.KeySelector                 // Custom key selector function
-	keyPoolFilter       schemas.KeyPoolFilter               // optional hook to veto keys before selection (nil = all eligible)
-	kvStore             schemas.KVStore                     // optional KV store for session stickiness (nil = disabled)
+	account             schemas.Account                      // account interface
+	llmPlugins          atomic.Pointer[[]schemas.LLMPlugin]  // list of llm plugins
+	mcpPlugins          atomic.Pointer[[]schemas.MCPPlugin]  // list of mcp plugins
+	providers           atomic.Pointer[[]schemas.Provider]   // list of providers
+	requestQueues       sync.Map                             // provider request queues (thread-safe), stores *ProviderQueue
+	waitGroups          sync.Map                             // wait groups for each provider (thread-safe)
+	oldWorkerCleanups   sync.WaitGroup                       // tracks async cleanup of old workers after provider updates
+	retiredWorkerWaits  sync.Map                             // provider old-worker cleanup wait groups (thread-safe), stores *sync.WaitGroup
+	providerLifecycleMu sync.RWMutex                         // prevents provider updates from racing with shutdown cleanup waits
+	providerMutexes     sync.Map                             // mutexes for each provider to prevent concurrent updates (thread-safe)
+	channelMessagePool  sync.Pool                            // Pool for ChannelMessage objects, initial pool size is set in Init
+	responseChannelPool sync.Pool                            // Pool for response channels, initial pool size is set in Init
+	errorChannelPool    sync.Pool                            // Pool for error channels, initial pool size is set in Init
+	responseStreamPool  sync.Pool                            // Pool for response stream channels, initial pool size is set in Init
+	pluginPipelinePool  sync.Pool                            // Pool for PluginPipeline objects
+	bifrostRequestPool  sync.Pool                            // Pool for BifrostRequest objects
+	logger              schemas.Logger                       // logger instance, default logger is used if not provided
+	tracer              atomic.Value                         // tracer for distributed tracing (stores schemas.Tracer, NoOpTracer if not configured)
+	modelCatalog        schemas.ModelInfoProvider            // model pricing/capability catalog exposed to plugins via ctx.GetModelInfo (nil if not configured); set once from BifrostConfig at Init
+	MCPManager          mcp.MCPManagerInterface              // MCP integration manager (nil if MCP not configured)
+	mcpCredStore        schemas.MCPCredentialStore           // Per-call credential resolver for MCP tool execution (wraps oauth2Provider for OAuth-flavored auth types)
+	mcpInitOnce         sync.Once                            // Ensures MCP manager is initialized only once
+	dropExcessRequests  atomic.Bool                          // If true, in cases where the queue is full, requests will not wait for the queue to be empty and will be dropped instead.
+	keySelector         schemas.KeySelector                  // Custom key selector function
+	keyPoolFilter       atomic.Pointer[keyPoolFilterWrapper] // optional, atomically reloadable hook to veto keys before selection
+	kvStore             schemas.KVStore                      // optional KV store for session stickiness (nil = disabled)
 }
 
 // ProviderQueue wraps a provider's request channel with lifecycle management
@@ -213,6 +213,10 @@ type tracerWrapper struct {
 	tracer schemas.Tracer
 }
 
+type keyPoolFilterWrapper struct {
+	filter schemas.KeyPoolFilter
+}
+
 // INITIALIZATION
 
 // Init initializes a new Bifrost instance with the given configuration.
@@ -245,12 +249,12 @@ func Init(ctx context.Context, config schemas.BifrostConfig) (*Bifrost, error) {
 		requestQueues: sync.Map{},
 		waitGroups:    sync.Map{},
 		keySelector:   config.KeySelector,
-		keyPoolFilter: config.KeyPoolFilter,
 		mcpCredStore:  credstore.NewCredStore(config.OAuth2Provider, config.MCPHeadersProvider, config.Logger),
 		logger:        config.Logger,
 		kvStore:       config.KVStore,
 		modelCatalog:  config.ModelCatalog,
 	}
+	bifrost.SetKeyPoolFilter(config.KeyPoolFilter)
 	bifrost.tracer.Store(&tracerWrapper{tracer: tracer})
 	if config.LLMPlugins == nil {
 		config.LLMPlugins = make([]schemas.LLMPlugin, 0)
@@ -428,6 +432,17 @@ func (bifrost *Bifrost) setModelCatalogOnContext(ctx *schemas.BifrostContext) {
 func (bifrost *Bifrost) ReloadConfig(config schemas.BifrostConfig) error {
 	bifrost.dropExcessRequests.Store(config.DropExcessRequests)
 	return nil
+}
+
+// SetKeyPoolFilter atomically replaces the optional key eligibility filter.
+// In-flight selections keep their loaded snapshot; later selections observe
+// plugin create, update, disable, and removal without a data race.
+func (bifrost *Bifrost) SetKeyPoolFilter(filter schemas.KeyPoolFilter) {
+	if filter == nil {
+		bifrost.keyPoolFilter.Store(nil)
+		return
+	}
+	bifrost.keyPoolFilter.Store(&keyPoolFilterWrapper{filter: filter})
 }
 
 // PUBLIC API METHODS
@@ -7228,6 +7243,14 @@ func (bifrost *Bifrost) requestWorker(provider schemas.Provider, config *schemas
 							if deadKeyIDs[fixedKey.ID] {
 								return schemas.Key{}, errAllKeysDead
 							}
+							if keyFilter := bifrost.keyPoolFilter.Load(); keyFilter != nil {
+								filtered, filterErr := keyFilter.filter(req.Context, provider.GetProviderKey(), model, []schemas.Key{fixedKey})
+								if filterErr != nil {
+									bifrost.logger.Warn("key pool filter failed for provider %s, using unfiltered key: %v", provider.GetProviderKey(), filterErr)
+								} else if len(filtered) == 0 {
+									return schemas.Key{}, fmt.Errorf("%w: provider %s", errAllKeysFiltered, provider.GetProviderKey())
+								}
+							}
 							return fixedKey, nil
 						}
 					} else {
@@ -7244,8 +7267,8 @@ func (bifrost *Bifrost) requestWorker(provider schemas.Provider, config *schemas
 								}
 								available = append(available, k)
 							}
-							if bifrost.keyPoolFilter != nil {
-								if filtered, err := bifrost.keyPoolFilter(req.Context, provKey, mdl, available); err != nil {
+							if keyFilter := bifrost.keyPoolFilter.Load(); keyFilter != nil {
+								if filtered, err := keyFilter.filter(req.Context, provKey, mdl, available); err != nil {
 									bifrost.logger.Warn("key pool filter failed for provider %s, using unfiltered keys: %v", provKey, err)
 								} else {
 									available = filtered
@@ -7263,8 +7286,8 @@ func (bifrost *Bifrost) requestWorker(provider schemas.Provider, config *schemas
 									}
 								}
 								liveCount := len(available) // non-dead keys before the filter runs
-								if bifrost.keyPoolFilter != nil {
-									if filtered, err := bifrost.keyPoolFilter(req.Context, provKey, mdl, available); err != nil {
+								if keyFilter := bifrost.keyPoolFilter.Load(); keyFilter != nil {
+									if filtered, err := keyFilter.filter(req.Context, provKey, mdl, available); err != nil {
 										bifrost.logger.Warn("key pool filter failed for provider %s, using unfiltered keys: %v", provKey, err)
 									} else {
 										available = filtered

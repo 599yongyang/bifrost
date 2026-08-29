@@ -17,6 +17,7 @@ import (
 	"github.com/maximhq/bifrost/plugins/routing"
 	"github.com/maximhq/bifrost/plugins/semanticcache"
 	"github.com/maximhq/bifrost/plugins/telemetry"
+	"github.com/maximhq/bifrost/transports/bifrost-http/circuitbreaker"
 	"github.com/maximhq/bifrost/transports/bifrost-http/handlers"
 	"github.com/maximhq/bifrost/transports/bifrost-http/lib"
 )
@@ -73,6 +74,13 @@ func loadBuiltinPlugin(ctx context.Context, name string, pluginConfig any, bifro
 			}
 		}
 		return telemetry.Init(telConfig, bifrostConfig.ModelCatalog, logger)
+
+	case circuitbreaker.PluginName:
+		circuitConfig, err := MarshalPluginConfig[circuitbreaker.Config](pluginConfig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal circuit breaker plugin config: %w", err)
+		}
+		return circuitbreaker.Init(circuitConfig, logger)
 
 	case prompts.PluginName:
 		return prompts.Init(ctx, bifrostConfig.ConfigStore, logger)
@@ -291,7 +299,7 @@ func (s *BifrostHTTPServer) loadBuiltinPlugins(ctx context.Context) error {
 	}
 	s.Config.SetPluginOrderInfo(maxim.PluginName, builtinPlacement, schemas.Ptr(9))
 
-	// 10. ModelCatalogResolver (last routing layer — fills req.Provider from catalog only when
+	// 10. ModelCatalogResolver (last provider-selection layer — fills req.Provider from catalog only when
 	// no earlier routing plugin (governance routing rules, governance VK LB, enterprise LB)
 	// already set one. CEL rules can still match on provider == "" because this runs last.
 	// Requires a model catalog; only register when one is configured.
@@ -300,10 +308,23 @@ func (s *BifrostHTTPServer) loadBuiltinPlugins(ctx context.Context) error {
 	} else {
 		s.markPluginDisabled(modelcatalogresolver.PluginName)
 	}
-	// Place it in post_builtin with a max order so it runs after every other routing plugin,
+	// Place it near the end of post_builtin so it runs after every provider-selection plugin,
 	// including post_builtin ones like the enterprise load balancer (which would otherwise run
-	// after this builtin and never get a chance to pick the provider first).
-	s.Config.SetPluginOrderInfo(modelcatalogresolver.PluginName, schemas.Ptr(schemas.PluginPlacementPostBuiltin), schemas.Ptr(math.MaxInt))
+	// after this builtin and never get a chance to pick the provider first). Circuit breaker runs
+	// one slot later so it evaluates the final provider/model.
+	s.Config.SetPluginOrderInfo(modelcatalogresolver.PluginName, schemas.Ptr(schemas.PluginPlacementPostBuiltin), schemas.Ptr(math.MaxInt-1))
+
+	// 11. Circuit breaker. It must run after every provider-selection layer so
+	// policies match the actual upstream target rather than the incoming alias.
+	circuitConfig := s.getPluginConfig(circuitbreaker.PluginName)
+	if circuitConfig != nil && circuitConfig.Enabled {
+		if err := s.registerPluginWithStatus(ctx, circuitbreaker.PluginName, nil, circuitConfig.Config, true); err != nil {
+			return err
+		}
+	} else {
+		s.markPluginDisabled(circuitbreaker.PluginName)
+	}
+	s.Config.SetPluginOrderInfo(circuitbreaker.PluginName, schemas.Ptr(schemas.PluginPlacementPostBuiltin), schemas.Ptr(math.MaxInt))
 
 	return nil
 }

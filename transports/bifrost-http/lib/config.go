@@ -51,6 +51,7 @@ import (
 	"github.com/maximhq/bifrost/plugins/routing/rules"
 	"github.com/maximhq/bifrost/plugins/semanticcache"
 	"github.com/maximhq/bifrost/plugins/telemetry"
+	"github.com/maximhq/bifrost/transports/bifrost-http/circuitbreaker"
 	"gorm.io/gorm"
 )
 
@@ -125,6 +126,7 @@ func getWeight(w *float64) float64 {
 // It is the single source of truth — update here when adding or removing a built-in plugin.
 var builtinPluginNames = []string{
 	telemetry.PluginName,
+	circuitbreaker.PluginName,
 	prompts.PluginName,
 	logging.PluginName,
 	governance.PluginName,
@@ -195,6 +197,7 @@ type ConfigData struct {
 	Plugins           []*schemas.PluginConfig               `json:"plugins,omitempty"`
 	WebSocket         *schemas.WebSocketConfig              `json:"websocket,omitempty"`
 	FeatureFlags      *FeatureFlagsFileConfig               `json:"feature_flags,omitempty"`
+	CircuitBreaker    *circuitbreaker.Config                `json:"circuit_breaker_config,omitempty"`
 
 	presentSections           map[string]bool
 	presentGovernanceSections map[string]bool
@@ -382,6 +385,8 @@ func (cd *ConfigData) sectionPresent(name string) bool {
 		return cd.LogsStoreConfig != nil
 	case "config_store":
 		return cd.ConfigStoreConfig != nil
+	case "circuit_breaker_config":
+		return cd.CircuitBreaker != nil
 	default:
 		return false
 	}
@@ -453,6 +458,7 @@ func (cd *ConfigData) UnmarshalJSON(data []byte) error {
 		Plugins           []*schemas.PluginConfig               `json:"plugins,omitempty"`
 		WebSocket         *schemas.WebSocketConfig              `json:"websocket,omitempty"`
 		FeatureFlags      *FeatureFlagsFileConfig               `json:"feature_flags,omitempty"`
+		CircuitBreaker    *circuitbreaker.Config                `json:"circuit_breaker_config,omitempty"`
 		SkillsRegistry    *SkillsRegistryConfig                 `json:"skills_registry,omitempty"`
 	}
 
@@ -477,6 +483,7 @@ func (cd *ConfigData) UnmarshalJSON(data []byte) error {
 	cd.Plugins = temp.Plugins
 	cd.WebSocket = temp.WebSocket
 	cd.FeatureFlags = temp.FeatureFlags
+	cd.CircuitBreaker = temp.CircuitBreaker
 	cd.presentGovernanceSections = nil
 	if rawGovernance, ok := raw["governance"]; ok && len(rawGovernance) > 0 {
 		var rawGovernanceFields map[string]json.RawMessage
@@ -630,6 +637,10 @@ type Config struct {
 	// layered overrides (DB then file). May be wired with a SyncDelegate
 	// by enterprise for cluster-wide gossip.
 	FeatureFlags *featureflags.Store
+	// CircuitBreakerConfig is the root-level file configuration. Runtime
+	// state belongs to the plugin instance, while this value records the
+	// startup source-of-truth used to seed the durable plugin row.
+	CircuitBreakerConfig *circuitbreaker.Config
 
 	// Catalog managers
 	ModelCatalog *modelcatalog.ModelCatalog
@@ -942,6 +953,12 @@ func LoadConfig(ctx context.Context, configDirPath string) (*Config, error) {
 			applyV1Compat(&configData)
 		}
 	}
+	config.CircuitBreakerConfig = configData.CircuitBreaker
+	// Promote the root block into the ordinary plugin pipeline before stores
+	// are initialized. The persisted plugin row remains the dashboard/API
+	// representation, while applyCircuitBreakerFileConfig below makes an
+	// explicitly present root block authoritative on every startup.
+	promoteCircuitBreakerConfigToPlugin(&configData)
 
 	// 1. Encryption (before stores so BeforeSave hooks work correctly)
 	if err := initEncryption(&configData); err != nil {
@@ -4369,6 +4386,7 @@ func loadPlugins(ctx context.Context, config *Config, configData *ConfigData) {
 			}
 		}
 	}
+	applyCircuitBreakerFileConfig(ctx, config, configData)
 
 	// Merge with config file plugins
 	if len(configData.Plugins) > 0 {
@@ -4379,6 +4397,79 @@ func loadPlugins(ctx context.Context, config *Config, configData *ConfigData) {
 		}
 	} else if configData.isConfigJSONSourceOfTruth() && configData.sectionPresent("plugins") {
 		syncPluginsFromFile(ctx, config, configData)
+	}
+}
+
+// promoteCircuitBreakerConfigToPlugin exposes the root-level configuration
+// through the same built-in plugin row managed by the plugin API. An explicit
+// plugins[] entry wins so operators never get two instances.
+func promoteCircuitBreakerConfigToPlugin(configData *ConfigData) {
+	if configData == nil || !configData.sectionPresent("circuit_breaker_config") || configData.CircuitBreaker == nil {
+		return
+	}
+	for _, plugin := range configData.Plugins {
+		if plugin != nil && plugin.Name == circuitbreaker.PluginName {
+			return
+		}
+	}
+	placement := schemas.PluginPlacementPostBuiltin
+	order := math.MaxInt
+	version := int16(1)
+	configData.Plugins = append(configData.Plugins, &schemas.PluginConfig{
+		Name:      circuitbreaker.PluginName,
+		Enabled:   len(configData.CircuitBreaker.Policies) > 0,
+		Config:    configData.CircuitBreaker,
+		Placement: &placement,
+		Order:     &order,
+		Version:   &version,
+	})
+}
+
+// applyCircuitBreakerFileConfig makes an explicitly declared root block the
+// source of truth on every startup, including an empty policies array used to
+// disable a previously API-managed instance.
+func applyCircuitBreakerFileConfig(ctx context.Context, config *Config, configData *ConfigData) {
+	if config == nil || configData == nil || !configData.sectionPresent("circuit_breaker_config") {
+		return
+	}
+	idx := slices.IndexFunc(configData.Plugins, func(plugin *schemas.PluginConfig) bool {
+		return plugin != nil && plugin.Name == circuitbreaker.PluginName
+	})
+	if idx < 0 {
+		return
+	}
+	filePlugin := configData.Plugins[idx]
+	existingIdx := slices.IndexFunc(config.PluginConfigs, func(plugin *schemas.PluginConfig) bool {
+		return plugin != nil && plugin.Name == circuitbreaker.PluginName
+	})
+	if existingIdx < 0 {
+		config.PluginConfigs = append(config.PluginConfigs, filePlugin)
+	} else {
+		config.PluginConfigs[existingIdx] = filePlugin
+	}
+	if config.ConfigStore == nil {
+		return
+	}
+	configCopy, err := DeepCopy(filePlugin.Config)
+	if err != nil {
+		logger.Warn("failed to copy circuit breaker file config: %v", err)
+		return
+	}
+	version := int16(1)
+	if filePlugin.Version != nil {
+		version = *filePlugin.Version
+	}
+	if err := config.ConfigStore.UpsertPlugin(ctx, &configstoreTables.TablePlugin{
+		Name:      filePlugin.Name,
+		Enabled:   filePlugin.Enabled,
+		Config:    configCopy,
+		Path:      filePlugin.Path,
+		Version:   version,
+		IsCustom:  false,
+		Placement: filePlugin.Placement,
+		Order:     filePlugin.Order,
+	}); err != nil {
+		logger.Warn("failed to persist authoritative circuit breaker file config: %v", err)
 	}
 }
 
@@ -4970,22 +5061,22 @@ func ResolveFrameworkPricingConfig(
 	}
 
 	return &configstoreTables.TableFrameworkConfig{
-			ID:                     configID,
-			PricingURL:             resolvedPricingURL,
-			PricingSyncInterval:    resolvedSyncSeconds,
-			ModelParametersURL:     resolvedModelParametersURL,
-			MCPLibraryURL:          resolvedMCPLibraryURL,
-			MCPLibrarySyncInterval: resolvedMCPLibrarySyncInterval,
-			LiveModelsSyncInterval: resolvedLiveModelsSyncInterval,
-			ConfigHash:             persistedHash,
-		}, &modelcatalog.Config{
-			PricingURL:             resolvedPricingURL,
-			PricingSyncInterval:    resolvedSyncSeconds,
-			ModelParametersURL:     resolvedModelParametersURL,
-			MCPLibraryURL:          resolvedMCPLibraryURL,
-			MCPLibrarySyncInterval: resolvedMCPLibrarySyncInterval,
-			LiveModelsSyncInterval: resolvedLiveModelsSyncInterval,
-		}, needsDBUpdate
+		ID:                     configID,
+		PricingURL:             resolvedPricingURL,
+		PricingSyncInterval:    resolvedSyncSeconds,
+		ModelParametersURL:     resolvedModelParametersURL,
+		MCPLibraryURL:          resolvedMCPLibraryURL,
+		MCPLibrarySyncInterval: resolvedMCPLibrarySyncInterval,
+		LiveModelsSyncInterval: resolvedLiveModelsSyncInterval,
+		ConfigHash:             persistedHash,
+	}, &modelcatalog.Config{
+		PricingURL:             resolvedPricingURL,
+		PricingSyncInterval:    resolvedSyncSeconds,
+		ModelParametersURL:     resolvedModelParametersURL,
+		MCPLibraryURL:          resolvedMCPLibraryURL,
+		MCPLibrarySyncInterval: resolvedMCPLibrarySyncInterval,
+		LiveModelsSyncInterval: resolvedLiveModelsSyncInterval,
+	}, needsDBUpdate
 }
 
 // initFrameworkConfig initializes framework config and pricing manager from file
