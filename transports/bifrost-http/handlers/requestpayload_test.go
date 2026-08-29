@@ -1,15 +1,46 @@
 package handlers
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/maximhq/bifrost/core/schemas"
 	"github.com/maximhq/bifrost/framework/configstore"
 	"github.com/valyala/fasthttp"
 )
 
 type loginDecodeConfigStore struct {
 	configstore.ConfigStore
+}
+
+func TestPrepareChatRequestPreservesRequestErrorFallbacks(t *testing.T) {
+	ctx := &fasthttp.RequestCtx{}
+	ctx.Request.SetBodyString(`{
+		"model":"openai/gpt-4o-mini",
+		"messages":[{"role":"user","content":"hello"}],
+		"error_fallbacks":[{
+			"name":"rate-limit",
+			"scenario":"rate_limit",
+			"fallbacks":[{"provider":"anthropic","model":"claude-3-5-haiku-latest"}]
+		}]
+	}`)
+
+	_, request, err := prepareChatCompletionRequest(ctx, nil)
+	if err != nil {
+		t.Fatalf("prepareChatCompletionRequest() error = %v", err)
+	}
+	want := []schemas.ErrorFallbackRule{{
+		Name:      "rate-limit",
+		Scenario:  schemas.FailureCategoryRateLimit,
+		Fallbacks: []schemas.Fallback{{Provider: schemas.Anthropic, Model: "claude-3-5-haiku-latest"}},
+	}}
+	if !reflect.DeepEqual(request.ErrorFallbacks, want) {
+		t.Fatalf("error fallbacks = %#v, want %#v", request.ErrorFallbacks, want)
+	}
+	if _, leaked := request.Params.ExtraParams["error_fallbacks"]; leaked {
+		t.Fatal("error_fallbacks leaked into provider ExtraParams")
+	}
 }
 
 func TestSessionLoginInvalidPayloadDoesNotExposeDecoderDetails(t *testing.T) {

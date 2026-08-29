@@ -1107,6 +1107,13 @@ func (p *OtelPlugin) Inject(ctx context.Context, trace *schemas.Trace) error {
 			if t.metricsExporter != nil {
 				p.recordMetricsFromTrace(ctx, t.metricsExporter, trace)
 				p.recordMCPMetricsFromTrace(ctx, t.metricsExporter, trace)
+				if p.selector != nil {
+					event := "selection"
+					if p.selector.dryRun {
+						event = "selection_dry_run"
+					}
+					t.metricsExporter.RecordObservabilityEvent(ctx, event, decision.reason)
+				}
 			}
 			if !exportTrace {
 				return
@@ -1115,6 +1122,13 @@ func (p *OtelPlugin) Inject(ctx context.Context, trace *schemas.Trace) error {
 				return
 			}
 			mediaRefs, mediaOK := uploadTraceMedia(ctx, t, trace)
+			if t.metricsExporter != nil && len(trace.MediaAttachments()) > 0 {
+				reason := "uploaded"
+				if !mediaOK {
+					reason = "failed"
+				}
+				t.metricsExporter.RecordObservabilityEvent(ctx, "media_upload", reason)
+			}
 			if !mediaOK && p.selector != nil && decision.selected && isImageRequestType(selectionFactsFromTrace(trace).requestType) {
 				p.persistExportState(ctx, trace, t, logstore.ObservationExportStatusFailed, logstore.ObservationExportSourceAutomatic, "media_upload_failed", decision.ruleID)
 				return

@@ -36,12 +36,13 @@ type MetricsExporter struct {
 	meter    metric.Meter
 
 	// Bifrost metrics - counters
-	upstreamRequestsTotal *syncInt64Counter
-	successRequestsTotal  *syncInt64Counter
-	errorRequestsTotal    *syncInt64Counter
-	inputTokensTotal      *syncInt64Counter
-	outputTokensTotal     *syncInt64Counter
-	cacheHitsTotal        *syncInt64Counter
+	upstreamRequestsTotal    *syncInt64Counter
+	successRequestsTotal     *syncInt64Counter
+	errorRequestsTotal       *syncInt64Counter
+	inputTokensTotal         *syncInt64Counter
+	outputTokensTotal        *syncInt64Counter
+	cacheHitsTotal           *syncInt64Counter
+	observabilityEventsTotal *syncInt64Counter
 
 	// Provider-side prompt cache token counters (distinct from cacheHitsTotal, which
 	// counts Bifrost's own semantic-cache hits).
@@ -354,6 +355,12 @@ func (m *MetricsExporter) initMetrics() {
 		unit:  "{hit}",
 		meter: m.meter,
 	}
+	m.observabilityEventsTotal = &syncInt64Counter{
+		name:  "bifrost_observability_events_total",
+		desc:  "Observability selection, media admission, and export outcomes",
+		unit:  "{event}",
+		meter: m.meter,
+	}
 
 	m.cacheReadInputTokensTotal = &syncInt64Counter{
 		name:  "bifrost_cache_read_input_tokens_total",
@@ -508,6 +515,14 @@ func (m *MetricsExporter) RecordOutputTokens(ctx context.Context, count int64, a
 // RecordCacheHit records a cache hit metric
 func (m *MetricsExporter) RecordCacheHit(ctx context.Context, attrs ...attribute.KeyValue) {
 	m.cacheHitsTotal.Add(ctx, 1, metric.WithAttributes(attrs...))
+}
+
+// RecordObservabilityEvent records a bounded-cardinality observability outcome.
+func (m *MetricsExporter) RecordObservabilityEvent(ctx context.Context, event, reason string) {
+	m.observabilityEventsTotal.Add(ctx, 1, metric.WithAttributes(
+		attribute.String("event", event),
+		attribute.String("reason", reason),
+	))
 }
 
 // RecordCacheReadInputTokens records provider-side prompt-cache read (cached) input tokens.

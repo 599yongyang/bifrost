@@ -92,10 +92,11 @@ func prepareRequest[T baseRequest](ctx *fasthttp.RequestCtx, config *lib.Config,
 		}
 	}
 	return req, &requestBase{
-		Provider:    provider,
-		ModelName:   modelName,
-		Fallbacks:   fallbacks,
-		ExtraParams: extraParams,
+		Provider:       provider,
+		ModelName:      modelName,
+		Fallbacks:      fallbacks,
+		ErrorFallbacks: (*req).getErrorFallbacks(),
+		ExtraParams:    extraParams,
 	}, nil
 }
 
@@ -388,28 +389,32 @@ var containerCreateParamsKnownFields = map[string]bool{
 }
 
 type BifrostParams struct {
-	Model        string   `json:"model"`                   // Model to use in "provider/model" format
-	Fallbacks    []string `json:"fallbacks"`               // Fallback providers and models in "provider/model" format
-	Stream       *bool    `json:"stream"`                  // Whether to stream the response
-	StreamFormat *string  `json:"stream_format,omitempty"` // For speech
+	Model          string                      `json:"model"`                     // Model to use in "provider/model" format
+	Fallbacks      []string                    `json:"fallbacks"`                 // Fallback providers and models in "provider/model" format
+	ErrorFallbacks []schemas.ErrorFallbackRule `json:"error_fallbacks,omitempty"` // Conditional fallback chains for upstream failures
+	Stream         *bool                       `json:"stream"`                    // Whether to stream the response
+	StreamFormat   *string                     `json:"stream_format,omitempty"`   // For speech
 }
 
-func (b BifrostParams) getModel() string       { return b.Model }
-func (b BifrostParams) getFallbacks() []string { return b.Fallbacks }
+func (b BifrostParams) getModel() string                               { return b.Model }
+func (b BifrostParams) getFallbacks() []string                         { return b.Fallbacks }
+func (b BifrostParams) getErrorFallbacks() []schemas.ErrorFallbackRule { return b.ErrorFallbacks }
 
 // baseRequest is satisfied by any type that embeds BifrostParams.
 type baseRequest interface {
 	getModel() string
 	getFallbacks() []string
+	getErrorFallbacks() []schemas.ErrorFallbackRule
 }
 
 // requestBase holds the fields common to every JSON-body prepare function
 // so that each type-specific prepareXRequest only handles validation.
 type requestBase struct {
-	Provider    schemas.ModelProvider
-	ModelName   string
-	Fallbacks   []schemas.Fallback
-	ExtraParams map[string]any
+	Provider       schemas.ModelProvider
+	ModelName      string
+	Fallbacks      []schemas.Fallback
+	ErrorFallbacks []schemas.ErrorFallbackRule
+	ExtraParams    map[string]any
 }
 
 type TextRequest struct {
@@ -662,6 +667,17 @@ func parseFallbacks(fallbackStrings []string) ([]schemas.Fallback, error) {
 	return fallbacks, nil
 }
 
+func parseErrorFallbacks(values []string) ([]schemas.ErrorFallbackRule, error) {
+	if len(values) == 0 || strings.TrimSpace(values[0]) == "" {
+		return nil, nil
+	}
+	var rules []schemas.ErrorFallbackRule
+	if err := sonic.Unmarshal([]byte(values[0]), &rules); err != nil {
+		return nil, fmt.Errorf("invalid error_fallbacks JSON")
+	}
+	return rules, nil
+}
+
 func effectiveStream(bodyStream *bool) bool {
 	if bodyStream != nil {
 		return *bodyStream
@@ -680,7 +696,7 @@ func extractExtraParams(data []byte, knownFields map[string]bool) (map[string]an
 	// Extract unknown fields
 	extraParams := make(map[string]any)
 	for key, value := range rawData {
-		if !knownFields[key] {
+		if !knownFields[key] && key != "error_fallbacks" {
 			var v any
 			if err := sonic.Unmarshal(value, &v); err != nil {
 				continue // Skip fields that can't be unmarshaled
@@ -954,11 +970,12 @@ func prepareTextCompletionRequest(ctx *fasthttp.RequestCtx, config *lib.Config) 
 	}
 	req.TextCompletionParameters.ExtraParams = base.ExtraParams
 	return req, &schemas.BifrostTextCompletionRequest{
-		Provider:  base.Provider,
-		Model:     base.ModelName,
-		Input:     req.Prompt,
-		Params:    req.TextCompletionParameters,
-		Fallbacks: base.Fallbacks,
+		Provider:       base.Provider,
+		Model:          base.ModelName,
+		Input:          req.Prompt,
+		Params:         req.TextCompletionParameters,
+		Fallbacks:      base.Fallbacks,
+		ErrorFallbacks: base.ErrorFallbacks,
 	}, nil
 }
 
@@ -1031,11 +1048,12 @@ func prepareChatCompletionRequest(ctx *fasthttp.RequestCtx, config *lib.Config) 
 	}
 	req.ChatParameters.ExtraParams = base.ExtraParams
 	return req, &schemas.BifrostChatRequest{
-		Provider:  base.Provider,
-		Model:     base.ModelName,
-		Input:     req.Messages,
-		Params:    req.ChatParameters,
-		Fallbacks: base.Fallbacks,
+		Provider:       base.Provider,
+		Model:          base.ModelName,
+		Input:          req.Messages,
+		Params:         req.ChatParameters,
+		Fallbacks:      base.Fallbacks,
+		ErrorFallbacks: base.ErrorFallbacks,
 	}, nil
 }
 
@@ -1108,11 +1126,12 @@ func prepareResponsesRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*Res
 		}
 	}
 	return req, &schemas.BifrostResponsesRequest{
-		Provider:  base.Provider,
-		Model:     base.ModelName,
-		Input:     input,
-		Params:    req.ResponsesParameters,
-		Fallbacks: base.Fallbacks,
+		Provider:       base.Provider,
+		Model:          base.ModelName,
+		Input:          input,
+		Params:         req.ResponsesParameters,
+		Fallbacks:      base.Fallbacks,
+		ErrorFallbacks: base.ErrorFallbacks,
 	}, nil
 }
 
@@ -1169,11 +1188,12 @@ func prepareEmbeddingRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*Emb
 	}
 	req.EmbeddingParameters.ExtraParams = base.ExtraParams
 	return req, &schemas.BifrostEmbeddingRequest{
-		Provider:  base.Provider,
-		Model:     base.ModelName,
-		Input:     req.Input,
-		Params:    req.EmbeddingParameters,
-		Fallbacks: base.Fallbacks,
+		Provider:       base.Provider,
+		Model:          base.ModelName,
+		Input:          req.Input,
+		Params:         req.EmbeddingParameters,
+		Fallbacks:      base.Fallbacks,
+		ErrorFallbacks: base.ErrorFallbacks,
 	}, nil
 }
 
@@ -1234,12 +1254,13 @@ func prepareRerankRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*Rerank
 	}
 	req.RerankParameters.ExtraParams = base.ExtraParams
 	return req, &schemas.BifrostRerankRequest{
-		Provider:  base.Provider,
-		Model:     base.ModelName,
-		Query:     req.Query,
-		Documents: req.Documents,
-		Params:    req.RerankParameters,
-		Fallbacks: base.Fallbacks,
+		Provider:       base.Provider,
+		Model:          base.ModelName,
+		Query:          req.Query,
+		Documents:      req.Documents,
+		Params:         req.RerankParameters,
+		Fallbacks:      base.Fallbacks,
+		ErrorFallbacks: base.ErrorFallbacks,
 	}, nil
 }
 
@@ -1297,12 +1318,13 @@ func prepareOCRRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*OCRHandle
 	}
 	req.OCRParameters.ExtraParams = base.ExtraParams
 	return req, &schemas.BifrostOCRRequest{
-		Provider:  base.Provider,
-		Model:     base.ModelName,
-		ID:        req.ID,
-		Document:  req.Document,
-		Params:    req.OCRParameters,
-		Fallbacks: base.Fallbacks,
+		Provider:       base.Provider,
+		Model:          base.ModelName,
+		ID:             req.ID,
+		Document:       req.Document,
+		Params:         req.OCRParameters,
+		Fallbacks:      base.Fallbacks,
+		ErrorFallbacks: base.ErrorFallbacks,
 	}, nil
 }
 
@@ -1370,11 +1392,12 @@ func prepareSpeechRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*Speech
 	}
 	req.SpeechParameters.ExtraParams = base.ExtraParams
 	return req, &schemas.BifrostSpeechRequest{
-		Provider:  base.Provider,
-		Model:     base.ModelName,
-		Input:     req.SpeechInput,
-		Params:    req.SpeechParameters,
-		Fallbacks: base.Fallbacks,
+		Provider:       base.Provider,
+		Model:          base.ModelName,
+		Input:          req.SpeechInput,
+		Params:         req.SpeechParameters,
+		Fallbacks:      base.Fallbacks,
+		ErrorFallbacks: base.ErrorFallbacks,
 	}, nil
 }
 
@@ -1520,7 +1543,7 @@ func prepareTranscriptionRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (
 		transcriptionParams.ExtraParams = make(map[string]interface{})
 	}
 	for key, value := range form.Value {
-		if len(value) > 0 && value[0] != "" && !transcriptionParamsKnownFields[key] {
+		if len(value) > 0 && value[0] != "" && !transcriptionParamsKnownFields[key] && key != "error_fallbacks" {
 			transcriptionParams.ExtraParams[key] = value[0]
 		}
 	}
@@ -1532,12 +1555,17 @@ func prepareTranscriptionRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (
 	if err != nil {
 		return nil, false, err
 	}
+	errorFallbacks, err := parseErrorFallbacks(form.Value["error_fallbacks"])
+	if err != nil {
+		return nil, false, err
+	}
 	bifrostTranscriptionReq := &schemas.BifrostTranscriptionRequest{
-		Model:     modelName,
-		Provider:  schemas.ModelProvider(provider),
-		Input:     transcriptionInput,
-		Params:    transcriptionParams,
-		Fallbacks: fallbacks,
+		Model:          modelName,
+		Provider:       schemas.ModelProvider(provider),
+		Input:          transcriptionInput,
+		Params:         transcriptionParams,
+		Fallbacks:      fallbacks,
+		ErrorFallbacks: errorFallbacks,
 	}
 	return bifrostTranscriptionReq, stream, nil
 }
@@ -1651,6 +1679,7 @@ func prepareCompactionRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*Co
 		PromptCacheRetention: req.PromptCacheRetention,
 		ServiceTier:          req.ServiceTier,
 		Fallbacks:            base.Fallbacks,
+		ErrorFallbacks:       base.ErrorFallbacks,
 		ExtraParams:          base.ExtraParams,
 	}, nil
 }
@@ -2301,11 +2330,12 @@ func prepareImageGenerationRequest(ctx *fasthttp.RequestCtx, config *lib.Config)
 	}
 	req.ImageGenerationParameters.ExtraParams = base.ExtraParams
 	return req, &schemas.BifrostImageGenerationRequest{
-		Provider:  base.Provider,
-		Model:     base.ModelName,
-		Input:     req.ImageGenerationInput,
-		Params:    req.ImageGenerationParameters,
-		Fallbacks: base.Fallbacks,
+		Provider:       base.Provider,
+		Model:          base.ModelName,
+		Input:          req.ImageGenerationInput,
+		Params:         req.ImageGenerationParameters,
+		Fallbacks:      base.Fallbacks,
+		ErrorFallbacks: base.ErrorFallbacks,
 	}, nil
 }
 
@@ -2503,6 +2533,11 @@ func parseImageEditMultipartForm(form *multipart.Form, req *ImageEditHTTPRequest
 	if fallbackValues := form.Value["fallbacks"]; len(fallbackValues) > 0 {
 		req.Fallbacks = fallbackValues
 	}
+	if errorFallbacks, err := parseErrorFallbacks(form.Value["error_fallbacks"]); err != nil {
+		return err
+	} else {
+		req.ErrorFallbacks = errorFallbacks
+	}
 	if streamValues := form.Value["stream"]; len(streamValues) > 0 && streamValues[0] != "" {
 		stream := streamValues[0] == "true"
 		req.Stream = &stream
@@ -2529,7 +2564,7 @@ func prepareImageEditRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*Ima
 		}
 		extraParams = make(map[string]any)
 		for key, value := range form.Value {
-			if len(value) > 0 && value[0] != "" && !imageEditParamsKnownFields[key] {
+			if len(value) > 0 && value[0] != "" && !imageEditParamsKnownFields[key] && key != "error_fallbacks" {
 				extraParams[key] = value[0]
 			}
 		}
@@ -2576,11 +2611,12 @@ func prepareImageEditRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*Ima
 		return nil, nil, err
 	}
 	bifrostReq := &schemas.BifrostImageEditRequest{
-		Provider:  schemas.ModelProvider(provider),
-		Model:     modelName,
-		Input:     req.ImageEditInput,
-		Params:    req.ImageEditParameters,
-		Fallbacks: fallbacks,
+		Provider:       schemas.ModelProvider(provider),
+		Model:          modelName,
+		Input:          req.ImageEditInput,
+		Params:         req.ImageEditParameters,
+		Fallbacks:      fallbacks,
+		ErrorFallbacks: req.ErrorFallbacks,
 	}
 	return &req, bifrostReq, nil
 }
@@ -2702,9 +2738,13 @@ func prepareImageVariationRequest(ctx *fasthttp.RequestCtx, config *lib.Config) 
 		variationParams.ExtraParams["images"] = images[1:]
 	}
 	for key, value := range form.Value {
-		if len(value) > 0 && value[0] != "" && !imageVariationParamsKnownFields[key] {
+		if len(value) > 0 && value[0] != "" && !imageVariationParamsKnownFields[key] && key != "error_fallbacks" {
 			variationParams.ExtraParams[key] = value[0]
 		}
+	}
+	errorFallbacks, err := parseErrorFallbacks(form.Value["error_fallbacks"])
+	if err != nil {
+		return nil, err
 	}
 	if fallbackValues := form.Value["fallbacks"]; len(fallbackValues) > 0 {
 		fallbacks, err := parseFallbacks(fallbackValues)
@@ -2717,6 +2757,7 @@ func prepareImageVariationRequest(ctx *fasthttp.RequestCtx, config *lib.Config) 
 			Input:          variationInput,
 			Params:         variationParams,
 			Fallbacks:      fallbacks,
+			ErrorFallbacks: errorFallbacks,
 			RawRequestBody: rawBody,
 		}, nil
 	}
@@ -2725,6 +2766,7 @@ func prepareImageVariationRequest(ctx *fasthttp.RequestCtx, config *lib.Config) 
 		Model:          modelName,
 		Input:          variationInput,
 		Params:         variationParams,
+		ErrorFallbacks: errorFallbacks,
 		RawRequestBody: rawBody,
 	}, nil
 }
@@ -2800,11 +2842,12 @@ func (h *CompletionHandler) videoGeneration(ctx *fasthttp.RequestCtx) {
 	}
 
 	bifrostReq := &schemas.BifrostVideoGenerationRequest{
-		Provider:  schemas.ModelProvider(provider),
-		Model:     modelName,
-		Input:     req.VideoGenerationInput,
-		Params:    req.VideoGenerationParameters,
-		Fallbacks: fallbacks,
+		Provider:       schemas.ModelProvider(provider),
+		Model:          modelName,
+		Input:          req.VideoGenerationInput,
+		Params:         req.VideoGenerationParameters,
+		Fallbacks:      fallbacks,
+		ErrorFallbacks: req.ErrorFallbacks,
 	}
 
 	bifrostCtx, cancel := lib.ConvertToBifrostContext(ctx, h.config)
@@ -2898,7 +2941,7 @@ func prepareVideoEditRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*sch
 		}
 		extraParams = make(map[string]any)
 		for key, value := range form.Value {
-			if len(value) > 0 && value[0] != "" && !videoEditParamsKnownFields[key] {
+			if len(value) > 0 && value[0] != "" && !videoEditParamsKnownFields[key] && key != "error_fallbacks" {
 				extraParams[key] = value[0]
 			}
 		}
@@ -2938,11 +2981,12 @@ func prepareVideoEditRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*sch
 	req.VideoEditParameters.ExtraParams = extraParams
 
 	return &schemas.BifrostVideoEditRequest{
-		Provider:  provider,
-		Model:     modelName,
-		Input:     req.VideoEditInput,
-		Params:    req.VideoEditParameters,
-		Fallbacks: fallbacks,
+		Provider:       provider,
+		Model:          modelName,
+		Input:          req.VideoEditInput,
+		Params:         req.VideoEditParameters,
+		Fallbacks:      fallbacks,
+		ErrorFallbacks: req.ErrorFallbacks,
 	}, nil
 }
 
@@ -3015,6 +3059,11 @@ func parseVideoEditMultipartForm(req *VideoEditHTTPRequest, form *multipart.Form
 	}
 	if fallbackValues := form.Value["fallbacks"]; len(fallbackValues) > 0 {
 		req.Fallbacks = fallbackValues
+	}
+	if errorFallbacks, err := parseErrorFallbacks(form.Value["error_fallbacks"]); err != nil {
+		return err
+	} else {
+		req.ErrorFallbacks = errorFallbacks
 	}
 
 	return nil
