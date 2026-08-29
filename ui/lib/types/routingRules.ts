@@ -111,6 +111,32 @@ export interface RoutingTargetFormData {
 	weight: number;
 }
 
+export interface RoutingErrorFallbackConditionFormData {
+	categories: RoutingErrorFallbackCategory[];
+	error_codes: string[];
+	error_types: string[];
+	status_codes: number[];
+	message_contains: string[];
+}
+
+export interface RoutingErrorFallbackSupplementFormData {
+	providers: string[];
+	error_codes: string[];
+	error_types: string[];
+	status_codes: number[];
+	message_contains_any: string[];
+}
+
+export interface RoutingErrorFallbackFormData {
+	mode: "scenario" | "legacy";
+	originalLegacyRule?: RoutingErrorFallback;
+	name: string;
+	scenario: RoutingErrorFallbackCategory;
+	supplement: RoutingErrorFallbackSupplementFormData;
+	when: RoutingErrorFallbackConditionFormData;
+	fallbacks: string[];
+}
+
 export interface RoutingRuleFormData {
 	id?: string;
 	name: string;
@@ -118,6 +144,7 @@ export interface RoutingRuleFormData {
 	cel_expression: string;
 	targets: RoutingTargetFormData[];
 	fallbacks: string[];
+	error_fallbacks: RoutingErrorFallbackFormData[];
 	scope: string;
 	scope_id: string;
 	priority: number;
@@ -151,12 +178,36 @@ export const DEFAULT_ROUTING_TARGET: RoutingTargetFormData = {
 	weight: 1,
 };
 
+export function createDefaultRoutingErrorFallback(): RoutingErrorFallbackFormData {
+	return {
+		mode: "scenario",
+		name: "",
+		scenario: "content_policy",
+		supplement: {
+			providers: [],
+			error_codes: [],
+			error_types: [],
+			status_codes: [],
+			message_contains_any: [],
+		},
+		when: {
+			categories: [],
+			error_codes: [],
+			error_types: [],
+			status_codes: [],
+			message_contains: [],
+		},
+		fallbacks: [],
+	};
+}
+
 export const DEFAULT_ROUTING_RULE_FORM_DATA: RoutingRuleFormData = {
 	name: "",
 	description: "",
 	cel_expression: "",
 	targets: [DEFAULT_ROUTING_TARGET],
 	fallbacks: [],
+	error_fallbacks: [],
 	scope: RoutingRuleScope.Global,
 	scope_id: "",
 	priority: 0,

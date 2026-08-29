@@ -14,6 +14,7 @@ dist/
 build/
 out/
 *.tsbuildinfo
+*.tar
 
 # Logs
 logs/
@@ -42,6 +43,8 @@ coverage/
 # Cache directories
 .cache/
 .parcel-cache/
+.gocache/
+.tmp-go-cache*/
 
 # Documentation that's not needed for build
 docs/
