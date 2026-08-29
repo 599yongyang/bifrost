@@ -1,11 +1,11 @@
 import { Button } from "@/components/ui/button";
 import { getErrorMessage, useAppSelector, useUpdatePluginMutation } from "@/lib/store";
 import { OtelFormSchema } from "@/lib/types/schemas";
-import { toHeaderStringMap } from "@/lib/utils/secretVarForm";
 import { Activity } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { OtelFormFragment } from "../../fragments/otelFormFragment";
+import { buildOtelPluginConfig } from "../../otelConfig";
 import PluginTracingSheet from "../../sheets/pluginTracingSheet";
 
 interface OtelViewProps {
@@ -20,21 +20,12 @@ export default function OtelView({ onDelete, isDeleting }: OtelViewProps) {
 	const [isTracingSheetOpen, setIsTracingSheetOpen] = useState(false);
 
 	const handleOtelConfigSave = (config: OtelFormSchema): Promise<void> => {
-		// The backend stores headers as a plain "env.VAR"/literal string map, so flatten the
-		// SecretVar form values here. The config is sent as the { profiles: [...] } wrapper.
-		const profiles = config.profiles.map((profile) => ({
-			...profile,
-			headers: toHeaderStringMap(profile.headers),
-			trace_headers: toHeaderStringMap(profile.trace_headers),
-			metrics_headers: toHeaderStringMap(profile.metrics_headers),
-		}));
-
 		return new Promise((resolve, reject) => {
 			updatePlugin({
 				name: "otel",
 				data: {
 					enabled: config.enabled,
-					config: { profiles },
+					config: buildOtelPluginConfig(config),
 				},
 			})
 				.unwrap()

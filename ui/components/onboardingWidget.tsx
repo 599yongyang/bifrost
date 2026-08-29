@@ -310,11 +310,18 @@ export default function OnboardingWidget() {
 										!done && "hover:bg-accent",
 									)}
 								>
-									<button
-										type="button"
+									<div
+										role="button"
+										tabIndex={done ? -1 : 0}
+										aria-disabled={done}
 										data-testid={`onboarding-step-${step.id}`}
-										disabled={done}
-										onClick={() => handleStepClick(step)}
+										onClick={() => !done && handleStepClick(step)}
+										onKeyDown={(event) => {
+											if (!done && (event.key === "Enter" || event.key === " ")) {
+												event.preventDefault();
+												handleStepClick(step);
+											}
+										}}
 										className={cn("flex flex-1 items-center gap-3 text-left", done ? "cursor-default" : "cursor-pointer")}
 									>
 										<span
@@ -334,7 +341,7 @@ export default function OnboardingWidget() {
 										>
 											{step.title}
 										</span>
-									</button>
+									</div>
 									{!done && (
 										<>
 											<button

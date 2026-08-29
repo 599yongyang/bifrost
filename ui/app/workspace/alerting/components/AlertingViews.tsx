@@ -786,11 +786,7 @@ export function AlertHistoryView() {
 						<DialogDescription>{copy.deliveryDetails}</DialogDescription>
 					</DialogHeader>
 					<pre className="bg-muted max-h-80 overflow-auto rounded p-3 text-xs">
-						{JSON.stringify(
-							{ status: detail?.status, detail: safeHistoryDetail(detail?.status_detail) ? copy.detailsHidden : "", input: detail?.input },
-							null,
-							2,
-						)}
+						{JSON.stringify({ status: detail?.status, detail: safeHistoryDetail(detail?.status_detail), input: detail?.input }, null, 2)}
 					</pre>
 				</DialogContent>
 			</Dialog>

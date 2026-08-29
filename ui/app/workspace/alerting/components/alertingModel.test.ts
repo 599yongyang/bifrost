@@ -53,5 +53,9 @@ describe("alerting model", () => {
 		});
 		expect(ruleRequest({ ...base, scope_type: "provider", target_id: "" })).toMatchObject({ target_type: undefined, target_id: undefined });
 	});
-	it("never exposes raw delivery failure details", () => expect(safeHistoryDetail("https://secret.example/hook?token=abc")).toBe("hidden"));
+	it("keeps useful delivery failure details while redacting destinations and credentials", () => {
+		expect(safeHistoryDetail("webhook returned 502 for https://secret.example/hook?token=abc token=abc")).toBe(
+			"webhook returned 502 for [redacted-url] token=[redacted]",
+		);
+	});
 });

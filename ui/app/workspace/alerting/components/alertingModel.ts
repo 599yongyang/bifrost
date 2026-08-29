@@ -83,5 +83,9 @@ export function ruleRequest(form: RuleFormValue): AlertRuleRequest {
 }
 
 export function safeHistoryDetail(detail?: string) {
-	return detail ? "hidden" : "";
+	if (!detail) return "";
+	return detail
+		.replace(/https?:\/\/\S+/gi, "[redacted-url]")
+		.replace(/\b(token|api[_-]?key|secret|authorization|password)\s*[=:]\s*[^\s,;]+/gi, "$1=[redacted]")
+		.slice(0, 500);
 }

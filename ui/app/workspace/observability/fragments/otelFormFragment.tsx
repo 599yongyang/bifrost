@@ -13,9 +13,10 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { otelFormSchema, type OtelFormSchema, type SecretVar } from "@/lib/types/schemas";
 import { emptySecretVar, toSecretVarFormValue, toSecretVarMapFormValue } from "@/lib/utils/secretVarForm";
 import { selectiveExportCopy } from "@/lib/i18n/selectiveExport";
+import { normalizeSelectiveExportForForm } from "../selectiveExport";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ChevronDown, Info, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, CheckCircle2, ChevronDown, Info, Plus, Settings2, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useFieldArray, useForm, type Control, type Resolver, type UseFormReturn } from "react-hook-form";
 
@@ -116,11 +117,61 @@ const emptyProfile = (): ProfileForm => ({
 	disable_root_span_content: false,
 });
 
+const balancedSelectionRules = (): OtelFormSchema["selective_export"]["rules"] => [
+	{
+		id: "errors",
+		priority: 40,
+		request_types: [],
+		require_error: true,
+		error_categories: [],
+		providers: [],
+		models: [],
+		routing_rules: [],
+		export_rate: 1,
+		max_per_minute: 100,
+	},
+	{
+		id: "fallbacks",
+		priority: 30,
+		request_types: [],
+		require_fallback: true,
+		error_categories: [],
+		providers: [],
+		models: [],
+		routing_rules: [],
+		export_rate: 0.5,
+		max_per_minute: 100,
+	},
+	{
+		id: "slow",
+		priority: 20,
+		request_types: [],
+		min_latency_ms: 30_000,
+		error_categories: [],
+		providers: [],
+		models: [],
+		routing_rules: [],
+		export_rate: 0.3,
+		max_per_minute: 100,
+	},
+	{
+		id: "default",
+		priority: 10,
+		request_types: [],
+		error_categories: [],
+		providers: [],
+		models: [],
+		routing_rules: [],
+		export_rate: 0.01,
+		max_per_minute: 50,
+	},
+];
+
 const emptySelectiveExport = (): OtelFormSchema["selective_export"] => ({
 	enabled: false,
 	dry_run: false,
 	max_exports_per_minute: 0,
-	rules: [],
+	rules: balancedSelectionRules(),
 });
 
 // toProfileForm normalizes a stored profile into the SecretVar-based form representation.
@@ -160,7 +211,12 @@ const buildDefaults = (initial?: OtelFormFragmentProps["currentConfig"]): OtelFo
 		profiles = [];
 	}
 	if (profiles.length === 0) profiles = [emptyProfile()];
-	return { enabled: initial?.enabled ?? true, profiles, selective_export: cfg?.selective_export ?? emptySelectiveExport() };
+	const fallback = emptySelectiveExport();
+	return {
+		enabled: initial?.enabled ?? true,
+		profiles,
+		selective_export: normalizeSelectiveExportForForm(cfg?.selective_export, fallback),
+	};
 };
 
 export function OtelFormFragment({
@@ -187,7 +243,8 @@ export function OtelFormFragment({
 
 	const onSubmit = (data: OtelFormSchema) => {
 		setIsSaving(true);
-		onSave(data).finally(() => setIsSaving(false));
+		const rules = data.selective_export.rules.map((rule, index, all) => ({ ...rule, priority: (all.length - index) * 10 }));
+		onSave({ ...data, selective_export: { ...data.selective_export, rules } }).finally(() => setIsSaving(false));
 	};
 
 	const handleProfileOpenChange = (index: number, open: boolean) => {
@@ -345,6 +402,19 @@ function SelectionLabel({ children, description }: { children: string; descripti
 	);
 }
 
+function policySummary(rule: OtelFormSchema["selective_export"]["rules"][number]) {
+	const conditions: string[] = [];
+	if (rule.require_error === true) conditions.push("failed requests");
+	if (rule.require_error === false) conditions.push("successful requests");
+	if (rule.require_fallback === true) conditions.push("fallbacks");
+	if (rule.require_retry === true) conditions.push("retries");
+	if (rule.min_latency_ms !== undefined) conditions.push(`latency ≥ ${rule.min_latency_ms} ms`);
+	if (rule.error_categories.length) conditions.push(rule.error_categories.join(", "));
+	if (rule.providers.length) conditions.push(`providers: ${rule.providers.join(", ")}`);
+	const match = conditions.length ? conditions.join(" · ") : "all remaining requests";
+	return `${match} · export ${Math.round(rule.export_rate * 100)}%`;
+}
+
 function SelectiveExportSection({
 	form,
 	hasOtelAccess,
@@ -354,7 +424,7 @@ function SelectiveExportSection({
 }) {
 	const copy = selectiveExportCopy();
 	const enabled = form.watch("selective_export.enabled");
-	const { fields, append, remove } = useFieldArray({ control: form.control, name: "selective_export.rules" });
+	const { fields, append, remove, move, replace } = useFieldArray({ control: form.control, name: "selective_export.rules" });
 	const addRule = () =>
 		append({
 			id: `rule-${fields.length + 1}`,
@@ -367,6 +437,7 @@ function SelectiveExportSection({
 			export_rate: 1,
 			max_per_minute: 0,
 		});
+	const applyBalancedTemplate = () => replace(balancedSelectionRules());
 
 	return (
 		<section className="space-y-4 rounded-sm border p-4" data-testid="otel-selective-export-section">
@@ -390,6 +461,25 @@ function SelectiveExportSection({
 			</div>
 			{enabled && (
 				<>
+					<div className="bg-muted/30 flex flex-wrap items-center justify-between gap-3 rounded-sm border p-3">
+						<div className="flex items-start gap-2">
+							<CheckCircle2 className="mt-0.5 size-4 text-emerald-600" />
+							<div>
+								<p className="text-sm font-medium">Ordered export policies</p>
+								<p className="text-muted-foreground text-xs">The first matching policy wins. Keep the catch-all policy last.</p>
+							</div>
+						</div>
+						<Button
+							type="button"
+							variant="outline"
+							size="sm"
+							onClick={applyBalancedTemplate}
+							disabled={!hasOtelAccess}
+							data-testid="otel-selective-export-balanced-template"
+						>
+							<Settings2 className="size-4" /> Balanced template
+						</Button>
+					</div>
 					<div className="grid gap-4 sm:grid-cols-2">
 						<FormField
 							control={form.control}
@@ -427,150 +517,152 @@ function SelectiveExportSection({
 					</div>
 					{fields.map((field, index) => {
 						const base = `selective_export.rules.${index}` as const;
+						const rule = form.watch(base);
 						return (
-							<div key={field.id} className="space-y-4 rounded-sm border p-4" data-testid={`otel-selective-export-rule-${index}`}>
-								<div className="flex items-center justify-between">
-									<span className="font-medium">Rule {index + 1}</span>
-									<Button
-										type="button"
-										variant="ghost"
-										size="icon"
-										disabled={!hasOtelAccess}
-										onClick={() => remove(index)}
-										data-testid={`otel-selective-export-rule-${index}-remove`}
-									>
-										<Trash2 className="size-4" />
-									</Button>
+							<Collapsible key={field.id} className="rounded-sm border" data-testid={`otel-selective-export-rule-${index}`}>
+								<div className="flex items-center justify-between gap-3">
+									<div className="min-w-0 flex-1 px-4 py-3">
+										<span className="font-medium">Policy {index + 1}</span>
+										<p className="text-muted-foreground truncate text-xs">{policySummary(rule)}</p>
+									</div>
+									<div className="flex items-center gap-1 pr-2">
+										<CollapsibleTrigger asChild>
+											<Button type="button" variant="ghost" size="sm" data-testid={`otel-selective-export-rule-${index}-configure`}>
+												<Settings2 className="size-4" /> Configure <ChevronDown className="size-4" />
+											</Button>
+										</CollapsibleTrigger>
+										<Button
+											type="button"
+											variant="ghost"
+											size="icon"
+											disabled={!hasOtelAccess || index === 0}
+											onClick={() => move(index, index - 1)}
+											aria-label="Move policy up"
+										>
+											<ArrowUp className="size-4" />
+										</Button>
+										<Button
+											type="button"
+											variant="ghost"
+											size="icon"
+											disabled={!hasOtelAccess || index === fields.length - 1}
+											onClick={() => move(index, index + 1)}
+											aria-label="Move policy down"
+										>
+											<ArrowDown className="size-4" />
+										</Button>
+										<Button
+											type="button"
+											variant="ghost"
+											size="icon"
+											disabled={!hasOtelAccess}
+											onClick={() => remove(index)}
+											data-testid={`otel-selective-export-rule-${index}-remove`}
+										>
+											<Trash2 className="size-4" />
+										</Button>
+									</div>
 								</div>
-								<div className="grid gap-4 md:grid-cols-3">
-									<FormField
-										control={form.control}
-										name={`${base}.id`}
-										render={({ field }) => (
-											<FormItem>
-												<SelectionLabel description="Stable identifier used in status metadata. It has no implicit matching meaning.">
-													Rule ID
-												</SelectionLabel>
-												<Input {...field} disabled={!hasOtelAccess} data-testid={`otel-selective-export-rule-${index}-id`} />
-												<FormMessage />
-											</FormItem>
-										)}
-									/>
-									<FormField
-										control={form.control}
-										name={`${base}.priority`}
-										render={({ field }) => (
-											<FormItem>
-												<SelectionLabel description="Higher values are evaluated first; evaluation stops at the first match.">
-													Priority
-												</SelectionLabel>
-												<Input
-													type="number"
-													min={-1000}
-													max={1000}
-													value={field.value}
-													onChange={(e) => field.onChange(Number(e.target.value))}
-													disabled={!hasOtelAccess}
-												/>
-												<FormMessage />
-											</FormItem>
-										)}
-									/>
-									<FormField
-										control={form.control}
-										name={`${base}.export_rate`}
-										render={({ field }) => (
-											<FormItem>
-												<SelectionLabel description="Deterministic fraction from 0 (drop every match) to 1 (export every match).">
-													Export rate
-												</SelectionLabel>
-												<Input
-													type="number"
-													min={0}
-													max={1}
-													step={0.01}
-													value={field.value}
-													onChange={(e) => field.onChange(Number(e.target.value))}
-													disabled={!hasOtelAccess}
-												/>
-												<FormMessage />
-											</FormItem>
-										)}
-									/>
-									{(["min_latency_ms", "max_latency_ms", "min_cost", "max_per_minute"] as const).map((key) => (
+								<FormField control={form.control} name={`${base}.id`} render={({ field }) => <input type="hidden" {...field} />} />
+								<FormField control={form.control} name={`${base}.priority`} render={({ field }) => <input type="hidden" {...field} />} />
+								<CollapsibleContent className="space-y-4 border-t p-4">
+									<div className="grid gap-4 md:grid-cols-3">
 										<FormField
-											key={key}
 											control={form.control}
-											name={`${base}.${key}`}
+											name={`${base}.export_rate`}
 											render={({ field }) => (
 												<FormItem>
-													<FormLabel>{key.replaceAll("_", " ")}</FormLabel>
+													<SelectionLabel description="Deterministic fraction from 0 (drop every match) to 1 (export every match).">
+														Export rate
+													</SelectionLabel>
 													<Input
 														type="number"
 														min={0}
-														value={field.value ?? ""}
-														onChange={(e) => field.onChange(e.target.value === "" ? undefined : Number(e.target.value))}
+														max={1}
+														step={0.01}
+														value={field.value}
+														onChange={(e) => field.onChange(Number(e.target.value))}
 														disabled={!hasOtelAccess}
 													/>
 													<FormMessage />
 												</FormItem>
 											)}
 										/>
-									))}
-								</div>
-								<div className="grid gap-4 md:grid-cols-2">
-									{(["request_types", "error_categories", "providers", "models", "routing_rules"] as const).map((key) => (
-										<FormField
-											key={key}
-											control={form.control}
-											name={`${base}.${key}`}
-											render={({ field }) => (
-												<FormItem>
-													<FormLabel>{key.replaceAll("_", " ")}</FormLabel>
-													<Input
-														value={(field.value ?? []).join(", ")}
-														onChange={(e) => field.onChange(csv(e.target.value))}
-														disabled={!hasOtelAccess}
-														placeholder="Comma-separated"
-													/>
-													<FormMessage />
-												</FormItem>
-											)}
-										/>
-									))}
-								</div>
-								<div className="grid gap-4 md:grid-cols-3">
-									{(["require_error", "require_fallback", "require_retry"] as const).map((key) => (
-										<FormField
-											key={key}
-											control={form.control}
-											name={`${base}.${key}`}
-											render={({ field }) => (
-												<FormItem>
-													<FormLabel>{key.replaceAll("_", " ")}</FormLabel>
-													<Select
-														value={field.value === undefined ? "any" : String(field.value)}
-														onValueChange={(value) => field.onChange(value === "any" ? undefined : value === "true")}
-														disabled={!hasOtelAccess}
-													>
-														<FormControl>
-															<SelectTrigger>
-																<SelectValue />
-															</SelectTrigger>
-														</FormControl>
-														<SelectContent>
-															<SelectItem value="any">Any</SelectItem>
-															<SelectItem value="true">Required</SelectItem>
-															<SelectItem value="false">Exclude</SelectItem>
-														</SelectContent>
-													</Select>
-													<FormMessage />
-												</FormItem>
-											)}
-										/>
-									))}
-								</div>
-							</div>
+										{(["min_latency_ms", "max_latency_ms", "min_cost", "max_per_minute"] as const).map((key) => (
+											<FormField
+												key={key}
+												control={form.control}
+												name={`${base}.${key}`}
+												render={({ field }) => (
+													<FormItem>
+														<FormLabel>{key.replaceAll("_", " ")}</FormLabel>
+														<Input
+															type="number"
+															min={0}
+															value={field.value ?? ""}
+															onChange={(e) => field.onChange(e.target.value === "" ? undefined : Number(e.target.value))}
+															disabled={!hasOtelAccess}
+														/>
+														<FormMessage />
+													</FormItem>
+												)}
+											/>
+										))}
+									</div>
+									<div className="grid gap-4 md:grid-cols-2">
+										{(["request_types", "error_categories", "providers", "models", "routing_rules"] as const).map((key) => (
+											<FormField
+												key={key}
+												control={form.control}
+												name={`${base}.${key}`}
+												render={({ field }) => (
+													<FormItem>
+														<FormLabel>{key.replaceAll("_", " ")}</FormLabel>
+														<Input
+															value={(field.value ?? []).join(", ")}
+															onChange={(e) => field.onChange(csv(e.target.value))}
+															disabled={!hasOtelAccess}
+															placeholder="Comma-separated"
+														/>
+														<FormMessage />
+													</FormItem>
+												)}
+											/>
+										))}
+									</div>
+									<div className="grid gap-4 md:grid-cols-3">
+										{(["require_error", "require_fallback", "require_retry"] as const).map((key) => (
+											<FormField
+												key={key}
+												control={form.control}
+												name={`${base}.${key}`}
+												render={({ field }) => (
+													<FormItem>
+														<FormLabel>{key.replaceAll("_", " ")}</FormLabel>
+														<Select
+															value={field.value === undefined ? "any" : String(field.value)}
+															onValueChange={(value) => field.onChange(value === "any" ? undefined : value === "true")}
+															disabled={!hasOtelAccess}
+														>
+															<FormControl>
+																<SelectTrigger>
+																	<SelectValue />
+																</SelectTrigger>
+															</FormControl>
+															<SelectContent>
+																<SelectItem value="any">Any</SelectItem>
+																<SelectItem value="true">Required</SelectItem>
+																<SelectItem value="false">Exclude</SelectItem>
+															</SelectContent>
+														</Select>
+														<FormMessage />
+													</FormItem>
+												)}
+											/>
+										))}
+									</div>
+								</CollapsibleContent>
+							</Collapsible>
 						);
 					})}
 					<Button

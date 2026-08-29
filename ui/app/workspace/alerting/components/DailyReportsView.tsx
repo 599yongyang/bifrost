@@ -11,7 +11,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
 	getErrorMessage,
 	useDeliverDailyReportRunMutation,
-	useGenerateDailyReportMutation,
 	useGetAlertChannelsQuery,
 	useGetDailyReportHistoryQuery,
 	useGetDailyReportJobStatusQuery,
@@ -24,7 +23,7 @@ import {
 import type { DailyReportAudience, DailyReportJobStatus, DailyReportPreview, DailyReportRunDetail } from "@/lib/types/alerting";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { ChevronLeft, ChevronRight, Eye, Play, RefreshCw, Save, Send } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { alertingCopy } from "./copy";
 import {
@@ -40,6 +39,7 @@ import {
 } from "./dailyReportModel";
 
 const copy = alertingCopy();
+const DAILY_REPORT_JOB_STORAGE_KEY = "bifrost.daily-report.active-job.v1";
 const defaultForm: DailyReportSettingsForm = {
 	enabled: false,
 	timezone: "Asia/Shanghai",
@@ -51,6 +51,17 @@ const defaultForm: DailyReportSettingsForm = {
 	external_enabled: false,
 	external_channel_ids: [],
 };
+
+function restoreDailyReportJob(): DailyReportJobStatus | null {
+	if (typeof window === "undefined") return null;
+	try {
+		const parsed = JSON.parse(window.localStorage.getItem(DAILY_REPORT_JOB_STORAGE_KEY) ?? "null") as DailyReportJobStatus | null;
+		return parsed?.id && parsed.status ? parsed : null;
+	} catch {
+		window.localStorage.removeItem(DAILY_REPORT_JOB_STORAGE_KEY);
+		return null;
+	}
+}
 
 function AudienceChannels({
 	title,
@@ -140,10 +151,11 @@ export function DailyReportsView() {
 	const [businessDate, setBusinessDate] = useState("");
 	const [preview, setPreview] = useState<DailyReportPreview | null>(null);
 	const [previewPending, setPreviewPending] = useState(false);
-	const [job, setJob] = useState<DailyReportJobStatus | null>(null);
+	const [job, setJob] = useState<DailyReportJobStatus | null>(restoreDailyReportJob);
+	const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
+	const previousJobStatus = useRef(job?.status);
 	const [saveSettings, saving] = useUpdateDailyReportSettingsMutation();
 	const [requestPreview, previewing] = usePreviewDailyReportMutation();
-	const [generate] = useGenerateDailyReportMutation();
 	const [startJob] = useStartDailyReportJobMutation();
 	const { data: jobStatus } = useGetDailyReportJobStatusQuery(job?.id ? { id: job.id } : undefined, {
 		skip: !job?.id,
@@ -155,6 +167,15 @@ export function DailyReportsView() {
 	useEffect(() => {
 		if (jobStatus) setJob(jobStatus);
 	}, [jobStatus]);
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		if (job?.id) window.localStorage.setItem(DAILY_REPORT_JOB_STORAGE_KEY, JSON.stringify(job));
+		else window.localStorage.removeItem(DAILY_REPORT_JOB_STORAGE_KEY);
+	}, [job]);
+	useEffect(() => {
+		if (job?.status === "completed" && previousJobStatus.current !== "completed") setHistoryRefreshKey((value) => value + 1);
+		previousJobStatus.current = job?.status;
+	}, [job?.status]);
 	useEffect(() => {
 		if (!previewPending || jobStatus?.status !== "completed") return;
 		setPreviewPending(false);
@@ -197,9 +218,11 @@ export function DailyReportsView() {
 	const run = async (deliver: boolean) => {
 		if (!permissions.canGenerate) return;
 		try {
-			const result = deliver
-				? await startJob({ business_date: businessDate || undefined, deliver: true, settings: serializeDailyReportSettings(form) }).unwrap()
-				: await generate({ business_date: businessDate || undefined }).unwrap();
+			const result = await startJob({
+				business_date: businessDate || undefined,
+				deliver,
+				settings: serializeDailyReportSettings(form),
+			}).unwrap();
 			setJob(result);
 			setPreviewPending(false);
 			toast.success(copy.jobStarted);
@@ -334,18 +357,21 @@ export function DailyReportsView() {
 					{preview && <PreviewPanels preview={preview} />}
 				</TabsContent>
 				<TabsContent value="history">
-					<DailyReportHistory canResend={permissions.canResend} />
+					<DailyReportHistory canResend={permissions.canResend} refreshKey={historyRefreshKey} />
 				</TabsContent>
 			</Tabs>
 		</div>
 	);
 }
 
-function DailyReportHistory({ canResend }: { canResend: boolean }) {
+function DailyReportHistory({ canResend, refreshKey }: { canResend: boolean; refreshKey: number }) {
 	const [audience, setAudience] = useState<DailyReportAudience | "all">("all");
 	const [offset, setOffset] = useState(0);
 	const limit = 20;
-	const { data } = useGetDailyReportHistoryQuery({ limit, offset, audience: audience === "all" ? undefined : [audience] });
+	const { data, refetch } = useGetDailyReportHistoryQuery({ limit, offset, audience: audience === "all" ? undefined : [audience] });
+	useEffect(() => {
+		if (refreshKey > 0) void refetch();
+	}, [refreshKey, refetch]);
 	const [selectedID, setSelectedID] = useState<string | null>(null);
 	const { data: detail } = useGetDailyReportRunQuery(selectedID ?? "", { skip: !selectedID });
 	const [deliver] = useDeliverDailyReportRunMutation();
