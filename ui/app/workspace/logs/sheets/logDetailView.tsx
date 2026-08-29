@@ -62,6 +62,7 @@ import PluginLogsView from "../views/pluginLogsView";
 import SpeechView from "../views/speechView";
 import TranscriptionView from "../views/transcriptionView";
 import VideoView from "../views/videoView";
+import { getTimeoutDetails } from "../utils/timeoutDetails";
 
 // Full-precision cost for the detail view; per-request costs are often < $0.01,
 // where formatCost's 2-4 dp rounding would hide the value.
@@ -991,6 +992,7 @@ export function LogDetailView({
 	if (!log) return null;
 
 	const selectedPromptDisplayName = resolvedSelectedPromptName ?? log.selected_prompt_name ?? "";
+	const timeoutDetails = getTimeoutDetails(log.error_details);
 
 	const { data: userAgentMappingsData } = useGetUserAgentMappingsQuery();
 	const customAppIcons = useMemo(() => {
@@ -3150,48 +3152,58 @@ export function LogDetailView({
 						</CollapsibleBox>
 					)}
 
-					{(log.error_details?.error.message || log.error_details?.error.error != null) && (
+					{(log.error_details?.error.message || log.error_details?.error.error != null || timeoutDetails.length > 0) && (
 						<div className="rounded-sm border border-red-200 bg-red-50/70 p-5 dark:border-red-900 dark:bg-red-950/30">
 							<div className="flex items-center gap-2 text-red-700 dark:text-red-400">
 								<AlertCircle className="h-4 w-4 shrink-0" />
 								<span className="text-[12.5px] font-semibold">Error</span>
 								{log.error_details?.error.message ? <CopyInlineButton text={log.error_details.error.message} /> : null}
 							</div>
-								{log.error_details?.error.message ? (
-									<div className="mt-2 text-[13px] leading-relaxed break-words whitespace-pre-wrap text-red-700 dark:text-red-400">
-										{log.error_details.error.message}
-									</div>
-								) : null}
-								{log.error_details?.extra_fields?.upstream_request_id ? (
-									<div className="mt-3 grid grid-cols-[minmax(120px,auto)_1fr] gap-3 rounded-sm border border-red-200/70 bg-white/40 px-3 py-2 text-[12px] dark:border-red-900/70 dark:bg-red-950/40">
-										<span className="font-medium text-red-700 dark:text-red-400">Upstream request ID</span>
-										<span className="flex min-w-0 items-center gap-2 break-all font-mono text-red-900 dark:text-red-300">
-											{log.error_details.extra_fields.upstream_request_id}
-											<CopyInlineButton text={log.error_details.extra_fields.upstream_request_id} />
-										</span>
-									</div>
-								) : null}
-								{log.error_details?.extra_fields?.upstream_response_headers &&
-								Object.keys(log.error_details.extra_fields.upstream_response_headers).length > 0 ? (
-									<details className="group mt-3 rounded-sm border border-red-200/70 bg-white/40 dark:border-red-900/70 dark:bg-red-950/40">
-										<summary className="flex cursor-pointer items-center justify-between px-3 py-2 text-[12px] text-red-700 hover:bg-red-50/80 dark:text-red-400 dark:hover:bg-red-950/60">
-											<span className="font-medium">Upstream response info</span>
-											<ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
-										</summary>
-										<div className="grid gap-2 border-t border-red-200/70 px-3 py-2 text-[12px] dark:border-red-900/70">
-											{Object.entries(log.error_details.extra_fields.upstream_response_headers).map(([name, value]) => (
-												<div key={name} className="grid grid-cols-[minmax(120px,auto)_1fr] gap-3">
-													<span className="font-medium text-red-700 dark:text-red-400">{name}</span>
-													<span className="flex min-w-0 items-center gap-2 break-all font-mono text-red-900 dark:text-red-300">
-														{value}
-														<CopyInlineButton text={value} />
-													</span>
-												</div>
-											))}
+							{log.error_details?.error.message ? (
+								<div className="mt-2 text-[13px] leading-relaxed break-words whitespace-pre-wrap text-red-700 dark:text-red-400">
+									{log.error_details.error.message}
+								</div>
+							) : null}
+							{timeoutDetails.length > 0 ? (
+								<div className="mt-3 grid gap-2 rounded-sm border border-red-200/70 bg-white/40 px-3 py-2 text-[12px] dark:border-red-900/70 dark:bg-red-950/40">
+									{timeoutDetails.map((detail) => (
+										<div key={detail.label} className="grid grid-cols-[minmax(120px,auto)_1fr] gap-3">
+											<span className="font-medium text-red-700 dark:text-red-400">{detail.label}</span>
+											<span className="font-mono break-all text-red-900 dark:text-red-300">{detail.value}</span>
 										</div>
-									</details>
-								) : null}
-								{log.error_details?.error.error != null ? (
+									))}
+								</div>
+							) : null}
+							{log.error_details?.extra_fields?.upstream_request_id ? (
+								<div className="mt-3 grid grid-cols-[minmax(120px,auto)_1fr] gap-3 rounded-sm border border-red-200/70 bg-white/40 px-3 py-2 text-[12px] dark:border-red-900/70 dark:bg-red-950/40">
+									<span className="font-medium text-red-700 dark:text-red-400">Upstream request ID</span>
+									<span className="flex min-w-0 items-center gap-2 font-mono break-all text-red-900 dark:text-red-300">
+										{log.error_details.extra_fields.upstream_request_id}
+										<CopyInlineButton text={log.error_details.extra_fields.upstream_request_id} />
+									</span>
+								</div>
+							) : null}
+							{log.error_details?.extra_fields?.upstream_response_headers &&
+							Object.keys(log.error_details.extra_fields.upstream_response_headers).length > 0 ? (
+								<details className="group mt-3 rounded-sm border border-red-200/70 bg-white/40 dark:border-red-900/70 dark:bg-red-950/40">
+									<summary className="flex cursor-pointer items-center justify-between px-3 py-2 text-[12px] text-red-700 hover:bg-red-50/80 dark:text-red-400 dark:hover:bg-red-950/60">
+										<span className="font-medium">Upstream response info</span>
+										<ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
+									</summary>
+									<div className="grid gap-2 border-t border-red-200/70 px-3 py-2 text-[12px] dark:border-red-900/70">
+										{Object.entries(log.error_details.extra_fields.upstream_response_headers).map(([name, value]) => (
+											<div key={name} className="grid grid-cols-[minmax(120px,auto)_1fr] gap-3">
+												<span className="font-medium text-red-700 dark:text-red-400">{name}</span>
+												<span className="flex min-w-0 items-center gap-2 font-mono break-all text-red-900 dark:text-red-300">
+													{value}
+													<CopyInlineButton text={value} />
+												</span>
+											</div>
+										))}
+									</div>
+								</details>
+							) : null}
+							{log.error_details?.error.error != null ? (
 								<details className="group mt-3 rounded-sm border border-red-200/70 bg-white/40 dark:border-red-900/70 dark:bg-red-950/40">
 									<summary className="flex cursor-pointer items-center justify-between px-3 py-2 text-[12px] text-red-700 hover:bg-red-50/80 dark:text-red-400 dark:hover:bg-red-950/60">
 										<span className="font-medium">Details</span>
