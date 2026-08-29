@@ -294,6 +294,34 @@ var logstoreMigrationSteps = []migrationStep{
 	{IDs: []string{"logs_add_cost_breakdown_columns"}, run: migrationAddCostBreakdownColumns},
 	{IDs: []string{"logs_recreate_matviews_with_cost_breakdown"}, run: migrationRecreateMatViewsWithCostBreakdown},
 	{IDs: []string{"logs_add_overhead_breakdown_column"}, run: migrationAddOverheadBreakdownColumn},
+	{IDs: []string{"observability_exports_init"}, run: migrationCreateObservationExportsTable},
+}
+
+func migrationCreateObservationExportsTable(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	migrationName := "observability_exports_init"
+	opts := *migrator.DefaultOptions
+	opts.UseTransaction = true
+	m := migrator.New(db, &opts, []*migrator.Migration{{
+		ID: migrationName,
+		Migrate: func(tx *gorm.DB) error {
+			tx = tx.WithContext(ctx)
+			if tx.Migrator().HasTable(&ObservationExport{}) {
+				return nil
+			}
+			return tx.Migrator().CreateTable(&ObservationExport{})
+		},
+		Rollback: func(tx *gorm.DB) error {
+			tx = tx.WithContext(ctx)
+			if !tx.Migrator().HasTable(&ObservationExport{}) {
+				return nil
+			}
+			return tx.Migrator().DropTable(&ObservationExport{})
+		},
+	}})
+	if err := m.Migrate(); err != nil {
+		return fmt.Errorf("error while creating observability exports table: %w", err)
+	}
+	return nil
 }
 
 // areThereAnyPendingMigrations returns true if there are any pending migrations to be applied.

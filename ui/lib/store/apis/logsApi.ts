@@ -11,6 +11,7 @@ import {
 	LogStats,
 	ModelHistogramResponse,
 	ModelRankingsResponse,
+	ManualObservationExportResponse,
 	Pagination,
 	ProviderCostHistogramResponse,
 	ProviderLatencyHistogramResponse,
@@ -413,6 +414,15 @@ export const logsApi = baseApi.injectEndpoints({
 			invalidatesTags: ["Logs"],
 		}),
 
+		exportLogsToObservability: builder.mutation<ManualObservationExportResponse, { ids: string[] }>({
+			query: ({ ids }) => ({
+				url: "/logs/observability/export",
+				method: "POST",
+				body: { ids },
+			}),
+			invalidatesTags: ["Logs"],
+		}),
+
 		recalculateLogCosts: builder.mutation<RecalculateCostResponse, { filters: LogFilters; limit?: number }>({
 			query: ({ filters, limit }) => ({
 				url: "/logs/recalculate-cost",
@@ -490,6 +500,7 @@ export const {
 	useLazyGetDroppedRequestsQuery,
 	useLazyGetAvailableFilterDataQuery,
 	useDeleteLogsMutation,
+	useExportLogsToObservabilityMutation,
 	useRecalculateLogCostsMutation,
 	useGetRecalculateCostStatusQuery,
 	useCancelRecalculateCostJobMutation,

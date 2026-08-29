@@ -6,6 +6,9 @@ import { useGetPromptQuery } from "@/lib/store/apis/promptsApi";
 import type { LogEntry } from "@/lib/types/logs";
 import { useSheetNavigation } from "@/hooks/useSheetNavigation";
 import { Loader2 } from "lucide-react";
+import { CloudUpload } from "lucide-react";
+import { resolveObservabilityExport } from "../utils/observabilityExport";
+import { observabilityCopy } from "../utils/observabilityCopy";
 import { useEffect, useState } from "react";
 import { LogDetailView } from "./logDetailView";
 
@@ -20,6 +23,7 @@ interface LogDetailSheetProps {
 	canReveal?: boolean;
 	onViewSession?: (sessionId: string, logId: string) => void;
 	onFilterByParentRequestId?: (parentRequestId: string) => void;
+	onManualExport?: (log: LogEntry) => void;
 }
 
 export function LogDetailSheet({
@@ -33,6 +37,7 @@ export function LogDetailSheet({
 	canReveal = false,
 	onViewSession,
 	onFilterByParentRequestId,
+	onManualExport,
 }: LogDetailSheetProps) {
 	const [pollingInterval, setPollingInterval] = useState(0);
 	const {
@@ -70,6 +75,7 @@ export function LogDetailSheet({
 	// Show a loader only on the initial fetch, not during background polling refetches.
 	const displayLog: LogEntry = isFullDataReady && fullLog ? fullLog : log;
 	const resolvedSelectedPromptName = selectedPromptData?.prompt?.name ?? displayLog.selected_prompt_name ?? "";
+	const exportState = resolveObservabilityExport(displayLog);
 
 	return (
 		<Sheet open={open} onOpenChange={onOpenChange}>
@@ -89,6 +95,16 @@ export function LogDetailSheet({
 						onFilterByParentRequestId={onFilterByParentRequestId}
 						headerAction={
 							<>
+								{exportState.canManualExport && onManualExport ? (
+									<Button
+										variant="outline"
+										size="sm"
+										data-testid="log-detail-observability-export-btn"
+										onClick={() => onManualExport(displayLog)}
+									>
+										<CloudUpload className="size-4" /> {observabilityCopy().export}
+									</Button>
+								) : null}
 								{displayLog.parent_request_id && onViewSession ? (
 									<Button
 										variant="outline"

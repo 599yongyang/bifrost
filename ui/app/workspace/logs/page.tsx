@@ -9,10 +9,12 @@ import { LogsFilterSidebar } from "@/components/filters/logsFilterSidebar";
 import { useColumnConfig } from "@/components/table";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
 	getErrorMessage,
 	useDeleteLogsMutation,
+	useExportLogsToObservabilityMutation,
 	useGetAvailableFilterDataQuery,
 	useGetLogsHistogramQuery,
 	useGetLogsQuery,
@@ -22,11 +24,14 @@ import {
 import { useLazyGetLogByIdQuery, useLazyGetLogsQuery } from "@/lib/store/apis/logsApi";
 import type { DisplayLogEntry, LogEntry, LogFilters, Pagination } from "@/lib/types/logs";
 import { dateUtils } from "@/lib/types/logs";
+import { resolveObservabilityExport, summarizeManualExportResults } from "./utils/observabilityExport";
+import { observabilityCopy } from "./utils/observabilityCopy";
 import { COMPACT_NUMBER_FORMAT } from "@/lib/utils/numbers";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import NumberFlow from "@number-flow/react";
 import { useLocation } from "@tanstack/react-router";
-import { AlertCircle, BarChart, CheckCircle, Clock, DollarSign, Hash, Info } from "lucide-react";
+import { AlertCircle, BarChart, CheckCircle, Clock, CloudUpload, DollarSign, Hash, Info } from "lucide-react";
+import { toast } from "sonner";
 import { parseAsSafeArrayOf, parseAsSafeString } from "@/lib/queryParamsParser";
 import { parseAsBoolean, parseAsInteger, parseAsString, useQueryStates } from "nuqs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -44,6 +49,7 @@ export default function LogsPage() {
 	const hasRevealAccess = useRbac(RbacResource.Logs, RbacOperation.Reveal);
 
 	const [deleteLogs] = useDeleteLogsMutation();
+	const [exportLogsToObservability, { isLoading: isExportingObservability }] = useExportLogsToObservabilityMutation();
 	// Lazy query kept only for handleLogNavigate (fetches adjacent pages on demand)
 	const [triggerGetLogs] = useLazyGetLogsQuery();
 
@@ -148,20 +154,20 @@ export default function LogsPage() {
 			cache_hit_types: urlState.cache_hit_types,
 			metadata_filters: urlState.metadata_filters
 				? (() => {
-					try {
-						return JSON.parse(urlState.metadata_filters);
-					} catch {
-						return undefined;
-					}
-				})()
+						try {
+							return JSON.parse(urlState.metadata_filters);
+						} catch {
+							return undefined;
+						}
+					})()
 				: undefined,
 			// Use a period if present
 			...(urlState.period
 				? { period: urlState.period }
 				: {
-					start_time: dateUtils.toISOString(urlState.start_time),
-					end_time: dateUtils.toISOString(urlState.end_time),
-				}),
+						start_time: dateUtils.toISOString(urlState.start_time),
+						end_time: dateUtils.toISOString(urlState.end_time),
+					}),
 		}),
 		// Only re-derive filters when filter-related URL params change (not pagination)
 		[
@@ -446,6 +452,33 @@ export default function LogsPage() {
 		[deleteLogs, urlState.selected_log, setUrlState, refetchLogs, refetchStats, refetchHistogram],
 	);
 
+	const handleManualExport = useCallback(
+		async (items: LogEntry[]) => {
+			const ids = items.filter((item) => resolveObservabilityExport(item).canManualExport).map((item) => item.id);
+			if (ids.length === 0) return;
+			try {
+				let accepted = 0;
+				let issues = 0;
+				for (let index = 0; index < ids.length; index += 50) {
+					const response = await exportLogsToObservability({ ids: ids.slice(index, index + 50) }).unwrap();
+					const summary = summarizeManualExportResults(response);
+					accepted += summary.pending + summary.exported;
+					issues += summary.failed + summary.unavailable;
+				}
+				const copy = observabilityCopy();
+				if (issues) {
+					toast.warning(copy.issues(accepted, issues));
+				} else {
+					toast.success(ids.length === 1 ? copy.queued : copy.queuedMany(ids.length));
+				}
+				refetchLogs();
+			} catch (err) {
+				toast.error(getErrorMessage(err));
+			}
+		},
+		[exportLogsToObservability, refetchLogs],
+	);
+
 	const handlePollToggle = useCallback(
 		(enabled: boolean) => {
 			setUrlState({ polling: enabled });
@@ -568,8 +601,8 @@ export default function LogsPage() {
 	}, [userAgentMappingsData?.mappings]);
 
 	const columns = useMemo(
-		() => createColumns(handleDelete, hasDeleteAccess, metadataKeys, customAppIcons, grouped),
-		[customAppIcons, handleDelete, hasDeleteAccess, metadataKeys, grouped],
+		() => createColumns(handleDelete, hasDeleteAccess, metadataKeys, customAppIcons, grouped, (log) => handleManualExport([log])),
+		[customAppIcons, handleDelete, handleManualExport, hasDeleteAccess, metadataKeys, grouped],
 	);
 
 	const columnIds = useMemo(
@@ -595,6 +628,7 @@ export default function LogsPage() {
 			customer: "Customer",
 			user: "User",
 			business_unit: "Business Unit",
+			observability_export: "Observability",
 		}),
 		[],
 	);
@@ -626,6 +660,7 @@ export default function LogsPage() {
 
 	// Navigation for log detail sheet
 	const logs = logsData?.logs ?? [];
+	const exportablePageLogs = useMemo(() => logs.filter((log) => resolveObservabilityExport(log).canManualExport), [logs]);
 	const totalItems = logsData?.stats?.total_requests ?? 0;
 
 	// Grouped view: splice loaded children in below their expanded root. Children
@@ -845,6 +880,20 @@ export default function LogsPage() {
 							</Alert>
 						)}
 
+						{exportablePageLogs.length > 1 && (
+							<div className="flex shrink-0 justify-end">
+								<Button
+									type="button"
+									variant="outline"
+									size="sm"
+									disabled={isExportingObservability}
+									onClick={() => handleManualExport(exportablePageLogs)}
+									data-testid="logs-observability-export-page-btn"
+								>
+									<CloudUpload className="size-4" /> {observabilityCopy().exportPage} ({exportablePageLogs.length})
+								</Button>
+							</div>
+						)}
 						<div className="min-h-0 flex-1">
 							<LogsDataTable
 								columns={columns}
@@ -879,6 +928,7 @@ export default function LogsPage() {
 						open={selectedLog !== null}
 						onOpenChange={(open) => !open && setUrlState({ selected_log: "" })}
 						handleDelete={hasDeleteAccess ? handleDelete : undefined}
+						onManualExport={(log) => handleManualExport([log])}
 						canReveal={hasRevealAccess}
 						onNavigate={handleLogNavigate}
 						hasPrev={selectedLogIndex > 0 || (selectedLogIndex !== -1 && pagination.offset > 0)}

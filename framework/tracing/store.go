@@ -24,8 +24,9 @@ type DeferredSpanInfo struct {
 
 // TraceStore manages traces with thread-safe access and object pooling
 type TraceStore struct {
-	traces        sync.Map  // map[traceID]*schemas.Trace - thread-safe concurrent access
-	deferredSpans sync.Map  // map[traceID]*DeferredSpanInfo - deferred spans for streaming requests
+	traces        sync.Map // map[traceID]*schemas.Trace - thread-safe concurrent access
+	deferredSpans sync.Map // map[traceID]*DeferredSpanInfo - deferred spans for streaming requests
+	mediaStore    *traceMediaStore
 	tracePool     sync.Pool // Reuse Trace objects to reduce allocations
 	spanPool      sync.Pool // Reuse Span objects to reduce allocations
 	logger        schemas.Logger
@@ -40,8 +41,9 @@ type TraceStore struct {
 // NewTraceStore creates a new TraceStore with the given TTL for cleanup
 func NewTraceStore(ttl time.Duration, logger schemas.Logger) *TraceStore {
 	store := &TraceStore{
-		ttl:    ttl,
-		logger: logger,
+		ttl:        ttl,
+		logger:     logger,
+		mediaStore: newTraceMediaStore(),
 		tracePool: sync.Pool{
 			New: func() any {
 				return &schemas.Trace{
@@ -93,6 +95,7 @@ func (s *TraceStore) CreateTrace(inheritedTraceID string, requestID ...string) s
 	// Parent-child relationships are between spans, not traces.
 	// The root span's ParentID is set in StartSpan from context.
 	trace.ParentID = ""
+	trace.SetMediaStore(s.mediaStore, trace.InternalID)
 	if len(requestID) > 0 {
 		trace.RequestID = requestID[0]
 	}
@@ -264,6 +267,7 @@ func (s *TraceStore) ReleaseTrace(trace *schemas.Trace) {
 	if trace == nil {
 		return
 	}
+	s.mediaStore.Delete(trace.InternalID)
 
 	// Return all spans to the pool
 	for _, span := range trace.Spans {

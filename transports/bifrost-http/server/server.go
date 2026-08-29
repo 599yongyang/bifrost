@@ -1317,6 +1317,9 @@ func (s *BifrostHTTPServer) UpdateMCPToolManagerConfig(ctx context.Context, maxA
 
 // reloadObservabilityPlugins reloads all observability plugins in the tracing middleware
 func (s *BifrostHTTPServer) reloadObservabilityPlugins() {
+	if s == nil || s.TracingMiddleware == nil {
+		return
+	}
 	observabilityPlugins := s.CollectObservabilityPlugins()
 	// Always update the tracing middleware, even with empty slice, to clear stale plugins
 	s.TracingMiddleware.SetObservabilityPlugins(observabilityPlugins, s.CollectObservabilityLimits())
@@ -1966,10 +1969,27 @@ func (s *BifrostHTTPServer) SyncLoadedPlugin(ctx context.Context, name string, p
 	if pluginName == logging.PluginName || pluginName == s.getGovernancePluginName() {
 		s.WireBatchAccountingSweeper()
 	}
+	s.wireObservationExportStore()
 	// 5. Update plugin status
 	s.Config.UpdatePluginOverallStatus(pluginName, name, schemas.PluginStatusActive,
 		[]string{fmt.Sprintf("plugin %s reloaded successfully", name)}, InferPluginTypes(plugin))
 	return nil
+}
+
+func (s *BifrostHTTPServer) wireObservationExportStore() {
+	if s == nil || s.Config == nil {
+		return
+	}
+	loggerPlugin, _ := lib.FindPluginAs[*logging.LoggerPlugin](s.Config, logging.PluginName)
+	otelPlugin, _ := lib.FindPluginAs[*otel.OtelPlugin](s.Config, otel.PluginName)
+	if otelPlugin == nil {
+		return
+	}
+	if loggerPlugin == nil {
+		otelPlugin.SetObservationExportStore(nil)
+		return
+	}
+	otelPlugin.SetObservationExportStore(loggerPlugin.GetPluginLogManager())
 }
 
 type circuitBreakerKeyFilter interface {
@@ -2062,6 +2082,7 @@ func (s *BifrostHTTPServer) RemovePlugin(ctx context.Context, displayName string
 		// Plugin is being permanently deleted: remove its config marshaller too.
 		s.Config.RemoveConfigMarshaller(name)
 	}
+	s.wireObservationExportStore()
 
 	return nil
 }
@@ -2131,6 +2152,14 @@ func (s *BifrostHTTPServer) RegisterAPIRoutes(ctx context.Context, callbacks Ser
 	var govLogManager logging.LogManager
 	if loggerPlugin != nil {
 		loggingHandler = handlers.NewLoggingHandler(loggerPlugin.GetPluginLogManager(), s, s.Config)
+		s.wireObservationExportStore()
+		loggingHandler.SetManualObservationExporterProvider(func() handlers.ManualObservationExporter {
+			plugin, err := lib.FindPluginAs[*otel.OtelPlugin](s.Config, otel.PluginName)
+			if err != nil {
+				return nil
+			}
+			return plugin
+		})
 		if resolverProvider, ok := callbacks.(LogRedactionMappingResolverProvider); ok {
 			loggingHandler.SetLogRedactionMappingResolver(resolverProvider.GetLogRedactionMappingResolver())
 		}
@@ -2515,6 +2544,7 @@ func (s *BifrostHTTPServer) Bootstrap(ctx context.Context) error {
 	if err := s.LoadPlugins(ctx); err != nil {
 		return fmt.Errorf("failed to instantiate plugins: %v", err)
 	}
+	s.wireObservationExportStore()
 
 	// Initialize the webhook delivery dispatcher (requires both stores; the
 	// in-memory endpoint store on Config serves endpoint lookups).

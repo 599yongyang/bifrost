@@ -78,6 +78,50 @@ type RDBLogStore struct {
 	matViewHealLastAttempt atomic.Int64 // unix nanos of the last repair attempt
 }
 
+func (s *RDBLogStore) UpsertObservationExport(ctx context.Context, state *ObservationExport) error {
+	if state == nil || state.LogID == "" || state.TargetID == "" {
+		return fmt.Errorf("observation export state requires log_id and target_id")
+	}
+	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "log_id"}, {Name: "target_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"status", "source", "reason", "selection_rule", "external_trace_id", "attempts", "exported_at", "updated_at"}),
+		Where:     clause.Where{Exprs: []clause.Expression{clause.Expr{SQL: "excluded.updated_at >= observability_exports.updated_at"}}},
+	}).Create(state).Error
+}
+
+func (s *RDBLogStore) BatchUpsertObservationExports(ctx context.Context, states []ObservationExport) error {
+	if len(states) == 0 {
+		return nil
+	}
+	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "log_id"}, {Name: "target_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"status", "source", "reason", "selection_rule", "external_trace_id", "attempts", "exported_at", "updated_at"}),
+		Where:     clause.Where{Exprs: []clause.Expression{clause.Expr{SQL: "excluded.updated_at >= observability_exports.updated_at"}}},
+	}).CreateInBatches(states, 100).Error
+}
+
+func (s *RDBLogStore) GetObservationExports(ctx context.Context, logIDs []string) ([]ObservationExport, error) {
+	if len(logIDs) == 0 {
+		return []ObservationExport{}, nil
+	}
+	var states []ObservationExport
+	if err := s.db.WithContext(ctx).Where("log_id IN ?", logIDs).Find(&states).Error; err != nil {
+		return nil, err
+	}
+	return states, nil
+}
+
+func (s *RDBLogStore) FindLogIDForAccess(ctx context.Context, id string) error {
+	var entry Log
+	if err := s.ScopedDB(ctx).Select("id").Where("id = ?", id).First(&entry).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrNotFound
+		}
+		return err
+	}
+	return nil
+}
+
 // generateBucketTimestamps generates all bucket timestamps for a time range.
 // It aligns the start time to bucket boundaries and generates timestamps up to (but not exceeding) the end time.
 func generateBucketTimestamps(startTime, endTime *time.Time, bucketSizeSeconds int64) []int64 {
@@ -4483,12 +4527,16 @@ func (s *RDBLogStore) DeleteLogsBatch(ctx context.Context, cutoff time.Time, bat
 		return 0, nil
 	}
 
-	// Delete the selected IDs
-	result := s.db.WithContext(ctx).Where("id IN ?", ids).Delete(&Log{})
-	if result.Error != nil {
-		return 0, result.Error
-	}
-	return result.RowsAffected, nil
+	var deleted int64
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("log_id IN ?", ids).Delete(&ObservationExport{}).Error; err != nil {
+			return err
+		}
+		result := tx.Where("id IN ?", ids).Delete(&Log{})
+		deleted = result.RowsAffected
+		return result.Error
+	})
+	return deleted, err
 }
 
 // Close closes the log store.
@@ -4502,10 +4550,12 @@ func (s *RDBLogStore) Close(ctx context.Context) error {
 
 // DeleteLog deletes a log entry from the database by its ID.
 func (s *RDBLogStore) DeleteLog(ctx context.Context, id string) error {
-	if err := s.db.WithContext(ctx).Where("id = ?", id).Delete(&Log{}).Error; err != nil {
-		return err
-	}
-	return nil
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("log_id = ?", id).Delete(&ObservationExport{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("id = ?", id).Delete(&Log{}).Error
+	})
 }
 
 // DeleteLogs deletes multiple log entries from the database by their IDs.
@@ -4513,10 +4563,12 @@ func (s *RDBLogStore) DeleteLogs(ctx context.Context, ids []string) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	if err := s.db.WithContext(ctx).Where("id IN ?", ids).Delete(&Log{}).Error; err != nil {
-		return err
-	}
-	return nil
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("log_id IN ?", ids).Delete(&ObservationExport{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("id IN ?", ids).Delete(&Log{}).Error
+	})
 }
 
 // ============================================================================

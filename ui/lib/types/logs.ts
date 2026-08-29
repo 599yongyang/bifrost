@@ -720,6 +720,31 @@ export interface LogEntry {
 	child_count?: number;
 	children_cost?: number;
 	children_tokens?: number;
+	observability_exports?: ObservationExportStatus[];
+	observability_export_configured: boolean;
+	observability_manual_export_configured: boolean;
+}
+
+export interface ObservationExportStatus {
+	log_id: string;
+	target_id: string;
+	status: "pending" | "exported" | "not_exported" | "failed" | "unavailable";
+	source: "automatic" | "manual";
+	reason?: string;
+	selection_rule?: string;
+	external_trace_id?: string;
+	attempts: number;
+	exported_at?: string;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface ManualObservationExportResponse {
+	results: Array<{
+		id: string;
+		status: ObservationExportStatus["status"];
+		reason?: string;
+	}>;
 }
 
 // A log row as rendered by the logs table. __chainChild marks rows injected

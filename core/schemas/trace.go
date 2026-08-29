@@ -21,8 +21,135 @@ type Trace struct {
 	Attributes            map[string]any    // Additional attributes for the trace
 	RequestHeaders        map[string]string // Lowercased request headers, populated only when a connector opts in
 	PluginLogs            []PluginLogEntry  // Plugin log entries accumulated during request processing
+	mediaStore            TraceMediaStore   // Bounded binary sidecar manager; never serialized into attrs/context
+	mediaStoreKey         string
 	redactionReplacements RedactionMapsByPhase
 	mu                    sync.Mutex // Mutex for thread-safe span operations
+}
+
+// TraceMedia is an immutable, bounded attachment associated with one span.
+// Data stays outside span attributes so exporters cannot accidentally serialize it.
+type TraceMedia struct {
+	ID       string
+	SpanID   string
+	Field    string
+	Role     string
+	Index    int
+	MIMEType string
+	Bytes    int
+	SHA256   string
+	Data     []byte `json:"-"`
+}
+
+// TraceMediaStore owns request-sized media outside Trace. Implementations must
+// bound retained bytes and defensively copy Store input.
+type TraceMediaStore interface {
+	Store(key string, media TraceMedia) bool
+	List(key string) []TraceMedia
+	Delete(key string)
+}
+
+type traceMediaDecodeLimiter interface {
+	TryAcquireDecode() (release func(), ok bool)
+}
+
+type traceMediaOwnedStore interface {
+	StoreOwned(key string, media TraceMedia) bool
+}
+
+type traceMediaStatusStore interface {
+	StoreWithStatus(key string, media TraceMedia, transferOwnership bool) string
+}
+
+const (
+	TraceMediaCaptureStatusCaptured        = "captured"
+	TraceMediaCaptureStatusAttachmentLimit = "attachment_limit"
+	TraceMediaCaptureStatusTraceByteLimit  = "trace_byte_limit"
+	TraceMediaCaptureStatusGlobalByteLimit = "global_byte_limit"
+)
+
+func (t *Trace) SetMediaStore(store TraceMediaStore, key string) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	t.mediaStore, t.mediaStoreKey = store, key
+	t.mu.Unlock()
+}
+
+func (t *Trace) AddMedia(media TraceMedia) bool {
+	return t.AddMediaWithStatus(media) == TraceMediaCaptureStatusCaptured
+}
+
+func (t *Trace) AddMediaWithStatus(media TraceMedia) string {
+	return t.storeMedia(media, false)
+}
+
+func (t *Trace) AddOwnedMedia(media TraceMedia) bool {
+	return t.AddOwnedMediaWithStatus(media) == TraceMediaCaptureStatusCaptured
+}
+
+func (t *Trace) AddOwnedMediaWithStatus(media TraceMedia) string {
+	return t.storeMedia(media, true)
+}
+
+func (t *Trace) storeMedia(media TraceMedia, owned bool) string {
+	if t == nil || media.ID == "" || len(media.Data) == 0 {
+		return TraceMediaCaptureStatusTraceByteLimit
+	}
+	t.mu.Lock()
+	store, key := t.mediaStore, t.mediaStoreKey
+	t.mu.Unlock()
+	if statusStore, ok := store.(traceMediaStatusStore); ok && key != "" {
+		return statusStore.StoreWithStatus(key, media, owned)
+	}
+	if owned {
+		if ownedStore, ok := store.(traceMediaOwnedStore); ok && key != "" {
+			if ownedStore.StoreOwned(key, media) {
+				return TraceMediaCaptureStatusCaptured
+			}
+			return TraceMediaCaptureStatusTraceByteLimit
+		}
+	}
+	if store != nil && key != "" && store.Store(key, media) {
+		return TraceMediaCaptureStatusCaptured
+	}
+	return TraceMediaCaptureStatusTraceByteLimit
+}
+
+func (t *Trace) MediaAttachments() []TraceMedia {
+	if t == nil {
+		return nil
+	}
+	t.mu.Lock()
+	store, key := t.mediaStore, t.mediaStoreKey
+	t.mu.Unlock()
+	if store == nil || key == "" {
+		return nil
+	}
+	return store.List(key)
+}
+
+func (t *Trace) FindMediaRef(field, role string, index int, digest string) (string, bool) {
+	for _, media := range t.MediaAttachments() {
+		if media.Field == field && media.Role == role && media.Index == index && media.SHA256 == digest {
+			return "bifrost-media://" + media.ID, true
+		}
+	}
+	return "", false
+}
+
+func (t *Trace) TryAcquireMediaDecode() (func(), bool) {
+	if t == nil {
+		return func() {}, true
+	}
+	t.mu.Lock()
+	store := t.mediaStore
+	t.mu.Unlock()
+	if limiter, ok := store.(traceMediaDecodeLimiter); ok {
+		return limiter.TryAcquireDecode()
+	}
+	return func() {}, true
 }
 
 // Trace-level attribute keys. Unlike span attributes, trace attributes are never
@@ -179,6 +306,8 @@ func (t *Trace) SnapshotForExport() *Trace {
 		Attributes:     maps.Clone(t.Attributes),
 		RequestHeaders: maps.Clone(t.RequestHeaders),
 		PluginLogs:     append([]PluginLogEntry(nil), t.PluginLogs...),
+		mediaStore:     t.mediaStore,
+		mediaStoreKey:  t.mediaStoreKey,
 	}
 	spans := append([]*Span(nil), t.Spans...)
 	rootSpan := t.RootSpan
@@ -374,6 +503,8 @@ func (t *Trace) Reset() {
 		t.PluginLogs[i] = PluginLogEntry{}
 	}
 	t.PluginLogs = t.PluginLogs[:0]
+	t.mediaStore = nil
+	t.mediaStoreKey = ""
 }
 
 // AppendPluginLogs appends plugin log entries to the trace in a thread-safe manner.
@@ -413,12 +544,12 @@ func traceRedactionReplacementsForAttribute(key string, inputReplacements map[st
 // traceContentAttributeScopeForKey classifies content attributes by request/response phase.
 func traceContentAttributeScopeForKey(key string) traceContentAttributeScope {
 	switch key {
-	case AttrInputMessages, AttrInputText, AttrInputSpeech, AttrInputEmbedding,
+	case AttrInputMessages, AttrInputText, AttrInputSpeech, AttrInputEmbedding, AttrBifrostImageInput,
 		AttrPrompt, AttrInstructions,
 		AttrTools, AttrToolChoiceType, AttrToolChoiceName,
 		AttrRespTools, AttrRespToolChoiceType, AttrRespToolChoiceName:
 		return traceContentAttributeScopeInput
-	case AttrOutputMessages, AttrRespReasoningText:
+	case AttrOutputMessages, AttrRespReasoningText, AttrBifrostImageOutput:
 		return traceContentAttributeScopeOutput
 	case AttrToolName, AttrToolCallID, AttrToolCallArguments, AttrToolCallResult, AttrToolType:
 		return traceContentAttributeScopeMixed
@@ -946,6 +1077,8 @@ const (
 	AttrBifrostWorkerHandoffMs = "bifrost.worker.handoff_ms"
 
 	AttrBifrostProviderName             = "bifrost.provider.name"
+	AttrBifrostImageInput               = "bifrost.image.input"
+	AttrBifrostImageOutput              = "bifrost.image.output"
 	AttrBifrostRequestID                = "bifrost.request.id"
 	AttrBifrostVirtualKeyID             = "bifrost.virtual_key.id"
 	AttrBifrostVirtualKeyName           = "bifrost.virtual_key.name"
