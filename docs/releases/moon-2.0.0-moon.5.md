@@ -2,7 +2,8 @@
 
 Generated: 2026-08-29 (Asia/Shanghai)
 
-Status: production migration candidate. This revision closes the remaining code-level v1→v2
+Status: superseded by `2.0.0-moon.6`; do not deploy. The moon.5 OTEL policy UI was an approximate
+rewrite rather than the final v1 component. This revision otherwise closes the remaining code-level v1→v2
 parity gaps found in the production-readiness audit. Production data backup, a cloned-data migration
 rehearsal, live-provider canary traffic, and rollback timing remain deployment gates.
 
