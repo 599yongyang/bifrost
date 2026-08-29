@@ -11,6 +11,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { MCPLibraryDeleteDialog } from "./mcpLibraryDeleteDialog";
 import { authLabel, MCP_ICON_FALLBACK, transportIcon, transportLabel } from "./mcpLibraryServerCard";
+import i18n from "@/lib/i18n";
 
 interface MCPLibraryServersTableProps {
 	servers: MCPLibraryEntry[];
@@ -46,10 +47,10 @@ export function MCPLibraryServersTable({
 			<Table className="min-w-[32rem] md:min-w-0" containerClassName="overflow-x-auto md:overflow-x-clip">
 				<TableHeader className="bg-muted sticky top-0 z-10">
 					<TableRow>
-						<TableHead className="w-16">Icon</TableHead>
-						<TableHead>Server</TableHead>
-						<TableHead className="hidden w-10 lg:table-cell">Details</TableHead>
-						<TableHead className="w-32 text-right">Actions</TableHead>
+						<TableHead className="w-16">{i18n.t("workspace.mcpLibrary.icon")}</TableHead>
+						<TableHead>{i18n.t("workspace.mcpLogs.server")}</TableHead>
+						<TableHead className="hidden w-10 lg:table-cell">{i18n.t("workspace.logs.detail.details")}</TableHead>
+						<TableHead className="w-32 text-right">{i18n.t("workspace.routingRules.actions")}</TableHead>
 					</TableRow>
 				</TableHeader>
 				<TableBody>
@@ -81,10 +82,10 @@ export function MCPLibraryServersTable({
 											{isInstalled && (
 												<Badge variant="success" className="gap-1">
 													<Check className="size-3" />
-													Installed
+													{i18n.t("supplemental.installed")}
 												</Badge>
 											)}
-											{server.source === "custom" && <Badge variant="outline">Custom</Badge>}
+											{server.source === "custom" && <Badge variant="outline">{i18n.t("supplemental.custom")}</Badge>}
 										</div>
 										<p className="text-muted-foreground line-clamp-1 max-w-4xl text-sm leading-5">
 											{server.description || "No description available."}
@@ -117,7 +118,7 @@ export function MCPLibraryServersTable({
 															<Trash2 className="h-4 w-4" />
 														</Button>
 													</TooltipTrigger>
-													<TooltipContent>Remove from library</TooltipContent>
+													<TooltipContent>{i18n.t("supplemental.removeLibrary")}</TooltipContent>
 												</Tooltip>
 											</div>
 										)}
@@ -136,7 +137,7 @@ export function MCPLibraryServersTable({
 														</a>
 													</Button>
 												</TooltipTrigger>
-												<TooltipContent>Documentation</TooltipContent>
+												<TooltipContent>{i18n.t("supplemental.documentation")}</TooltipContent>
 											</Tooltip>
 										)}
 										{isInstalled ? (
@@ -148,7 +149,7 @@ export function MCPLibraryServersTable({
 														</Link>
 													</Button>
 												</TooltipTrigger>
-												<TooltipContent>Open installed server</TooltipContent>
+												<TooltipContent>{i18n.t("workspace.mcpLibrary.openInstalledServer")}</TooltipContent>
 											</Tooltip>
 										) : (
 											<Tooltip>
@@ -163,7 +164,7 @@ export function MCPLibraryServersTable({
 														<Download className="h-4 w-4" />
 													</Button>
 												</TooltipTrigger>
-												<TooltipContent>Install</TooltipContent>
+												<TooltipContent>{i18n.t("supplemental.install")}</TooltipContent>
 											</Tooltip>
 										)}
 									</div>
@@ -193,10 +194,10 @@ export function MCPLibraryServersTableSkeleton({ rows = 8 }: { rows?: number }) 
 			<Table className="min-w-[32rem] md:min-w-0" containerClassName="overflow-x-auto md:overflow-x-clip">
 				<TableHeader className="bg-muted sticky top-0 z-10">
 					<TableRow>
-						<TableHead className="w-16">Icon</TableHead>
-						<TableHead>Server</TableHead>
-						<TableHead className="hidden w-10 lg:table-cell">Details</TableHead>
-						<TableHead className="w-32 text-right">Actions</TableHead>
+						<TableHead className="w-16">{i18n.t("workspace.mcpLibrary.icon")}</TableHead>
+						<TableHead>{i18n.t("workspace.mcpLogs.server")}</TableHead>
+						<TableHead className="hidden w-10 lg:table-cell">{i18n.t("workspace.logs.detail.details")}</TableHead>
+						<TableHead className="w-32 text-right">{i18n.t("workspace.routingRules.actions")}</TableHead>
 					</TableRow>
 				</TableHeader>
 				<TableBody>

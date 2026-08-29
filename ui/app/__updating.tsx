@@ -1,3 +1,4 @@
+import i18n from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { getCachedBrandingAssets } from "@/lib/hooks/useBranding";
 import { getEndpointUrl } from "@/lib/utils/port";
@@ -19,8 +20,10 @@ export function UpdatingBanner() {
 					<span className="bg-primary relative size-2 rounded-full" aria-hidden="true" />
 				</div>
 				<div className="min-w-0 flex-1">
-					<p className="text-foreground text-sm font-medium">Bifrost is upgrading</p>
-					<p className="text-muted-foreground truncate text-xs">You can keep working and reload when the upgrade is complete.</p>
+					<p className="text-foreground text-sm font-medium">{i18n.t("systemCopy.__updating_bifrost_is_upgrading")}</p>
+					<p className="text-muted-foreground truncate text-xs">
+						{i18n.t("systemCopy.__updating_you_can_keep_working_and_reload_when_the_upgrade_is_comp")}
+					</p>
 				</div>
 				<Button
 					variant="outline"
@@ -30,7 +33,7 @@ export function UpdatingBanner() {
 					onClick={() => window.location.reload()}
 				>
 					<RefreshCw aria-hidden="true" />
-					<span className="hidden sm:inline">Reload</span>
+					<span className="hidden sm:inline">{i18n.t("systemCopy.__updating_reload")}</span>
 				</Button>
 			</div>
 		</div>
@@ -88,12 +91,12 @@ export function UpdatingScreen() {
 						<Sparkles className="size-5" aria-hidden="true" />
 					</div>
 					<h1 id="updating-title" className="text-foreground mt-5 text-2xl font-semibold tracking-tight">
-						Bifrost is upgrading
+						{i18n.t("systemCopy.__updating_bifrost_is_upgrading_2")}
 					</h1>
 					<p id="updating-description" className="text-muted-foreground mt-2 max-w-md text-sm leading-6">
 						{autoReloadExhausted
-							? "Bifrost is still upgrading. If this is taking longer than expected, reach out to your administrator for more information."
-							: "A new version of Bifrost is being rolled out. Keep this page open and it will reload automatically when the upgrade is complete."}
+							? i18n.t("systemCopy.__updating_bifrost_is_still_upgrading_if_this_is_taking_longer_than")
+							: i18n.t("systemCopy.__updating_a_new_version_of_bifrost_is_being_rolled_out_keep_this_p")}
 					</p>
 
 					<div className="bg-muted mt-7 h-1.5 overflow-hidden rounded-full" aria-hidden="true">
@@ -107,11 +110,11 @@ export function UpdatingScreen() {
 					<div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 						<div className="text-muted-foreground flex items-center gap-2 text-xs">
 							{autoReloadExhausted ? (
-								<span>Automatic reload paused</span>
+								<span>{i18n.t("systemCopy.__updating_automatic_reload_paused")}</span>
 							) : (
 								<>
 									<Loader2 className="size-3.5 motion-safe:animate-spin" aria-hidden="true" />
-									<span>Waiting for the upgrade to complete</span>
+									<span>{i18n.t("systemCopy.__updating_waiting_for_the_upgrade_to_complete")}</span>
 								</>
 							)}
 						</div>
@@ -123,7 +126,7 @@ export function UpdatingScreen() {
 							onClick={() => window.location.reload()}
 						>
 							<RefreshCw aria-hidden="true" />
-							Reload now
+							{i18n.t("systemCopy.__updating_reload_now")}
 						</Button>
 					</div>
 				</div>

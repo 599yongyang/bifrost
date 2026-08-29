@@ -5,6 +5,7 @@ import QuarterStartSelect from "@/components/ui/quarterStartSelect";
 import { budgetResetDurationOptions } from "@/lib/constants/governance";
 import { Plus, RotateCcw, Trash2 } from "lucide-react";
 import { useMemo } from "react";
+import i18n from "@/lib/i18n";
 
 export interface BudgetLineEntry {
 	id?: string;
@@ -91,18 +92,20 @@ export default function MultiBudgetLines({
 					{onReset && (showReset ?? true) && (
 						<Button data-testid={`${testId}-reset-btn`} type="button" variant="ghost" size="sm" onClick={onReset}>
 							<RotateCcw className="mr-1 h-3 w-3" />
-							Reset
+							{i18n.t("workspace.plugins.reset")}
 						</Button>
 					)}
 					<Button data-testid={`${testId}-add-btn`} variant="outline" size="sm" type="button" onClick={addLine}>
 						<Plus className="mr-1 h-3 w-3" />
-						Add Budget
+						{i18n.t("workspace.governance.teams.dialog.addBudget")}
 					</Button>
 				</div>
 			</div>
 
 			{lines.length === 0 && (
-				<div className="text-muted-foreground rounded-md border border-dashed p-3 text-center text-sm">No budget limits configured.</div>
+				<div className="text-muted-foreground rounded-md border border-dashed p-3 text-center text-sm">
+					{i18n.t("supplemental.noBudgetLimits")}
+				</div>
 			)}
 
 			{lines.map((line, index) => {
@@ -146,9 +149,7 @@ export default function MultiBudgetLines({
 								/>
 							</div>
 						)}
-						{isDuplicate && (
-							<p className="text-destructive pl-0.5 text-xs">Duplicate reset period; each budget line must use a different interval.</p>
-						)}
+						{isDuplicate && <p className="text-destructive pl-0.5 text-xs">{i18n.t("supplemental.duplicateResetPeriod")}</p>}
 					</div>
 				);
 			})}

@@ -10,6 +10,7 @@ import { getApiBaseUrl } from "@/lib/utils/port";
 import { Download, File as FileIcon, Info, Loader2, Save } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { formatFileSize } from "./helpers";
+import i18n from "@/lib/i18n";
 
 // ---------- helpers ----------
 
@@ -280,7 +281,9 @@ export function FilePreviewPane({
 			<div className="bg-muted/30 flex h-9 shrink-0 items-center justify-between gap-2 border-b px-3">
 				<span className="flex min-w-0 items-center gap-1.5 truncate font-mono text-xs" title={file.path}>
 					{file.path}
-					{dirty && <span className="bg-primary inline-block size-1.5 shrink-0 rounded-full" aria-label="Unsaved changes" />}
+					{dirty && (
+						<span className="bg-primary inline-block size-1.5 shrink-0 rounded-full" aria-label={i18n.t("supplemental.unsavedChanges")} />
+					)}
 				</span>
 				<div className="flex shrink-0 items-center gap-1">
 					{isEditable && (
@@ -293,7 +296,7 @@ export function FilePreviewPane({
 							onClick={saveFile}
 						>
 							<Save className="h-3.5 w-3.5" />
-							Save file
+							{i18n.t("supplemental.saveFile")}
 						</Button>
 					)}
 					{resolved && (
@@ -390,7 +393,7 @@ function FileSourceEditor({
 		return (
 			<div className="flex h-full flex-col gap-4 p-4">
 				<div className="flex flex-col gap-1.5">
-					<Label className="text-muted-foreground text-xs">Source URL</Label>
+					<Label className="text-muted-foreground text-xs">{i18n.t("supplemental.sourceUrl")}</Label>
 					<Input
 						data-testid="skill-file-url-input"
 						value={file.source_url ?? ""}
@@ -489,7 +492,7 @@ function FallbackBlock({
 				<Button variant="outline" size="sm" asChild>
 					<a href={downloadUrl} download={fileName}>
 						<Download className="h-3.5 w-3.5" />
-						Download
+						{i18n.t("supplemental.download")}
 					</a>
 				</Button>
 			)}

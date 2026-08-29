@@ -5,6 +5,7 @@ import type { LogFilters as LogFiltersType } from "@/lib/types/logs";
 import { formatCompactNumber } from "@/lib/utils/numbers";
 import { Check, Info } from "lucide-react";
 import { useCallback, useState } from "react";
+import i18n from "@/lib/i18n";
 
 export type RecalculateCostMode = "missing" | "all";
 
@@ -50,58 +51,50 @@ export function RecalculateCostDialog({ open, onOpenChange, filters, totalLogs, 
 				}}
 			>
 				<DialogHeader className="pb-2">
-					<DialogTitle>Recalculate costs</DialogTitle>
-					<DialogDescription>
-						The current time window and filters will be applied. Choose which logs to recompute cost for.
-					</DialogDescription>
+					<DialogTitle>{i18n.t("supplemental.recalculateCosts")}</DialogTitle>
+					<DialogDescription>{i18n.t("workspace.logs.recalculate.description")}</DialogDescription>
 				</DialogHeader>
 
 				<div className="flex flex-col gap-2">
 					<RecalculateModeOption
 						selected={mode === "missing"}
 						onSelect={() => selectMode("missing")}
-						title="Missing cost only"
-						description="Only recompute logs that don't have a cost yet."
+						title={i18n.t("supplemental.missingCostOnly")}
+						description={i18n.t("workspace.logs.recalculate.missingOnly")}
 					/>
 					<RecalculateModeOption
 						selected={mode === "all"}
 						onSelect={() => selectMode("all")}
-						title="All selected logs"
-						description="Recompute cost for every log matching the current filters."
+						title={i18n.t("supplemental.allSelectedLogs")}
+						description={i18n.t("workspace.logs.recalculate.allMatching")}
 					/>
 				</div>
 
 				<p className="text-muted-foreground text-xs">
 					{mode === "all" ? (
-						<>
-							<span className="text-foreground font-medium">{formatCompactNumber(totalLogs)}</span> logs match the current filters and will
-							be recalculated.
-						</>
+						<>{i18n.t("workspace.logs.recalculate.matchingLogs", { count: formatCompactNumber(totalLogs) })}</>
 					) : isFetching ? (
-						"Checking how many logs are missing a cost…"
+						i18n.t("workspace.logs.recalculate.checking")
 					) : isError || missingCount === null ? (
-						"Logs in the current window that don't have a cost yet will be recalculated."
+						i18n.t("workspace.logs.recalculate.missingUnknown")
 					) : missingCount === 0 ? (
-						"All logs in the current window already have a cost."
+						i18n.t("workspace.logs.recalculate.allHaveCost")
 					) : (
-						<>
-							<span className="text-foreground font-medium">{formatCompactNumber(missingCount)}</span> {missingCount === 1 ? "log" : "logs"}{" "}
-							in the current window {missingCount === 1 ? "doesn't have" : "don't have"} a cost yet and will be recalculated.
-						</>
+						<>{i18n.t("workspace.logs.recalculate.missingCost", { count: formatCompactNumber(missingCount) })}</>
 					)}
 				</p>
 
 				<div className="text-muted-foreground flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs">
 					<Info className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-500" />
-					<span>Affects the logs dashboard only. Governance budgets and usage tracking remain unchanged.</span>
+					<span>{i18n.t("workspace.logs.recalculate.governanceUnaffected")}</span>
 				</div>
 
 				<DialogFooter className="pt-0">
 					<Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
-						Cancel
+						{i18n.t("common.cancel")}
 					</Button>
 					<Button size="sm" onClick={() => onConfirm(mode)} disabled={confirmDisabled}>
-						Recalculate
+						{i18n.t("supplemental.recalculate")}
 					</Button>
 				</DialogFooter>
 			</DialogContent>

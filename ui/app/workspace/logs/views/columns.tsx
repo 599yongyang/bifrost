@@ -26,8 +26,9 @@ import { enUS } from "date-fns/locale/en-US";
 import { zhCN } from "date-fns/locale/zh-CN";
 import { ArrowUpDown, ChevronRight, CloudUpload, CornerDownRight, Loader2, MoreHorizontal, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { logsPageCopy } from "../utils/logsPageCopy";
+import { getLogTimestampPattern, logsPageCopy } from "../utils/logsPageCopy";
 import { getBifrostLanguage } from "@/lib/i18n/language";
+import i18n from "@/lib/i18n";
 
 // Passed to useReactTable({ meta }) by the logs page so the expander column can
 // read/toggle chain expansion without threading props through column factories.
@@ -280,7 +281,7 @@ export function LogMessageCell({ log, contentClassName = "max-w-full" }: { log: 
 					{input ||
 						(isLargePayload
 							? `${copy.largePayload} ${log.is_large_payload_request && log.is_large_payload_response ? copy.requestAndResponse : log.is_large_payload_request ? copy.request : copy.response}`
-							: "-")}
+							: i18n.t("workspace.routingRules.notAvailable"))}
 				</div>
 			)}
 		</div>
@@ -396,7 +397,7 @@ export const createColumns = (
 					<ArrowUpDown className="ml-2 h-4 w-4" />
 				</Button>
 			),
-			size: 130,
+			size: 180,
 			cell: ({ row }) => {
 				const timestamp = row.original.timestamp;
 				const date = timestamp ? new Date(timestamp) : null;
@@ -404,9 +405,13 @@ export const createColumns = (
 				if (!isValid) {
 					return <div className="truncate text-xs">{copy.notAvailable}</div>;
 				}
+				const language = getBifrostLanguage();
+				const fullTimestamp = format(date, "yyyy-MM-dd HH:mm:ss");
 				return (
-					<div className="flex flex-col leading-tight">
-						<span className="font-mono text-xs tabular-nums">{format(date, copy.timestampFormat)}</span>
+					<div className="flex flex-col leading-tight" title={fullTimestamp}>
+						<span className="font-mono text-xs whitespace-nowrap tabular-nums">
+							{format(date, getLogTimestampPattern(date, new Date(), language))}
+						</span>
 						<span className="text-muted-foreground text-[10.5px] tabular-nums">
 							{formatDistanceToNow(date, { addSuffix: true, locale: dateLocale })}
 						</span>

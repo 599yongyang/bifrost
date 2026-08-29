@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Pause, Play, Download } from "lucide-react";
 import { useState } from "react";
+import i18n from "@/lib/i18n";
 
 interface AudioPlayerProps {
 	src: string;
@@ -151,12 +152,12 @@ const AudioPlayer = ({ src, format }: AudioPlayerProps) => {
 			<div className="flex items-center gap-2">
 				<Button onClick={handlePlayPause} variant="outline" size="sm" className="flex items-center gap-2" disabled={!!error}>
 					{isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-					{isPlaying ? "Pause" : "Play"}
+					{isPlaying ? i18n.t("workspace.logs.media.pause") : i18n.t("workspace.logs.media.play")}
 				</Button>
 
 				<Button onClick={handleDownload} variant="outline" size="sm" className="flex items-center gap-2" disabled={!!error}>
 					<Download className="h-4 w-4" />
-					Download
+					{i18n.t("supplemental.download")}
 				</Button>
 			</div>
 			{error && <div className="text-sm text-red-500">{error}</div>}

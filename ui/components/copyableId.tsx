@@ -2,6 +2,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { cn } from "@/lib/utils";
 import { Check, Copy } from "lucide-react";
+import i18n from "@/lib/i18n";
 
 interface CopyableIdProps {
 	id: string | number;
@@ -44,7 +45,9 @@ export function CopyableId({ id, entityLabel, className, testId }: CopyableIdPro
 				</button>
 			</TooltipTrigger>
 			<TooltipContent className="flex flex-col items-start gap-0.5 px-2 py-1">
-				<span className="text-xs">Copy {noun}</span>
+				<span className="text-xs">
+					{i18n.t("common.copy")} {noun}
+				</span>
 				<span className="font-mono text-xs opacity-80">{value}</span>
 			</TooltipContent>
 		</Tooltip>

@@ -20,6 +20,7 @@ import {
 import { ChartCard } from "./charts/chartCard";
 import { ChartErrorBoundary } from "./charts/chartErrorBoundary";
 import { formatCost, SortableHeader, TrendBadge } from "./rankingsShared";
+import i18n from "@/lib/i18n";
 
 type SortField = "total_requests" | "success_rate" | "total_tokens" | "total_cost" | "avg_latency" | "throughput";
 type SortOrder = "asc" | "desc";
@@ -153,12 +154,12 @@ function TopModelsChart({
 
 	return (
 		<ChartCard
-			title="Top Models"
+			title={i18n.t("workspace.dashboard.topModels")}
 			loading={loadingModels}
 			testId="dashboard-rankings-top-models"
 			className="z-[1]"
 			autoHeight
-			totalLabel="Total"
+			totalLabel={i18n.t("workspace.dashboard.total")}
 			total={grandTotal !== null ? <NumberFlow value={grandTotal} format={COMPACT_NUMBER_FORMAT} /> : undefined}
 			totalTooltip={grandTotal !== null ? grandTotal.toLocaleString("en-US") : undefined}
 		>
@@ -207,7 +208,7 @@ function TopModelsChart({
 						</ResponsiveContainer>
 					</ChartErrorBoundary>
 				) : (
-					<div className="text-muted-foreground flex h-full items-center justify-center text-sm">No data available</div>
+					<div className="text-muted-foreground flex h-full items-center justify-center text-sm">{i18n.t("common.noDataAvailable")}</div>
 				)}
 			</div>
 			<div className="py-2">
@@ -288,20 +289,20 @@ function ModelRankingsTabImpl({ rankingsData, loading, modelData, loadingModels,
 			) : !rankingsData?.rankings?.length ? (
 				<Card className="rounded-sm p-4 shadow-none">
 					<div className="text-muted-foreground flex h-[200px] items-center justify-center text-sm">
-						No model usage data available for this time period.
+						{i18n.t("workspace.dashboard.noModelUsage")}
 					</div>
 				</Card>
 			) : (
 				<Card className="rounded-sm p-2 shadow-none" data-testid="dashboard-model-rankings-table">
-					<span className="text-primary pl-2 text-sm font-medium">Model Rankings</span>
+					<span className="text-primary pl-2 text-sm font-medium">{i18n.t("workspace.dashboard.modelRankings")}</span>
 					<Table>
 						<TableHeader>
 							<TableRow>
 								<TableHead className="w-12">#</TableHead>
-								<TableHead>Model</TableHead>
+								<TableHead>{i18n.t("workspace.logs.colModel")}</TableHead>
 								<TableHead className="text-right">
 									<SortableHeader
-										label="Requests"
+										label={i18n.t("workspace.dashboard.requests")}
 										field="total_requests"
 										currentSort={sortField}
 										currentOrder={sortOrder}
@@ -310,7 +311,7 @@ function ModelRankingsTabImpl({ rankingsData, loading, modelData, loadingModels,
 								</TableHead>
 								<TableHead className="text-right">
 									<SortableHeader
-										label="Success Rate"
+										label={i18n.t("workspace.dashboard.successRate")}
 										field="success_rate"
 										currentSort={sortField}
 										currentOrder={sortOrder}
@@ -319,7 +320,7 @@ function ModelRankingsTabImpl({ rankingsData, loading, modelData, loadingModels,
 								</TableHead>
 								<TableHead className="text-right">
 									<SortableHeader
-										label="Tokens"
+										label={i18n.t("workspace.dashboard.tokens")}
 										field="total_tokens"
 										currentSort={sortField}
 										currentOrder={sortOrder}
@@ -327,11 +328,17 @@ function ModelRankingsTabImpl({ rankingsData, loading, modelData, loadingModels,
 									/>
 								</TableHead>
 								<TableHead className="text-right">
-									<SortableHeader label="Cost" field="total_cost" currentSort={sortField} currentOrder={sortOrder} onSort={handleSort} />
+									<SortableHeader
+										label={i18n.t("workspace.dashboard.cost")}
+										field="total_cost"
+										currentSort={sortField}
+										currentOrder={sortOrder}
+										onSort={handleSort}
+									/>
 								</TableHead>
 								<TableHead className="text-right">
 									<SortableHeader
-										label="Avg Latency"
+										label={i18n.t("workspace.dashboard.avgLatency")}
 										field="avg_latency"
 										currentSort={sortField}
 										currentOrder={sortOrder}
@@ -340,7 +347,7 @@ function ModelRankingsTabImpl({ rankingsData, loading, modelData, loadingModels,
 								</TableHead>
 								<TableHead className="text-right">
 									<SortableHeader
-										label="Throughput"
+										label={i18n.t("workspace.dashboard.throughput")}
 										field="throughput"
 										currentSort={sortField}
 										currentOrder={sortOrder}

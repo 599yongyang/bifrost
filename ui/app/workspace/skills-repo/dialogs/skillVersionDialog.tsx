@@ -9,6 +9,7 @@ import { SkillVersionSummary } from "@/lib/types/skills";
 import { ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { formatDate, useDebouncedValue } from "../components/helpers";
+import i18n from "@/lib/i18n";
 
 const PAGE_SIZE = 20;
 
@@ -79,7 +80,7 @@ export function SkillVersionsPopover({
 		<Popover open={open} onOpenChange={setOpen}>
 			<PopoverTrigger asChild>
 				<Button variant="outline" size="sm" data-testid="skill-versions-popover-trigger" className="h-8 gap-1.5">
-					Versions
+					{i18n.t("workspace.promptRepository.header.versions")}
 					<ChevronDown className="h-3.5 w-3.5" />
 				</Button>
 			</PopoverTrigger>
@@ -171,7 +172,7 @@ export function SkillVersionsList({
 		<Command shouldFilter={false}>
 			<CommandInput
 				data-testid="skill-versions-search-input"
-				placeholder="Search versions..."
+				placeholder={i18n.t("supplemental.searchVersions")}
 				value={search}
 				onValueChange={setSearch}
 				isLoading={isFetching}
@@ -195,7 +196,7 @@ export function SkillVersionsList({
 									<span className="text-sm font-medium">{v.version}</span>
 									{isServing && (
 										<Badge variant="secondary" className="h-auto bg-emerald-100 px-1.5 py-0 text-xs">
-											Serving
+											{i18n.t("supplemental.serving")}
 										</Badge>
 									)}
 								</span>
@@ -205,7 +206,7 @@ export function SkillVersionsList({
 					})}
 
 					{isError && !isFetching && accumulated.length === 0 && (
-						<div className="text-muted-foreground py-6 text-center text-xs">Failed to load versions</div>
+						<div className="text-muted-foreground py-6 text-center text-xs">{i18n.t("supplemental.failedLoadVersions")}</div>
 					)}
 
 					{/* Sentinel observed to trigger the next page fetch */}

@@ -3,6 +3,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import type { ShortcutKey } from "@/hooks/useSheetNavigation";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import React from "react";
+import i18n from "@/lib/i18n";
 
 const kbdClass =
 	"inline-flex items-center justify-center size-4 rounded border border-border/60 bg-muted/80 text-[10px] leading-none text-muted-foreground shadow-[0_1px_0_0.5px] shadow-border/40";
@@ -70,7 +71,7 @@ export function SheetNavigationButtons({
 					</Button>
 				</TooltipTrigger>
 				<TooltipContent className="flex items-center gap-1.5 px-2 py-1 text-xs">
-					Next {nextKeys && <ShortcutKeys keys={nextKeys} />}
+					{i18n.t("workspace.mcp.next")} {nextKeys && <ShortcutKeys keys={nextKeys} />}
 				</TooltipContent>
 			</Tooltip>
 		</div>

@@ -6,6 +6,7 @@ import { cleanJson, isJson } from "@/lib/utils/validation";
 import { Download } from "lucide-react";
 import AudioPlayer from "./audioPlayer";
 import CollapsibleBox from "./collapsibleBox";
+import i18n from "@/lib/i18n";
 
 interface LogChatMessageViewProps {
 	message: ChatMessage;
@@ -74,7 +75,7 @@ export function LogChatFileBlockView({ block, className }: { block: ContentBlock
 						data-testid="file-block-download-btn"
 					>
 						<Download className="h-3.5 w-3.5" />
-						Download
+						{i18n.t("supplemental.download")}
 					</Button>
 				)}
 			</div>
@@ -87,7 +88,7 @@ export function LogChatFileBlockView({ block, className }: { block: ContentBlock
 					className="text-primary mt-2 inline-block hover:underline"
 					data-testid="file-block-open-link"
 				>
-					Open file
+					{i18n.t("supplemental.openFile")}
 				</a>
 			)}
 		</div>
@@ -129,7 +130,7 @@ function ContentBlockView({ block }: { block: ContentBlock; index: number }) {
 	if (block.image_url) {
 		const src = block.image_url.url;
 		if (src) {
-			return <img src={src} alt="Attached image" className="max-w-full rounded border" />;
+			return <img src={src} alt={i18n.t("workspace.logs.detail.attachedImageAlt")} className="max-w-full rounded border" />;
 		}
 	}
 
@@ -170,14 +171,22 @@ export default function LogChatMessageView({ message, audioFormat }: LogChatMess
 			{/* Role header */}
 			<div className="flex items-center gap-2">
 				<span className="text-sm font-medium capitalize">{message.role}</span>
-				{message.tool_call_id && <span className="text-muted-foreground text-xs">Tool Call ID: {message.tool_call_id}</span>}
+				{message.tool_call_id && (
+					<span className="text-muted-foreground text-xs">
+						{i18n.t("supplemental.toolCallId")} {message.tool_call_id}
+					</span>
+				)}
 			</div>
 
 			{/* Handle reasoning content */}
 			{message.reasoning && (
 				<>
 					{isJson(message.reasoning) ? (
-						<CollapsibleBox title="Reasoning" onCopy={() => JSON.stringify(cleanJson(message.reasoning), null, 2)} collapsedHeight={100}>
+						<CollapsibleBox
+							title={i18n.t("workspace.logs.detail.reasoning")}
+							onCopy={() => JSON.stringify(cleanJson(message.reasoning), null, 2)}
+							collapsedHeight={100}
+						>
 							<CodeEditor
 								className="z-0 w-full"
 								shouldAdjustInitialHeight={true}
@@ -190,7 +199,7 @@ export default function LogChatMessageView({ message, audioFormat }: LogChatMess
 							/>
 						</CollapsibleBox>
 					) : (
-						<CollapsibleBox title="Reasoning" onCopy={() => message.reasoning || ""} collapsedHeight={100}>
+						<CollapsibleBox title={i18n.t("workspace.logs.detail.reasoning")} onCopy={() => message.reasoning || ""} collapsedHeight={100}>
 							<div className="custom-scrollbar text-muted-foreground max-h-[400px] overflow-y-auto px-6 py-2 font-mono text-xs break-words whitespace-pre-wrap italic">
 								{message.reasoning}
 							</div>
@@ -203,7 +212,11 @@ export default function LogChatMessageView({ message, audioFormat }: LogChatMess
 			{message.refusal && (
 				<>
 					{isJson(message.refusal) ? (
-						<CollapsibleBox title="Refusal" onCopy={() => JSON.stringify(cleanJson(message.refusal), null, 2)} collapsedHeight={100}>
+						<CollapsibleBox
+							title={i18n.t("workspace.logs.detail.refusalLabel")}
+							onCopy={() => JSON.stringify(cleanJson(message.refusal), null, 2)}
+							collapsedHeight={100}
+						>
 							<CodeEditor
 								className="z-0 w-full"
 								shouldAdjustInitialHeight={true}
@@ -216,7 +229,7 @@ export default function LogChatMessageView({ message, audioFormat }: LogChatMess
 							/>
 						</CollapsibleBox>
 					) : (
-						<CollapsibleBox title="Refusal" onCopy={() => message.refusal || ""} collapsedHeight={100}>
+						<CollapsibleBox title={i18n.t("workspace.logs.detail.refusalLabel")} onCopy={() => message.refusal || ""} collapsedHeight={100}>
 							<div className="custom-scrollbar max-h-[400px] overflow-y-auto px-6 py-2 font-mono text-xs break-words whitespace-pre-wrap text-red-800">
 								{message.refusal}
 							</div>
@@ -232,7 +245,7 @@ export default function LogChatMessageView({ message, audioFormat }: LogChatMess
 						<>
 							{isJson(message.content) ? (
 								<CollapsibleBox
-									title="Content"
+									title={i18n.t("supplemental.content")}
 									onCopy={() => JSON.stringify(cleanJson(message.content as string), null, 2)}
 									collapsedHeight={100}
 								>
@@ -248,7 +261,11 @@ export default function LogChatMessageView({ message, audioFormat }: LogChatMess
 									/>
 								</CollapsibleBox>
 							) : (
-								<CollapsibleBox title="Content" onCopy={() => (message.content as string) || ""} collapsedHeight={100}>
+								<CollapsibleBox
+									title={i18n.t("supplemental.content")}
+									onCopy={() => (message.content as string) || ""}
+									collapsedHeight={100}
+								>
 									<div className="custom-scrollbar max-h-[400px] overflow-y-auto px-6 py-2 font-mono text-xs break-words whitespace-pre-wrap">
 										{message.content}
 									</div>
@@ -292,7 +309,11 @@ export default function LogChatMessageView({ message, audioFormat }: LogChatMess
 
 			{/* Handle annotations */}
 			{message.annotations && message.annotations.length > 0 && (
-				<CollapsibleBox title="Annotations" onCopy={() => JSON.stringify(message.annotations, null, 2)} collapsedHeight={100}>
+				<CollapsibleBox
+					title={i18n.t("supplemental.annotations")}
+					onCopy={() => JSON.stringify(message.annotations, null, 2)}
+					collapsedHeight={100}
+				>
 					<CodeEditor
 						className="z-0 w-full"
 						shouldAdjustInitialHeight={true}
@@ -308,26 +329,26 @@ export default function LogChatMessageView({ message, audioFormat }: LogChatMess
 
 			{/* Handle audio output */}
 			{message.audio && (
-				<CollapsibleBox title="Audio Output" collapsedHeight={150}>
+				<CollapsibleBox title={i18n.t("supplemental.audioOutput")} collapsedHeight={150}>
 					<div className="space-y-4 px-6 py-4">
 						{message.audio.transcript && (
 							<div className="space-y-2">
-								<div className="text-muted-foreground text-xs font-medium">Transcript:</div>
+								<div className="text-muted-foreground text-xs font-medium">{i18n.t("supplemental.transcript")}</div>
 								<div className="font-mono text-xs break-words whitespace-pre-wrap">{message.audio.transcript}</div>
 							</div>
 						)}
 						{message.audio.data && (
 							<div className="space-y-2">
-								<div className="text-muted-foreground text-xs font-medium">Audio:</div>
+								<div className="text-muted-foreground text-xs font-medium">{i18n.t("supplemental.audio")}</div>
 								<AudioPlayer src={message.audio.data} format={audioFormat} />
 							</div>
 						)}
 						{message.audio.id && (
 							<div className="text-muted-foreground text-xs">
-								ID: {message.audio.id} | Expires:{" "}
+								ID: {message.audio.id} | {i18n.t("workspace.virtualKeys.expires")}:{" "}
 								{message.audio.expires_at && Number.isFinite(message.audio.expires_at)
 									? new Date(message.audio.expires_at * 1000).toLocaleString()
-									: "N/A"}
+									: i18n.t("workspace.mcpLogs.na")}
 							</div>
 						)}
 					</div>

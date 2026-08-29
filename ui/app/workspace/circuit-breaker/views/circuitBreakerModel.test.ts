@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { DEFAULT_CIRCUIT_BREAKER_POLICY, getSignalMatchMode } from "@/lib/types/circuitBreaker";
-import i18n from "./circuitBreakerI18n";
+import i18n from "@/lib/i18n";
+import { setTestLanguage } from "@/lib/i18n/testUtils";
 
 const originalDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
 
@@ -22,8 +23,9 @@ describe("circuit breaker UI model", () => {
 		expect(DEFAULT_CIRCUIT_BREAKER_POLICY.condition.signals).toHaveLength(1);
 	});
 
-	it("renders localized and interpolated copy without unresolved keys", () => {
+	it("renders localized and interpolated copy without unresolved keys", async () => {
 		Object.defineProperty(globalThis, "document", { configurable: true, value: { documentElement: { lang: "zh" } } });
+		await setTestLanguage("zh");
 		expect(i18n.t("workspace.circuitBreaker.title")).toBe("熔断器");
 		expect(i18n.t("workspace.circuitBreaker.signalNumber", { index: 2 })).toBe("信号 2");
 		expect(i18n.t("workspace.circuitBreaker.operatorAny")).toBe("任一");

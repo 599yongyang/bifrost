@@ -7,6 +7,7 @@ import { useMemo, useState } from "react";
 import ProviderConfigSheet from "../dialogs/providerConfigSheet";
 import ModelProviderKeysTableView from "./modelProviderKeysTableView";
 import ProviderGovernanceTable from "./providerGovernanceTable";
+import i18n from "@/lib/i18n";
 
 interface Props {
 	provider: ModelProvider;
@@ -33,7 +34,7 @@ export default function ModelProviderConfig({ provider, onRequestDelete }: Props
 					variant="outline"
 					onClick={onRequestDelete}
 					className="text-destructive hover:bg-destructive/10 hover:text-destructive size-9 px-0"
-					aria-label="Delete provider"
+					aria-label={i18n.t("workspace.providers.deleteDialog.title")}
 					data-testid="provider-delete-btn"
 				>
 					<Trash className="h-4 w-4" />
@@ -45,13 +46,17 @@ export default function ModelProviderConfig({ provider, onRequestDelete }: Props
 						variant="outline"
 						className="size-9 px-0 xl:h-9 xl:w-auto xl:px-4"
 						onClick={() => setShowConfigSheet(true)}
-						aria-label={hasUpdateProviderAccess ? "Edit provider configuration" : "View provider configuration"}
+						aria-label={hasUpdateProviderAccess ? i18n.t("workspace.providers.editConfig") : i18n.t("workspace.providers.viewConfig")}
 					>
 						<SettingsIcon className="h-4 w-4" />
-						<span className="hidden xl:inline">{hasUpdateProviderAccess ? "Edit Provider Config" : "View Provider Config"}</span>
+						<span className="hidden xl:inline">
+							{hasUpdateProviderAccess ? i18n.t("workspace.providers.editConfig") : i18n.t("workspace.providers.viewConfig")}
+						</span>
 					</Button>
 				</TooltipTrigger>
-				<TooltipContent className="xl:hidden">{hasUpdateProviderAccess ? "Edit Provider Config" : "View Provider Config"}</TooltipContent>
+				<TooltipContent className="xl:hidden">
+					{hasUpdateProviderAccess ? i18n.t("workspace.providers.editConfig") : i18n.t("workspace.providers.viewConfig")}
+				</TooltipContent>
 			</Tooltip>
 		</div>
 	);

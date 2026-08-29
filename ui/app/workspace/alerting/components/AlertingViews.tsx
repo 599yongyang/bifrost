@@ -1,3 +1,4 @@
+import i18n from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -24,7 +25,6 @@ import {
 	useUpdateAlertRuleMutation,
 } from "@/lib/store";
 import type { AlertChannel, AlertChannelFormType, AlertHistoryRecord, AlertRule, AlertScopeType, AlertStatus } from "@/lib/types/alerting";
-import { localize } from "@/lib/i18n/language";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { BellRing, ChevronLeft, ChevronRight, Pencil, Plus, RefreshCw, Send, SlidersHorizontal, Trash2 } from "lucide-react";
 import { FormEvent, ReactNode, useEffect, useState } from "react";
@@ -376,7 +376,7 @@ function RuleDialog({
 					</div>
 					<div className="grid gap-4 md:grid-cols-2">
 						<div className="text-muted-foreground col-span-full text-xs font-semibold tracking-wide uppercase">
-							{localize("Identity and target", "规则与目标")}
+							{i18n.t("workspace.alerting.copy.AlertingViews_identity_and_target")}
 						</div>
 						<div>
 							<Label>{copy.name}</Label>
@@ -432,7 +432,7 @@ function RuleDialog({
 							/>
 						</div>
 						<div className="col-span-full flex items-center gap-2 border-t pt-4 text-sm font-medium">
-							<SlidersHorizontal className="size-4" /> {localize("Reliability controls", "可靠性控制")}
+							<SlidersHorizontal className="size-4" /> {i18n.t("workspace.alerting.copy.AlertingViews_reliability_controls")}
 						</div>
 						<div>
 							<Label>{copy.window}</Label>
@@ -649,7 +649,9 @@ export function AlertRulesView() {
 			<Dialog open={Boolean(evaluation)} onOpenChange={(v) => !v && setEvaluation(null)}>
 				<DialogContent>
 					<DialogHeader>
-						<DialogTitle>Evaluate {evaluation?.name}</DialogTitle>
+						<DialogTitle>
+							{copy.evaluate} {evaluation?.name}
+						</DialogTitle>
 						<DialogDescription>{copy.evaluateDescription}</DialogDescription>
 					</DialogHeader>
 					<label className="flex items-center justify-between">

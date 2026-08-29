@@ -1,3 +1,4 @@
+import i18n from "@/lib/i18n";
 /**
  * CEL Operators Configuration for Routing Rules
  * Maps UI operators to CEL syntax
@@ -11,26 +12,26 @@ export interface CELOperatorDefinition {
 
 export const celOperatorsRouting: CELOperatorDefinition[] = [
 	// Comparison operators
-	{ name: "=", label: "equals", celSyntax: "==" },
-	{ name: "!=", label: "does not equal", celSyntax: "!=" },
-	{ name: ">", label: "greater than", celSyntax: ">" },
-	{ name: "<", label: "less than", celSyntax: "<" },
-	{ name: ">=", label: "greater than or equal", celSyntax: ">=" },
-	{ name: "<=", label: "less than or equal", celSyntax: "<=" },
+	{ name: "=", label: i18n.t("workspace.routingRules.copy.celOperatorsRouting_equals"), celSyntax: "==" },
+	{ name: "!=", label: i18n.t("workspace.routingRules.copy.celOperatorsRouting_does_not_equal"), celSyntax: "!=" },
+	{ name: ">", label: i18n.t("workspace.routingRules.copy.celOperatorsRouting_greater_than"), celSyntax: ">" },
+	{ name: "<", label: i18n.t("workspace.routingRules.copy.celOperatorsRouting_less_than"), celSyntax: "<" },
+	{ name: ">=", label: i18n.t("workspace.routingRules.copy.celOperatorsRouting_greater_than_or_equal"), celSyntax: ">=" },
+	{ name: "<=", label: i18n.t("workspace.routingRules.copy.celOperatorsRouting_less_than_or_equal"), celSyntax: "<=" },
 
 	// List operators
-	{ name: "in", label: "is in list", celSyntax: "in" },
-	{ name: "notIn", label: "is not in list", celSyntax: "!in" },
+	{ name: "in", label: i18n.t("workspace.routingRules.copy.celOperatorsRouting_is_in_list"), celSyntax: "in" },
+	{ name: "notIn", label: i18n.t("workspace.routingRules.copy.celOperatorsRouting_is_not_in_list"), celSyntax: "!in" },
 
 	// String operators
-	{ name: "contains", label: "contains", celSyntax: "contains" },
-	{ name: "beginsWith", label: "begins with", celSyntax: "startsWith" },
-	{ name: "endsWith", label: "ends with", celSyntax: "endsWith" },
-	{ name: "matches", label: "matches (regex)", celSyntax: "matches" },
+	{ name: "contains", label: i18n.t("workspace.routingRules.copy.celOperatorsRouting_contains"), celSyntax: "contains" },
+	{ name: "beginsWith", label: i18n.t("workspace.routingRules.copy.celOperatorsRouting_begins_with"), celSyntax: "startsWith" },
+	{ name: "endsWith", label: i18n.t("workspace.routingRules.copy.celOperatorsRouting_ends_with"), celSyntax: "endsWith" },
+	{ name: "matches", label: i18n.t("workspace.routingRules.copy.celOperatorsRouting_matches_regex"), celSyntax: "matches" },
 
 	// Existence operators
-	{ name: "null", label: "does not exist", celSyntax: "!has" },
-	{ name: "notNull", label: "exists", celSyntax: "has" },
+	{ name: "null", label: i18n.t("workspace.routingRules.copy.celOperatorsRouting_does_not_exist"), celSyntax: "!has" },
+	{ name: "notNull", label: i18n.t("workspace.routingRules.copy.celOperatorsRouting_exists"), celSyntax: "has" },
 ];
 
 /**

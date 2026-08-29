@@ -1,0 +1,80 @@
+const resources = {
+	users: {
+		unlockTitle: "解锁用户与用户治理",
+		unlockDescription: "管理用户、设置按用户划分的预算和速率限制，并通过企业级治理控制访问权限。此功能属于 Bifrost 企业版许可证。",
+	},
+	businessUnits: {
+		unlockTitle: "解锁业务部门与高级治理",
+		unlockDescription: "通过企业级治理管理用户和业务部门。此功能属于 Bifrost 企业版许可证。",
+	},
+	scim: {
+		unlockTitle: "解锁基于 SCIM 的用户配置访问管理",
+		unlockDescription: "此功能属于 Bifrost 企业版许可证。我们希望了解更多您的使用场景，以及我们可以如何帮助您。",
+	},
+	rbac: {
+		unlockTitle: "解锁角色与权限以提升安全性",
+		unlockDescription: "此功能属于 Bifrost 企业版许可证。我们希望了解更多您的使用场景，以及我们可以如何帮助您。",
+	},
+	adaptiveRouting: {
+		unlockTitle: "解锁自适应路由以提升性能",
+		unlockDescription: "此功能属于 Bifrost 企业版许可证。我们希望了解更多您的使用场景，以及我们可以如何帮助您。",
+	},
+	cluster: {
+		unlockTitle: "解锁集群模式以可靠扩展",
+		unlockDescription: "此功能属于 Bifrost 企业版许可证。我们希望了解更多您的使用场景，以及我们可以如何帮助您。",
+	},
+	guardrailsProviders: {
+		unlockTitle: "解锁防护栏以提升安全性",
+		unlockDescription: "此功能属于 Bifrost 企业版许可证。我们希望了解更多您的使用场景，以及我们可以如何帮助您。",
+	},
+	guardrailsConfiguration: {
+		unlockTitle: "解锁防护栏以提升安全性",
+		unlockDescription: "此功能属于 Bifrost 企业版许可证。我们希望了解更多您的使用场景，以及我们可以如何帮助您。",
+	},
+	accessProfiles: {
+		unlockTitle: "解锁访问配置以提升性能",
+		unlockDescription: "此功能属于 Bifrost 企业版许可证。创建访问配置以控制对资源的访问。",
+	},
+	auditLogs: {
+		unlockTitle: "解锁审计日志以提升合规性",
+		unlockDescription: "此功能属于 Bifrost 企业版许可证。我们希望了解更多您的使用场景，以及我们可以如何帮助您。",
+	},
+	enterpriseFallbacks: {
+		commonDescription: "此功能属于 Bifrost 企业版。我们希望了解你的使用场景，并为你提供帮助。",
+		agentTitle: "Bifrost Agent 登录",
+		agentCompleteTitle: "Bifrost Agent 登录完成",
+		agentCompleteDescription: "你可以关闭此窗口并返回 Bifrost Agent。",
+		agentStatus: "登录状态：{{status}}",
+		alertChannelsTitle: "解锁告警渠道，实现主动监控",
+		alertChannelsDescription: "配置 Slack、PagerDuty、OpsGenie 和 Webhook 告警，及时发现预算和性能问题。",
+		alertHistoryTitle: "解锁告警历史，实现主动监控",
+		alertHistoryDescription: "集中查看告警发送结果、失败和解决事件。",
+		alertRulesTitle: "解锁告警规则，实现主动监控",
+		alertRulesDescription: "定义告警规则，在预算、延迟和性能退化演变为事故前发现问题。",
+		brandingTitle: "解锁自定义品牌",
+		circuitBreakerTitle: "解锁熔断器，实现可靠回退",
+		circuitBreakerDescription: "主端点出现故障迹象时，自动将流量重定向到回退提供商。",
+		bigQueryTitle: "解锁原生 BigQuery 数据接入与分析",
+		datadogTitle: "解锁原生 Datadog 数据接入，增强可观测性",
+		kafkaTitle: "解锁原生 Kafka 日志流，实现实时可观测性",
+		kafkaDescription: "将完整请求追踪以 JSON 形式发送到 Kafka topic，用于实时分析、告警和下游处理。",
+		pubsubTitle: "解锁 Google Cloud Pub/Sub 追踪流",
+		splunkTitle: "解锁原生 Splunk 数据接入，增强可观测性",
+		edgeConfigTitle: "解锁边缘控制，治理边缘设备",
+		edgeDevicesTitle: "解锁边缘控制，管理设备",
+		edgeInventoryTitle: "解锁边缘控制，审批应用和 MCP 服务器",
+		licenseTitle: "解锁许可证管理",
+		mcpAuthTitle: "解锁 MCP 认证配置",
+		mcpAuthDescription: "为 MCP 服务器配置认证，保护 MCP 连接。",
+		mcpToolGroupsDescription: "为 MCP 服务器配置工具组，以便在组织内整理和治理工具。",
+		promptDeploymentsTitle: "解锁提示词部署，改进版本管理和 A/B 测试",
+		scimTitle: "解锁基于 SCIM 的用户配置访问管理",
+		userRankingsTitle: "解锁用户排名，提升可见性",
+		customerUsageDescription: "此客户的用量详情。",
+		info: "信息",
+		noBudgetsConfigured: "未配置预算",
+		bookDemoAria: "预约演示（在新标签页中打开 Calendly）",
+	},
+};
+
+export default resources;

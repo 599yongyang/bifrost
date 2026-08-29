@@ -11,6 +11,7 @@ import { ProviderIconType, RenderProviderIcon } from "@/lib/constants/icons";
 import { getProviderLabel } from "@/lib/constants/logs";
 import { useEffect, useState } from "react";
 import { ValueEditorProps, ValueEditorType } from "react-querybuilder";
+import i18n from "@/lib/i18n";
 
 type CELValueEditorContext = {
 	validateRegex?: (pattern: string) => string | null;
@@ -121,7 +122,7 @@ export function ValueEditor({
 				<ModelMultiselect
 					value={selectedModels}
 					onChange={handleMultiModelChange}
-					placeholder="Select models..."
+					placeholder={i18n.t("workspace.routingRules.copy.valueEditor_select_models")}
 					loadModelsOnEmptyProvider
 					className="!min-h-9 w-[360px]"
 					menuPosition={menuPosition}
@@ -148,7 +149,7 @@ export function ValueEditor({
 			<ModelMultiselect
 				value={valueToUse || ""}
 				onChange={handleOnChange}
-				placeholder="Search for a model..."
+				placeholder={i18n.t("workspace.routingRules.copy.valueEditor_search_for_a_model")}
 				isSingleSelect
 				clearable={true}
 				loadModelsOnEmptyProvider
@@ -206,7 +207,7 @@ export function ValueEditor({
 					value={selectedValues}
 					onValueChange={handleMultiselectChange}
 					options={options}
-					placeholder="Select providers..."
+					placeholder={i18n.t("workspace.routingRules.copy.valueEditor_select_providers")}
 					className="h-10 w-[360px]"
 					noPortal
 				/>
@@ -218,7 +219,7 @@ export function ValueEditor({
 				value={value || null}
 				onValueChange={(newValue) => handleOnChange(newValue ?? "")}
 				options={options}
-				placeholder={fieldData.placeholder || "Select..."}
+				placeholder={fieldData.placeholder || i18n.t("workspace.routingRules.copy.valueEditor_select")}
 				className="h-10 w-[360px]"
 				noPortal
 			/>
@@ -233,7 +234,7 @@ export function ValueEditor({
 				type="text"
 				value={keyValuePair.value}
 				onChange={(e) => handleKeyValueValueChange(e.target.value)}
-				placeholder="Value"
+				placeholder={i18n.t("workspace.routingRules.copy.valueEditor_value")}
 				className="w-[180px]"
 				data-testid="cel-builder-keyvalue-value-input"
 			/>
@@ -241,10 +242,10 @@ export function ValueEditor({
 	}
 
 	const placeholder = isArrayOperator
-		? "Enter comma-separated values or JSON array"
+		? i18n.t("workspace.routingRules.copy.valueEditor_enter_comma_separated_values_or_json_array")
 		: isRegexOperator
-			? "e.g., .* (any), openai|anthropic (multiple), ^gpt.* (prefix)"
-			: fieldData?.placeholder || "Enter value...";
+			? i18n.t("workspace.routingRules.copy.valueEditor_e_g_any_openai_anthropic_multiple_gpt_prefix")
+			: fieldData?.placeholder || i18n.t("workspace.routingRules.copy.valueEditor_enter_value");
 
 	// Use textarea for array inputs
 	if (isArrayOperator) {

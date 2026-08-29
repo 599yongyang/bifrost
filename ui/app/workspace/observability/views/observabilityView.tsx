@@ -17,6 +17,7 @@ import OtelView from "./plugins/otelView";
 import PrometheusView from "./plugins/prometheusView";
 import PubSubView from "./plugins/pubsubView";
 import SplunkView from "./plugins/splunkView";
+import i18n from "@/lib/i18n";
 
 type SupportedPlatform = {
 	id: string;
@@ -46,22 +47,41 @@ const supportedPlatformsList = (resolvedTheme: string): SupportedPlatform[] => [
 	{
 		id: "prometheus",
 		name: "Prometheus",
-		icon: <img alt="Prometheus" src="/images/prometheus-logo.svg" width={21} height={21} className="-ml-0.5" />,
+		icon: (
+			<img
+				alt={i18n.t("workspace.observability.prometheus")}
+				src="/images/prometheus-logo.svg"
+				width={21}
+				height={21}
+				className="-ml-0.5"
+			/>
+		),
 	},
 	{
 		id: "maxim",
 		name: "Maxim",
-		icon: <img alt="Maxim" src={`/maxim-logo${resolvedTheme === "dark" ? "-dark" : ""}.webp`} width={19} height={19} />,
+		icon: (
+			<img
+				alt={i18n.t("workspace.observability.maxim")}
+				src={`/maxim-logo${resolvedTheme === "dark" ? "-dark" : ""}.webp`}
+				width={19}
+				height={19}
+			/>
+		),
 	},
 	{
 		id: "datadog",
 		name: "Datadog",
-		icon: <img alt="Datadog" src="/images/datadog-logo.webp" width={32} height={32} className="-ml-0.5" />,
+		icon: (
+			<img alt={i18n.t("workspace.observability.datadog")} src="/images/datadog-logo.webp" width={32} height={32} className="-ml-0.5" />
+		),
 	},
 	{
 		id: "bigquery",
 		name: "BigQuery",
-		icon: <img alt="BigQuery" src="/images/bigquery-logo.svg" width={21} height={21} className="-ml-0.5" />,
+		icon: (
+			<img alt={i18n.t("workspace.observability.bigquery")} src="/images/bigquery-logo.svg" width={21} height={21} className="-ml-0.5" />
+		),
 	},
 	{
 		id: "kafka",
@@ -157,7 +177,7 @@ export default function ObservabilityView() {
 				<div className="flex w-full flex-col gap-2 pb-10">
 					<div className="rounded-md bg-zinc-100/10 p-4 dark:bg-zinc-800/20">
 						<div className="flex flex-col gap-1">
-							<div className="text-muted-foreground mb-2 text-xs font-medium">Providers</div>
+							<div className="text-muted-foreground mb-2 text-xs font-medium">{i18n.t("workspace.observability.providers")}</div>
 							{supportedPlatforms.map((tab) => (
 								<button
 									type="button"
@@ -203,7 +223,7 @@ export default function ObservabilityView() {
 			<div className={cn("min-w-0 w-full pt-4", mobileDetailOpen ? "block" : "hidden md:block")}>
 				<Button variant="ghost" size="sm" className="mb-2 md:hidden" onClick={() => setMobileDetailOpen(false)}>
 					<ArrowLeft className="size-4" />
-					Providers
+					{i18n.t("workspace.observability.providers")}
 				</Button>
 				{selectedPluginId === "prometheus" && <PrometheusView />}
 				{selectedPluginId === "otel" && <OtelView />}

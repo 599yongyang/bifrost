@@ -13,6 +13,7 @@ import type { MCPToolLogFilters } from "@/lib/types/logs";
 import { cn } from "@/lib/utils";
 import { ChevronDown, LoaderCircle, PanelLeftClose, Plus, RotateCcw, Search } from "lucide-react";
 import { Ref, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import i18n from "@/lib/i18n";
 
 const COLLAPSE_STORAGE_KEY = "mcp-filter-sidebar-collapsed";
 
@@ -81,7 +82,7 @@ export function MCPFilterSidebar({ filters, onFiltersChange }: MCPFilterSidebarP
 					{activeFilterCount > 0 && (
 						<Button variant="outline" size="sm" className="text-muted-foreground h-7 px-2 text-xs" onClick={handleReset}>
 							<RotateCcw className="size-3" />
-							Reset
+							{i18n.t("workspace.plugins.reset")}
 						</Button>
 					)}
 					<Button variant="ghost" size="icon" className="size-7" onClick={toggleCollapsed} title="Hide filters" aria-label="Hide filters">
@@ -331,7 +332,7 @@ function StatusFilter({ filters, onFiltersChange, defaultOpen }: FilterComponent
 	const hasActive = (filters.status || []).length > 0;
 
 	return (
-		<FilterSection title="Status" defaultOpen={defaultOpen || hasActive}>
+		<FilterSection title={i18n.t("workspace.virtualKeys.status")} defaultOpen={defaultOpen || hasActive}>
 			{Statuses.map((status) => (
 				<CheckboxFilterItem
 					key={status}
@@ -518,10 +519,15 @@ function VirtualKeysFilter({ filters, onFiltersChange, defaultOpen }: FilterComp
 	};
 
 	return (
-		<FilterSection title="Virtual Keys" defaultOpen={defaultOpen || hasActive} loading={isLoading} onOpenChange={setOpened}>
+		<FilterSection
+			title={i18n.t("sidebar.sub.virtualKeys")}
+			defaultOpen={defaultOpen || hasActive}
+			loading={isLoading}
+			onOpenChange={setOpened}
+		>
 			<SearchableCheckboxList
 				inputRef={searchInputRef}
-				placeholder="Search virtual keys"
+				placeholder={i18n.t("workspace.mcp.searchVirtualKeys")}
 				items={availableVirtualKeys.map((key) => ({ key: key.name, label: key.name }))}
 				isSelected={isSelected}
 				onToggle={toggle}

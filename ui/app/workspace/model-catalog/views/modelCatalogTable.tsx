@@ -8,6 +8,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { ProviderIconType, RenderProviderIcon } from "@/lib/constants/icons";
 import { ProviderLabels } from "@/lib/constants/logs";
 import { Info } from "lucide-react";
+import i18n from "@/lib/i18n";
 
 function formatCost(dollars: number) {
 	return `$${dollars.toFixed(4)}`;
@@ -68,17 +69,17 @@ export default function ModelCatalogTable({
 
 			{/* Header + Filter */}
 			<div className="flex items-center justify-end">
-				<PageTitle title="Model Catalog">Overview of all configured providers, models, and usage.</PageTitle>
+				<PageTitle title={i18n.t("workspace.modelCatalog.title")}>{i18n.t("workspace.modelCatalog.description")}</PageTitle>
 				<Select
 					value={providerFilter || "all"}
 					onValueChange={(val) => onProviderFilterChange(val === "all" ? "" : val)}
 					data-testid="model-catalog-provider-filter"
 				>
 					<SelectTrigger className="w-[200px]" data-testid="model-catalog-provider-trigger">
-						<SelectValue placeholder="All Providers" />
+						<SelectValue placeholder={i18n.t("workspace.modelLimits.allProviders")} />
 					</SelectTrigger>
 					<SelectContent>
-						<SelectItem value="all">All Providers</SelectItem>
+						<SelectItem value="all">{i18n.t("workspace.modelLimits.allProviders")}</SelectItem>
 						{providers.map((p) => (
 							<SelectItem key={p} value={p}>
 								{ProviderLabels[p as keyof typeof ProviderLabels] || p}
@@ -99,29 +100,29 @@ export default function ModelCatalogTable({
 					</colgroup>
 					<TableHeader>
 						<TableRow>
-							<TableHead>Provider</TableHead>
+							<TableHead>{i18n.t("workspace.modelCatalog.attributes.provider")}</TableHead>
 							<TableHead>
 								<TooltipProvider>
 									<div className="flex items-center gap-1">
-										Models
+										{i18n.t("workspace.modelCatalog.attributes.models")}
 										<Tooltip>
 											<TooltipTrigger data-testid="model-catalog-models-info-trigger">
 												<Info className="text-muted-foreground h-3.5 w-3.5" />
 											</TooltipTrigger>
-											<TooltipContent side="bottom">Models used in the last 30 days</TooltipContent>
+											<TooltipContent side="bottom">{i18n.t("workspace.modelCatalog.modelsUsedLast30Days")}</TooltipContent>
 										</Tooltip>
 									</div>
 								</TooltipProvider>
 							</TableHead>
-							<TableHead className="text-right">Total Traffic (24h)</TableHead>
-							<TableHead className="text-right">Total Cost (24h)</TableHead>
+							<TableHead className="text-right">{i18n.t("workspace.modelCatalog.totalTraffic24h")}</TableHead>
+							<TableHead className="text-right">{i18n.t("workspace.modelCatalog.totalCost24h")}</TableHead>
 						</TableRow>
 					</TableHeader>
 					<TableBody>
 						{rows.length === 0 ? (
 							<TableRow>
 								<TableCell colSpan={4} className="h-24 text-center">
-									<span className="text-muted-foreground text-sm">No matching providers found.</span>
+									<span className="text-muted-foreground text-sm">{i18n.t("workspace.modelCatalog.noMatchingProviders")}</span>
 								</TableCell>
 							</TableRow>
 						) : (
@@ -198,7 +199,7 @@ function ModelsUsedCell({ models: rawModels }: { models: string[] }) {
 					<Tooltip>
 						<TooltipTrigger data-testid="model-catalog-models-overflow-trigger">
 							<Badge variant="outline" className="text-xs font-normal">
-								+{remaining} more
+								{i18n.t("workspace.modelCatalog.moreModels", { count: remaining })}
 							</Badge>
 						</TooltipTrigger>
 						<TooltipContent side="bottom" className="max-w-xs">

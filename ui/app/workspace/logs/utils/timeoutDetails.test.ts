@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { BifrostError } from "@/lib/types/logs";
+import { setTestLanguage } from "@/lib/i18n/testUtils";
 import { getTimeoutDetails } from "./timeoutDetails";
 
 const originalDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
@@ -11,7 +12,8 @@ afterEach(() => {
 });
 
 describe("getTimeoutDetails", () => {
-	it("shows upstream timeout evidence without attributing it to the configured timeout", () => {
+	it("shows upstream timeout evidence without attributing it to the configured timeout", async () => {
+		await setTestLanguage("en");
 		const error: BifrostError = {
 			is_bifrost_error: false,
 			error: { message: "upstream connection or proxy timed out" },
@@ -32,7 +34,8 @@ describe("getTimeoutDetails", () => {
 		expect(rendered).toContain("Upstream response received: No");
 	});
 
-	it("supports the public configured-provider timeout source", () => {
+	it("supports the public configured-provider timeout source", async () => {
+		await setTestLanguage("en");
 		const error: BifrostError = {
 			is_bifrost_error: false,
 			error: { message: "provider request reached the configured timeout" },
@@ -46,8 +49,9 @@ describe("getTimeoutDetails", () => {
 		).toContain("configured provider timeout was reached");
 	});
 
-	it("localizes timeout evidence in Chinese", () => {
+	it("localizes timeout evidence in Chinese", async () => {
 		Object.defineProperty(globalThis, "document", { configurable: true, value: { documentElement: { lang: "zh" } } });
+		await setTestLanguage("zh");
 		const error: BifrostError = {
 			is_bifrost_error: false,
 			error: { message: "timeout" },

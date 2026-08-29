@@ -49,6 +49,7 @@ import {
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { toast } from "sonner";
 import { formatFileSize } from "./helpers";
+import i18n from "@/lib/i18n";
 
 const FILE_SOURCE_OPTIONS = [
 	{ value: "text", label: "Via text", shortLabel: "Text" },
@@ -220,7 +221,7 @@ function FileAddForm({ folderPath, initialSourceType, initialEntry, submitLabel,
 						}}
 						placeholder="filename.ext"
 						className="h-7 max-w-xs font-mono text-xs"
-						aria-label="Filename"
+						aria-label={i18n.t("supplemental.filename")}
 					/>
 					<Button variant="ghost" size="sm" className="h-7 w-7 p-0" data-testid="skill-file-confirm-btn" onClick={handleSubmit}>
 						<Check className="h-3 w-3" />
@@ -251,7 +252,7 @@ function FileAddForm({ folderPath, initialSourceType, initialEntry, submitLabel,
 			)}
 
 			<div>
-				<Label className="text-muted-foreground text-xs">Filename</Label>
+				<Label className="text-muted-foreground text-xs">{i18n.t("supplemental.filename")}</Label>
 				<Input
 					data-testid="skill-file-filename-input"
 					value={filename}
@@ -268,7 +269,7 @@ function FileAddForm({ folderPath, initialSourceType, initialEntry, submitLabel,
 					onChange={(e) => setUrl(e.target.value)}
 					placeholder="https://example.com/file.py"
 					className="h-8 font-mono text-xs"
-					aria-label="Source URL"
+					aria-label={i18n.t("supplemental.sourceUrl")}
 				/>
 			)}
 			{sourceType === "text" && !isNewFileNameOnly && (
@@ -279,7 +280,7 @@ function FileAddForm({ folderPath, initialSourceType, initialEntry, submitLabel,
 					placeholder="File content..."
 					className="min-h-20 font-mono text-xs"
 					rows={4}
-					aria-label="File content"
+					aria-label={i18n.t("supplemental.fileContent")}
 				/>
 			)}
 			{sourceType === "dataurl" && (
@@ -300,7 +301,7 @@ function FileAddForm({ folderPath, initialSourceType, initialEntry, submitLabel,
 						type="file"
 						onChange={(e) => handleUploadFileChange(e.target.files?.[0] ?? null)}
 						className="h-8 text-xs"
-						aria-label="Choose file to upload"
+						aria-label={i18n.t("supplemental.chooseUploadFile")}
 					/>
 					{selectedFile && (
 						<div className="text-muted-foreground flex items-center gap-2 text-xs">
@@ -328,13 +329,13 @@ function FileAddForm({ folderPath, initialSourceType, initialEntry, submitLabel,
 
 			<div className="flex justify-end gap-2 pt-1">
 				<Button variant="ghost" size="sm" className="h-7 text-xs" data-testid="skill-file-cancel-btn" onClick={onCancel}>
-					Cancel
+					{i18n.t("common.cancel")}
 				</Button>
 				<Button size="sm" className="h-7 text-xs" data-testid="skill-file-save-btn" onClick={handleSubmit} disabled={isUploading}>
 					{isUploading ? (
 						<>
 							<Loader2 className="h-3 w-3 animate-spin" />
-							Uploading...
+							{i18n.t("supplemental.uploading")}
 						</>
 					) : (
 						<>
@@ -1071,7 +1072,7 @@ export function FileManagerSection({
 		if (item.kind === "empty-folder") {
 			return (
 				<div className="text-muted-foreground ml-1 flex items-center gap-2 py-1 text-xs">
-					<span>Empty folder</span>
+					<span>{i18n.t("supplemental.emptyFolder")}</span>
 					<span className="text-muted-foreground/60 text-xs">Not saved until it contains a file.</span>
 				</div>
 			);
@@ -1154,7 +1155,7 @@ export function FileManagerSection({
 								}}
 								placeholder="filename.ext"
 								className="h-7 min-w-0 flex-1 font-mono text-xs"
-								aria-label="Rename file"
+								aria-label={i18n.t("supplemental.renameFile")}
 							/>
 						) : (
 							<span className="min-w-0 flex-1 truncate font-mono text-xs" title={basename(file.path)}>
@@ -1195,11 +1196,11 @@ export function FileManagerSection({
 											setEditingFileOriginal({ path: file.path });
 										}}
 									>
-										Rename
+										{i18n.t("workspace.promptRepository.sidebar.rename")}
 									</DropdownMenuItem>
 									{fileMoveTargets.length > 0 && (
 										<DropdownMenuSub>
-											<DropdownMenuSubTrigger>Move to…</DropdownMenuSubTrigger>
+											<DropdownMenuSubTrigger>{i18n.t("supplemental.moveTo")}</DropdownMenuSubTrigger>
 											<DropdownMenuSubContent>
 												{fileMoveTargets.map((folderPath) => (
 													<DropdownMenuItem
@@ -1229,7 +1230,7 @@ export function FileManagerSection({
 											})
 										}
 									>
-										Delete
+										{i18n.t("common.delete")}
 									</DropdownMenuItem>
 								</DropdownMenuContent>
 							</DropdownMenu>
@@ -1303,14 +1304,14 @@ export function FileManagerSection({
 							</DropdownMenuTrigger>
 							<DropdownMenuContent align="end" className="w-44">
 								<DropdownMenuSub>
-									<DropdownMenuSubTrigger>Add file</DropdownMenuSubTrigger>
+									<DropdownMenuSubTrigger>{i18n.t("supplemental.addFile")}</DropdownMenuSubTrigger>
 									<DropdownMenuSubContent>
 										<DropdownMenuItem
 											className="cursor-pointer"
 											disabled={isFolderUploading}
 											onSelect={() => handleAddFileUploadClick(item.path)}
 										>
-											Upload
+											{i18n.t("supplemental.upload")}
 										</DropdownMenuItem>
 										<DropdownMenuItem
 											className="cursor-pointer"
@@ -1324,7 +1325,7 @@ export function FileManagerSection({
 												setEditingFileOriginal(null);
 											}}
 										>
-											From text
+											{i18n.t("supplemental.fromText")}
 										</DropdownMenuItem>
 										<DropdownMenuItem
 											className="cursor-pointer"
@@ -1338,7 +1339,7 @@ export function FileManagerSection({
 												setEditingFileOriginal(null);
 											}}
 										>
-											From URL
+											{i18n.t("supplemental.fromUrl")}
 										</DropdownMenuItem>
 										<DropdownMenuItem
 											className="cursor-pointer"
@@ -1352,7 +1353,7 @@ export function FileManagerSection({
 												setEditingFileOriginal(null);
 											}}
 										>
-											From data URL
+											{i18n.t("supplemental.fromDataUrl")}
 										</DropdownMenuItem>
 									</DropdownMenuSubContent>
 								</DropdownMenuSub>
@@ -1364,23 +1365,23 @@ export function FileManagerSection({
 										setNewFolderError(null);
 									}}
 								>
-									Add folder
+									{i18n.t("supplemental.addFolder")}
 								</DropdownMenuItem>
 								<DropdownMenuItem
 									className="cursor-pointer"
 									disabled={isFolderUploading}
 									onSelect={() => handleFolderUploadClick(item.path)}
 								>
-									Upload folder
+									{i18n.t("supplemental.uploadFolder")}
 								</DropdownMenuItem>
 								{isRoot && (
 									<>
 										<DropdownMenuSeparator />
 										<DropdownMenuItem className="cursor-pointer" disabled={isAllExpanded} onSelect={onExpandAll}>
-											Expand all
+											{i18n.t("supplemental.expandAll")}
 										</DropdownMenuItem>
 										<DropdownMenuItem className="cursor-pointer" disabled={isAllCollapsed} onSelect={onCollapseAll}>
-											Collapse all
+											{i18n.t("supplemental.collapseAll")}
 										</DropdownMenuItem>
 									</>
 								)}
@@ -1389,7 +1390,7 @@ export function FileManagerSection({
 										<DropdownMenuSeparator />
 										{folderMoveTargets.length > 0 && (
 											<DropdownMenuSub>
-												<DropdownMenuSubTrigger>Move to…</DropdownMenuSubTrigger>
+												<DropdownMenuSubTrigger>{i18n.t("supplemental.moveTo")}</DropdownMenuSubTrigger>
 												<DropdownMenuSubContent>
 													{folderMoveTargets.map((folderPath) => (
 														<DropdownMenuItem
@@ -1408,7 +1409,7 @@ export function FileManagerSection({
 											</DropdownMenuSub>
 										)}
 										<DropdownMenuItem variant="destructive" className="cursor-pointer" onSelect={() => requestRemoveFolder(item.path)}>
-											Delete folder
+											{i18n.t("supplemental.deleteFolder")}
 										</DropdownMenuItem>
 									</>
 								)}
@@ -1466,7 +1467,7 @@ export function FileManagerSection({
 					<Input
 						value={searchQuery}
 						onChange={(e) => setSearchQuery(e.target.value)}
-						placeholder="Search files..."
+						placeholder={i18n.t("supplemental.searchFiles")}
 						className="h-7 text-xs"
 						aria-label="Search files"
 					/>
@@ -1514,7 +1515,7 @@ export function FileManagerSection({
 					{folderDeleteImpact?.nestedFiles.length ? (
 						<div className="bg-muted/20 flex flex-col gap-3 rounded-sm border p-3 text-xs">
 							<div className="flex flex-col gap-1">
-								<div className="text-muted-foreground text-xs font-medium tracking-wide uppercase">Files</div>
+								<div className="text-muted-foreground text-xs font-medium tracking-wide uppercase">{i18n.t("supplemental.files")}</div>
 								<ul className="text-muted-foreground flex max-h-32 flex-col gap-1 overflow-auto font-mono">
 									{folderDeleteImpact.nestedFiles.map((file) => (
 										<li key={file}>{file}</li>
@@ -1525,14 +1526,14 @@ export function FileManagerSection({
 					) : null}
 
 					<AlertDialogFooter>
-						<AlertDialogCancel>Cancel</AlertDialogCancel>
+						<AlertDialogCancel>{i18n.t("common.cancel")}</AlertDialogCancel>
 						<AlertDialogAction
 							onClick={() => {
 								if (folderToDelete) removeFolder(folderToDelete);
 								setFolderToDelete(null);
 							}}
 						>
-							Delete folder
+							{i18n.t("supplemental.deleteFolder")}
 						</AlertDialogAction>
 					</AlertDialogFooter>
 				</AlertDialogContent>
@@ -1569,14 +1570,14 @@ export function FileManagerSection({
 					)}
 
 					<AlertDialogFooter>
-						<AlertDialogCancel>Cancel</AlertDialogCancel>
+						<AlertDialogCancel>{i18n.t("common.cancel")}</AlertDialogCancel>
 						<AlertDialogAction
 							onClick={() => {
 								if (fileToRemove) removeFile(fileToRemove.index);
 								setFileToRemove(null);
 							}}
 						>
-							Remove file
+							{i18n.t("supplemental.removeFile")}
 						</AlertDialogAction>
 					</AlertDialogFooter>
 				</AlertDialogContent>

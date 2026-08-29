@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { ArrowUpRight, Server } from "lucide-react";
+import i18n from "@/lib/i18n";
 
 const PROVIDERS_DOCS_URL = "https://docs.getbifrost.ai/providers/supported-providers/overview";
 
@@ -15,20 +16,20 @@ export function ProvidersEmptyState({ addProviderDropdown }: ProvidersEmptyState
 				<Server className="h-[5.5rem] w-[5.5rem]" strokeWidth={1} />
 			</div>
 			<div className="flex flex-col gap-1">
-				<h1 className="text-muted-foreground text-xl font-medium">Add a provider to start routing requests</h1>
+				<h1 className="text-muted-foreground text-xl font-medium">{i18n.t("workspace.providers.emptyState.title")}</h1>
 				<div className="text-muted-foreground mx-auto mt-2 w-full max-w-[600px] text-sm font-normal">
-					Configure API keys for OpenAI, Anthropic, Bedrock, and other supported providers. Bifrost unifies them behind a single API.
+					{i18n.t("workspace.providers.emptyState.description")}
 				</div>
 				<div className="mx-auto mt-6 flex flex-row flex-wrap items-center justify-center gap-2">
 					<Button
 						variant="outline"
-						aria-label="Read more about providers (opens in new tab)"
+						aria-label={i18n.t("workspace.providers.emptyState.readMoreAriaLabel")}
 						data-testid="providers-button-read-more"
 						onClick={() => {
 							window.open(`${PROVIDERS_DOCS_URL}?utm_source=bfd`, "_blank", "noopener,noreferrer");
 						}}
 					>
-						Read more <ArrowUpRight className="text-muted-foreground h-3 w-3" />
+						{i18n.t("workspace.providers.emptyState.readMore")} <ArrowUpRight className="text-muted-foreground h-3 w-3" />
 					</Button>
 					{addProviderDropdown}
 				</div>

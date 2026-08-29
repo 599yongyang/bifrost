@@ -7,6 +7,7 @@ import { getErrorMessage, useGetLoadedPluginsQuery, useGetPluginQuery, useUpdate
 import { PluginSpanFilter } from "@/lib/types/config";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import i18n from "@/lib/i18n";
 
 interface PluginTracingSheetProps {
 	open: boolean;
@@ -89,11 +90,11 @@ export default function PluginTracingSheet({ open, onClose, pluginName, destinat
 			// Toggles haven't been initialized from persisted config yet (e.g. the plugin list
 			// is still loading for an include-mode filter). Saving now would build an empty
 			// filter and wipe the stored plugin_span_filter, so block until init completes.
-			toast.error("Plugin list is still loading. Please wait before saving.");
+			toast.error(i18n.t("workspace.observabilitySettings.pluginTracing.loading"));
 			return;
 		}
 		if (!targetPlugin) {
-			toast.error(`${destination} is not configured yet. Save its configuration before configuring plugin tracing.`);
+			toast.error(i18n.t("workspace.observabilitySettings.pluginTracing.notConfigured", { destination }));
 			return;
 		}
 		const filter = buildFilter(toggles);
@@ -105,7 +106,7 @@ export default function PluginTracingSheet({ open, onClose, pluginName, destinat
 					config: { plugin_span_filter: filter },
 				},
 			}).unwrap();
-			toast.success("Plugin tracing configuration saved");
+			toast.success(i18n.t("workspace.observabilitySettings.pluginTracing.saved"));
 			onClose();
 		} catch (error) {
 			toast.error(getErrorMessage(error));
@@ -116,10 +117,9 @@ export default function PluginTracingSheet({ open, onClose, pluginName, destinat
 		<Sheet open={open} onOpenChange={onClose}>
 			<SheetContent className="flex w-full flex-col overflow-hidden p-4 md:p-8">
 				<SheetHeader className="flex flex-col items-start p-0">
-					<SheetTitle>Configure Plugin Tracing</SheetTitle>
+					<SheetTitle>{i18n.t("workspace.observabilitySettings.pluginTracing.title")}</SheetTitle>
 					<SheetDescription>
-						Choose which plugin hook spans are exported to {destination}. Disabling a plugin removes its spans from traces without affecting
-						execution.
+						{i18n.t("workspace.observabilitySettings.pluginTracing.description", { profile: destination })}
 					</SheetDescription>
 				</SheetHeader>
 
@@ -127,7 +127,9 @@ export default function PluginTracingSheet({ open, onClose, pluginName, destinat
 					<div className="flex flex-col gap-4">
 						<div>
 							<div className="mb-2 flex items-center justify-between">
-								<p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">Plugins</p>
+								<p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+									{i18n.t("workspace.observabilitySettings.pluginTracing.plugins")}
+								</p>
 								<TriStateCheckbox
 									allIds={allPlugins}
 									selectedIds={allPlugins.filter((n) => toggles[n] ?? true)}
@@ -139,7 +141,7 @@ export default function PluginTracingSheet({ open, onClose, pluginName, destinat
 											return updated;
 										});
 									}}
-									ariaLabel="Toggle all plugin tracing"
+									ariaLabel={i18n.t("workspace.observabilitySettings.pluginTracing.toggleAll")}
 									data-testid="plugin-tracing-select-all"
 								/>
 							</div>
@@ -155,15 +157,12 @@ export default function PluginTracingSheet({ open, onClose, pluginName, destinat
 				<div className="flex flex-col gap-2 pt-4">
 					<Alert variant="info">
 						<AlertDescription>
-							<span>
-								If <strong className="inline">plugin_span_filter</strong> is set in the <strong className="inline">{pluginName}</strong>{" "}
-								plugin config in config.json, it takes precedence over these settings after restarting Bifrost.
-							</span>
+							<span>{i18n.t("workspace.observabilitySettings.pluginTracing.configOverride")}</span>
 						</AlertDescription>
 					</Alert>
 					<div className="flex justify-end gap-2 pt-2">
 						<Button type="button" variant="outline" onClick={onClose} disabled={isLoading} data-testid="plugin-tracing-cancel-button">
-							Cancel
+							{i18n.t("common.cancel")}
 						</Button>
 						<Button
 							onClick={handleSave}
@@ -172,7 +171,7 @@ export default function PluginTracingSheet({ open, onClose, pluginName, destinat
 							data-testid="plugin-tracing-save-button"
 							type="button"
 						>
-							Save
+							{i18n.t("common.save")}
 						</Button>
 					</div>
 				</div>

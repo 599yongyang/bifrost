@@ -16,6 +16,7 @@ import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { buildProviderUpdatePayload } from "../views/utils";
+import i18n from "@/lib/i18n";
 
 interface ProxyFormFragmentProps {
 	provider: ModelProvider;
@@ -72,11 +73,11 @@ export function ProxyFormFragment({ provider }: ProxyFormFragmentProps) {
 		)
 			.unwrap()
 			.then(() => {
-				toast.success("Provider configuration updated successfully");
+				toast.success(i18n.t("workspace.providers.providerConfigUpdated"));
 				form.reset(data);
 			})
 			.catch((err) => {
-				toast.error("Failed to update provider configuration", {
+				toast.error(i18n.t("workspace.providers.providerConfigUpdateFailed"), {
 					description: getErrorMessage(err),
 				});
 			});
@@ -88,10 +89,7 @@ export function ProxyFormFragment({ provider }: ProxyFormFragmentProps) {
 				{/* Proxy Configuration */}
 				<Alert>
 					<Info className="h-4 w-4" />
-					<AlertDescription>
-						Applies to HTTP requests and WebSocket-based Realtime/Responses connections. WebRTC-based Realtime sessions use a separate media
-						path not covered by this proxy.
-					</AlertDescription>
+					<AlertDescription>{i18n.t("workspace.providers.proxyScopeDescription")}</AlertDescription>
 				</Alert>
 				<div className="space-y-4">
 					<div className="space-y-4">
@@ -100,7 +98,7 @@ export function ProxyFormFragment({ provider }: ProxyFormFragmentProps) {
 							name="proxy_config.type"
 							render={({ field }) => (
 								<FormItem>
-									<FormLabel>Proxy Type</FormLabel>
+									<FormLabel>{i18n.t("workspace.providers.proxyType")}</FormLabel>
 									<Select
 										onValueChange={field.onChange}
 										value={field.value === "none" ? "" : field.value}
@@ -108,13 +106,13 @@ export function ProxyFormFragment({ provider }: ProxyFormFragmentProps) {
 									>
 										<FormControl>
 											<SelectTrigger className="w-48">
-												<SelectValue placeholder="Select type" />
+												<SelectValue placeholder={i18n.t("workspace.providers.selectType")} />
 											</SelectTrigger>
 										</FormControl>
 										<SelectContent>
-											<SelectItem value="http">HTTP</SelectItem>
+											<SelectItem value="http">{i18n.t("workspace.mcp.connectionTypeLabels.http")}</SelectItem>
 											<SelectItem value="socks5">SOCKS5</SelectItem>
-											<SelectItem value="environment">Environment</SelectItem>
+											<SelectItem value="environment">{i18n.t("workspace.providers.environment")}</SelectItem>
 										</SelectContent>
 									</Select>
 									<FormMessage />
@@ -134,10 +132,10 @@ export function ProxyFormFragment({ provider }: ProxyFormFragmentProps) {
 									name="proxy_config.url"
 									render={({ field }) => (
 										<FormItem>
-											<FormLabel>Proxy URL</FormLabel>
+											<FormLabel>{i18n.t("workspace.providers.proxyUrl")}</FormLabel>
 											<FormControl>
 												<SecretVarInput
-													placeholder="http://proxy.example.com or env.OPENAI_PROXY_URL"
+													placeholder={i18n.t("workspace.providers.proxyUrlPlaceholder")}
 													{...field}
 													value={field.value}
 													disabled={!hasUpdateProviderAccess}
@@ -154,10 +152,10 @@ export function ProxyFormFragment({ provider }: ProxyFormFragmentProps) {
 										name="proxy_config.username"
 										render={({ field }) => (
 											<FormItem>
-												<FormLabel>Username</FormLabel>
+												<FormLabel>{i18n.t("login.username")}</FormLabel>
 												<FormControl>
 													<SecretVarInput
-														placeholder="Proxy username or env.OPENAI_PROXY_USERNAME"
+														placeholder={i18n.t("workspace.providers.proxyUsernamePlaceholder")}
 														{...field}
 														value={field.value}
 														disabled={!hasUpdateProviderAccess}
@@ -173,11 +171,11 @@ export function ProxyFormFragment({ provider }: ProxyFormFragmentProps) {
 										name="proxy_config.password"
 										render={({ field }) => (
 											<FormItem>
-												<FormLabel>Password</FormLabel>
+												<FormLabel>{i18n.t("login.password")}</FormLabel>
 												<FormControl>
 													<SecretVarInput
 														type="password"
-														placeholder="Proxy password or env.OPENAI_PROXY_PASSWORD"
+														placeholder={i18n.t("workspace.providers.proxyPasswordPlaceholder")}
 														hideValueWhenEnv
 														redactNonEnvValue
 														{...field}
@@ -196,11 +194,11 @@ export function ProxyFormFragment({ provider }: ProxyFormFragmentProps) {
 									name="proxy_config.ca_cert_pem"
 									render={({ field }) => (
 										<FormItem>
-											<FormLabel>CA Certificate (PEM) (Optional)</FormLabel>
+											<FormLabel>{i18n.t("workspace.providers.caCertificatePemOptional")}</FormLabel>
 											<FormControl>
 												<SecretVarInput
 													variant="textarea"
-													placeholder="-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE----- or env.OPENAI_PROXY_CA_CERT_PEM"
+													placeholder={i18n.t("workspace.providers.proxyCaCertificatePlaceholder")}
 													className="font-mono text-xs"
 													rows={6}
 													hideValueWhenEnv
@@ -211,10 +209,7 @@ export function ProxyFormFragment({ provider }: ProxyFormFragmentProps) {
 													data-testid="env-var-proxy-ca-cert-pem"
 												/>
 											</FormControl>
-											<FormDescription>
-												PEM-encoded CA certificate to trust for TLS connections through SSL-intercepting proxies. You can also use
-												<code> env.YOUR_PROXY_CA_CERT_VAR</code>.
-											</FormDescription>
+											<FormDescription>{i18n.t("workspace.providers.proxyCaCertificateDescription")}</FormDescription>
 											<FormMessage />
 										</FormItem>
 									)}
@@ -234,14 +229,14 @@ export function ProxyFormFragment({ provider }: ProxyFormFragmentProps) {
 						}}
 						disabled={!hasUpdateProviderAccess || isUpdatingProvider || !provider.proxy_config || provider.proxy_config.type === "none"}
 					>
-						Remove configuration
+						{i18n.t("workspace.providers.removeConfiguration")}
 					</Button>
 					<Button
 						type="submit"
 						disabled={!form.formState.isDirty || !hasUpdateProviderAccess || isUpdatingProvider}
 						isLoading={isUpdatingProvider}
 					>
-						Save Proxy Configuration
+						{i18n.t("workspace.providers.saveProxyConfiguration")}
 					</Button>
 				</div>
 			</form>

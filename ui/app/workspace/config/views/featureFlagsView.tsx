@@ -9,6 +9,7 @@ import type { FeatureFlagStatus } from "@/lib/types/featureFlag";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { Crown, Lock } from "lucide-react";
 import { toast } from "sonner";
+import i18n from "@/lib/i18n";
 
 export default function FeatureFlagsView() {
 	const hasUpdateAccess = useRbac(RbacResource.FeatureFlags, RbacOperation.Update);
@@ -20,7 +21,12 @@ export default function FeatureFlagsView() {
 	async function handleToggle(flag: FeatureFlagStatus, checked: boolean) {
 		try {
 			await updateFeatureFlag({ id: flag.id, enabled: checked }).unwrap();
-			toast.success(`${flag.display_name || flag.id} ${checked ? "enabled" : "disabled"}`);
+			toast.success(
+				i18n.t("workspace.config.featureFlagsCopy.stateChanged", {
+					name: flag.display_name || flag.id,
+					state: checked ? i18n.t("workspace.providers.keyTable.itemEnabled") : i18n.t("workspace.providers.keyTable.itemDisabled"),
+				}),
+			);
 		} catch (err) {
 			toast.error(getErrorMessage(err));
 		}
@@ -28,28 +34,39 @@ export default function FeatureFlagsView() {
 
 	return (
 		<div className="w-full space-y-4">
-			<PageTitle title="Feature Flags">
-				Toggle in-process feature flags. Flags are declared in code; values can also be set via <code className="text-xs">config.json</code>{" "}
-				or Helm, in which case they appear here as locked.
+			<PageTitle title={i18n.t("sidebar.sub.featureFlags")}>
+				{i18n.t("workspace.config.featureFlagsCopy.featureFlagsView_toggle_in_process_feature_flags_flags_are_declared_in_co")}
 			</PageTitle>
 
-			{isLoading && <p className="text-muted-foreground text-sm">Loading feature flags...</p>}
-			{isError && <p className="text-sm text-red-500">Failed to load feature flags: {getErrorMessage(error)}</p>}
+			{isLoading && (
+				<p className="text-muted-foreground text-sm">
+					{i18n.t("workspace.config.featureFlagsCopy.featureFlagsView_loading_feature_flags")}
+				</p>
+			)}
+			{isError && (
+				<p className="text-sm text-red-500">
+					{i18n.t("workspace.config.featureFlagsCopy.featureFlagsView_failed_to_load_feature_flags")}: {getErrorMessage(error)}
+				</p>
+			)}
 
 			{!isLoading && !isError && (
 				<div className="overflow-auto rounded-sm border">
 					<Table data-testid="feature-flags-table">
 						<TableHeader>
 							<TableRow className="bg-muted/50">
-								<TableHead className="font-semibold">Flag</TableHead>
-								<TableHead className="w-px text-right font-semibold">Enabled</TableHead>
+								<TableHead className="font-semibold">{i18n.t("workspace.config.featureFlagsCopy.featureFlagsView_flag")}</TableHead>
+								<TableHead className="w-px text-right font-semibold">
+									{i18n.t("workspace.config.featureFlagsCopy.featureFlagsView_enabled")}
+								</TableHead>
 							</TableRow>
 						</TableHeader>
 						<TableBody>
 							{flags.length === 0 ? (
 								<TableRow data-testid="feature-flags-table-empty-state">
 									<TableCell colSpan={2} className="h-24 text-center">
-										<span className="text-muted-foreground text-sm">No feature flags found.</span>
+										<span className="text-muted-foreground text-sm">
+											{i18n.t("workspace.config.featureFlagsCopy.featureFlagsView_no_feature_flags_found")}
+										</span>
 									</TableCell>
 								</TableRow>
 							) : (
@@ -90,7 +107,7 @@ function FeatureFlagRow({ flag, canUpdate, onToggle }: FeatureFlagRowProps) {
 					{flag.description && <p className="text-muted-foreground text-sm">{flag.description}</p>}
 					{!flag.registered && (
 						<p className="text-muted-foreground text-xs">
-							No code currently reads this flag. The override is stored but inert until a Register() call is added.
+							{i18n.t("workspace.config.featureFlagsCopy.featureFlagsView_no_code_currently_reads_this_flag_the_override_is_stored")}
 						</p>
 					)}
 				</div>
@@ -122,10 +139,12 @@ function LockedBadge() {
 			<TooltipTrigger asChild>
 				<Badge variant="secondary" className="flex items-center gap-1 text-xs">
 					<Lock className="size-3" />
-					Locked
+					{i18n.t("workspace.config.featureFlagsCopy.featureFlagsView_locked")}
 				</Badge>
 			</TooltipTrigger>
-			<TooltipContent>Value is pinned by config.json or Helm; edit your config to change it.</TooltipContent>
+			<TooltipContent>
+				{i18n.t("workspace.config.featureFlagsCopy.featureFlagsView_value_is_pinned_by_config_json_or_helm_edit_your_config_")}
+			</TooltipContent>
 		</Tooltip>
 	);
 }
@@ -136,10 +155,12 @@ function EnterpriseBadge() {
 			<TooltipTrigger asChild>
 				<Badge variant="secondary" className="flex items-center gap-1 text-xs">
 					<Crown className="size-3" />
-					Enterprise
+					{i18n.t("workspace.config.proxy.enterprise")}
 				</Badge>
 			</TooltipTrigger>
-			<TooltipContent>This flag gates an enterprise-only feature. Upgrade to enable it.</TooltipContent>
+			<TooltipContent>
+				{i18n.t("workspace.config.featureFlagsCopy.featureFlagsView_this_flag_gates_an_enterprise_only_feature_upgrade_to_en")}
+			</TooltipContent>
 		</Tooltip>
 	);
 }
@@ -149,10 +170,12 @@ function UnregisteredBadge() {
 		<Tooltip>
 			<TooltipTrigger asChild>
 				<Badge variant="destructive" className="text-xs">
-					Unregistered
+					{i18n.t("workspace.config.featureFlagsCopy.featureFlagsView_unregistered")}
 				</Badge>
 			</TooltipTrigger>
-			<TooltipContent>This id has no code registration. Restore the Register() call or clean up the stale value.</TooltipContent>
+			<TooltipContent>
+				{i18n.t("workspace.config.featureFlagsCopy.featureFlagsView_this_id_has_no_code_registration_restore_the_register_ca")}
+			</TooltipContent>
 		</Tooltip>
 	);
 }

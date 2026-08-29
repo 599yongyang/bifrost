@@ -4,6 +4,7 @@ import { buildVSCodeConfig, buildVSCodeDeeplink } from "../commandBuilders";
 import { HarnessCommandSection } from "../harnessCommandSection";
 import type { HarnessInstallProps, VSCodeConfigScope } from "../types";
 import { getRegistrationLabel } from "../utils";
+import i18n from "@/lib/i18n";
 
 export function VSCodeHarnessInstall({
 	canGenerateCommand,
@@ -52,7 +53,7 @@ export function VSCodeHarnessInstall({
 					</SelectTrigger>
 					<SelectContent>
 						<SelectItem value="workspace">Workspace</SelectItem>
-						<SelectItem value="user">User</SelectItem>
+						<SelectItem value="user">{i18n.t("common.user")}</SelectItem>
 					</SelectContent>
 				</Select>
 			}

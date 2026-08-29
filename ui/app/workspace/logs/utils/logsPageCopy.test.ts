@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { logsPageCopy } from "./logsPageCopy";
+import { setTestLanguage } from "@/lib/i18n/testUtils";
 
 const originalDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
 
@@ -9,8 +10,9 @@ afterEach(() => {
 });
 
 describe("logsPageCopy", () => {
-	it("localizes progress, pagination and column labels", () => {
+	it("localizes progress, pagination and column labels", async () => {
 		Object.defineProperty(globalThis, "document", { configurable: true, value: { documentElement: { lang: "zh" } } });
+		await setTestLanguage("zh");
 		const copy = logsPageCopy();
 		expect(copy.progressSummary(5, 10, 3, 2)).toBe("已检查 5/10 条，更新 3 条，跳过 2 条");
 		expect(copy.pageOf(2, 8)).toBe("第 2 页，共 8 页");

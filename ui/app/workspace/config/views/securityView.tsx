@@ -20,6 +20,7 @@ import { useGetAuthTypeQuery } from "@enterprise/lib/store/apis/scimApi";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import i18n from "@/lib/i18n";
 
 export default function SecurityView() {
 	const hasSettingsUpdateAccess = useRbac(RbacResource.Settings, RbacOperation.Update);
@@ -218,7 +219,7 @@ export default function SecurityView() {
 					: {}),
 			}).unwrap();
 			setSetupToken("");
-			toast.success("Security settings updated successfully.");
+			toast.success(i18n.t("workspace.config.security.successMessage"));
 		} catch (error) {
 			const message = getErrorMessage(error);
 			if (isFirstTimeSetup && message.toLowerCase().includes("setup token")) {
@@ -231,22 +232,21 @@ export default function SecurityView() {
 
 	return (
 		<div className="mx-auto w-full max-w-4xl space-y-4">
-			<PageTitle title="Security Settings">Configure security and access control settings.</PageTitle>
+			<PageTitle title={i18n.t("workspace.config.security.title")}>{i18n.t("workspace.config.security.description")}</PageTitle>
 
 			<div className="space-y-4">
 				{/* Password Protect the Dashboard */}
 				{IS_ENTERPRISE && authTypeLoading ? (
 					<div className="flex items-center justify-center rounded-sm border p-8" data-testid="security-auth-type-loading">
 						<Loader2 className="text-muted-foreground h-5 w-5 animate-spin" aria-hidden />
-						<span className="sr-only">Loading authentication settings</span>
+						<span className="sr-only">{i18n.t("workspace.config.security.loadingAuthSettings")}</span>
 					</div>
 				) : null}
 				{IS_ENTERPRISE && !authTypeLoading && authTypeError ? (
 					<Alert variant="destructive" data-testid="security-auth-type-error">
 						<AlertTriangle className="h-4 w-4" />
 						<AlertDescription>
-							Could not load authentication type. Dashboard password settings are hidden until this request succeeds.{" "}
-							{getErrorMessage(authTypeError)}
+							{i18n.t("workspace.config.security.authTypeLoadFailed")} {getErrorMessage(authTypeError)}
 						</AlertDescription>
 					</Alert>
 				) : null}
@@ -256,43 +256,39 @@ export default function SecurityView() {
 							<div className="flex items-center justify-between">
 								<div className="space-y-0.5">
 									<Label htmlFor="auth-enabled" className="text-sm font-medium">
-										Password protect the dashboard <Badge variant="secondary">BETA</Badge>
+										{i18n.t("workspace.config.security.passwordProtectDashboard")}{" "}
+										<Badge variant="secondary">{i18n.t("workspace.config.security.beta")}</Badge>
 									</Label>
-									<p className="text-muted-foreground text-sm">
-										Set up authentication credentials to protect your Bifrost dashboard. Once configured, use the generated token for all
-										admin API calls.
-									</p>
+									<p className="text-muted-foreground text-sm">{i18n.t("workspace.config.security.passwordProtectDashboardDesc")}</p>
 								</div>
 								<Switch id="auth-enabled" checked={authConfig.is_enabled} onCheckedChange={handleAuthToggle} />
 							</div>
 							<div className="space-y-4">
 								<div className="space-y-2">
-									<Label htmlFor="admin-username">Username</Label>
+									<Label htmlFor="admin-username">{i18n.t("login.username")}</Label>
 									<SecretVarInput
 										id="admin-username"
 										type="text"
-										placeholder="Enter admin username or env.VAR_NAME"
+										placeholder={i18n.t("workspace.config.security.usernamePlaceholder")}
 										value={authConfig.admin_username}
 										disabled={!authConfig.is_enabled}
 										onChange={(value) => handleAuthFieldChange("admin_username", value)}
 									/>
 								</div>
 								<div className="space-y-2">
-									<Label htmlFor="admin-password">Password</Label>
+									<Label htmlFor="admin-password">{i18n.t("login.password")}</Label>
 									<SecretVarInput
 										ref={passwordInputRef}
 										id="admin-password"
 										aria-invalid={!!passwordError}
 										aria-describedby={passwordError ? "admin-password-error" : undefined}
 										type="password"
-										placeholder="Enter admin password or env.VAR_NAME"
+										placeholder={i18n.t("workspace.config.security.passwordPlaceholder")}
 										value={authConfig.admin_password}
 										disabled={!authConfig.is_enabled}
 										onChange={(value) => handleAuthFieldChange("admin_password", value)}
 									/>
-									<p className="text-muted-foreground text-xs">
-										Use at least 12 characters with uppercase, lowercase, number, and special character. Env var references are accepted.
-									</p>
+									<p className="text-muted-foreground text-xs">{i18n.t("workspace.config.security.passwordRequirements")}</p>
 									{passwordError ? (
 										<p id="admin-password-error" className="text-destructive text-xs" role="alert">
 											{passwordError}
@@ -301,21 +297,17 @@ export default function SecurityView() {
 								</div>
 								{isFirstTimeSetup && authConfig.is_enabled ? (
 									<div className="space-y-2">
-										<Label htmlFor="setup-token">Setup token</Label>
+										<Label htmlFor="setup-token">{i18n.t("workspace.config.security.setupToken")}</Label>
 										<Input
 											id="setup-token"
 											data-testid="security-setup-token-input"
 											type="password"
 											autoComplete="off"
-											placeholder="Paste the setup token configured by your operator"
+											placeholder={i18n.t("workspace.config.security.setupTokenPlaceholder")}
 											value={setupToken}
 											onChange={(e) => setSetupToken(e.target.value)}
 										/>
-										<p className="text-muted-foreground text-xs">
-											No admin account exists yet, so this instance is reachable without a password. To finish setup, ask your operator for
-											the setup token configured via <code>setup_token</code> in <code>config.json</code> (or the{" "}
-											<code>BIFROST_SETUP_TOKEN</code> environment variable) and paste it here.
-										</p>
+										<p className="text-muted-foreground text-xs">{i18n.t("workspace.config.security.setupTokenDescription")}</p>
 									</div>
 								) : null}
 							</div>
@@ -326,13 +318,15 @@ export default function SecurityView() {
 				<div className="flex items-center justify-between space-x-2 rounded-sm border p-4">
 					<div className="space-y-0.5">
 						<label htmlFor="enforce-auth-on-inference" className="text-sm font-medium">
-							{IS_ENTERPRISE ? "Enable Auth on Inference" : "Enforce Virtual Keys on Inference"}
+							{IS_ENTERPRISE
+								? i18n.t("workspace.config.security.enableAuthOnInference")
+								: i18n.t("workspace.config.security.enforceVirtualKeysOnInference")}
 						</label>
 						<p className="text-muted-foreground text-sm">
 							{IS_ENTERPRISE
-								? "Require authentication (virtual key, API key, or user token) for all inference endpoints."
-								: "Require a virtual key for all inference requests."}{" "}
-							See{" "}
+								? i18n.t("workspace.config.security.enableAuthOnInferenceDesc")
+								: i18n.t("workspace.config.security.enforceVirtualKeysOnInferenceDesc")}{" "}
+							{i18n.t("workspace.config.security.see")}{" "}
 							<a
 								href="https://docs.getbifrost.ai/features/governance/virtual-keys"
 								target="_blank"
@@ -340,9 +334,9 @@ export default function SecurityView() {
 								className="text-primary underline"
 								data-testid="security-virtual-keys-docs-link"
 							>
-								documentation
+								{i18n.t("common.documentation")}
 							</a>{" "}
-							for details.
+							{i18n.t("workspace.config.security.forDetails")}
 						</p>
 					</div>
 					<Switch
@@ -357,13 +351,9 @@ export default function SecurityView() {
 					<div className="flex items-center justify-between space-x-2 rounded-sm border p-4">
 						<div className="space-y-0.5">
 							<label htmlFor="dual-credential-conflict-behavior" className="text-sm font-medium">
-								Dual Credential Conflict Behavior
+								{i18n.t("workspace.config.security.dualCredentialTitle")}
 							</label>
-							<p className="text-muted-foreground text-sm">
-								How to handle inference requests that present both an identity provider access token (<b>Authorization: Bearer</b>) and a
-								virtual key (<b>x-bf-vk</b>). <b>Prefer IDP token</b> uses the user token for identity, <b>Prefer virtual key</b> drops the
-								IDP token and authenticates via the virtual key, and <b>Reject request</b> returns a 400 error.
-							</p>
+							<p className="text-muted-foreground text-sm">{i18n.t("workspace.config.security.dualCredentialDescription")}</p>
 						</div>
 						<Select
 							value={localConfig.dual_credential_conflict_behavior || "prefer_idp"}
@@ -382,9 +372,9 @@ export default function SecurityView() {
 								<SelectValue />
 							</SelectTrigger>
 							<SelectContent>
-								<SelectItem value="prefer_idp">Prefer IDP token</SelectItem>
-								<SelectItem value="prefer_vk">Prefer virtual key</SelectItem>
-								<SelectItem value="error">Reject request</SelectItem>
+								<SelectItem value="prefer_idp">{i18n.t("workspace.config.security.preferIdp")}</SelectItem>
+								<SelectItem value="prefer_vk">{i18n.t("workspace.config.security.preferVirtualKey")}</SelectItem>
+								<SelectItem value="error">{i18n.t("workspace.config.security.rejectRequest")}</SelectItem>
 							</SelectContent>
 						</Select>
 					</div>
@@ -393,13 +383,9 @@ export default function SecurityView() {
 				<div className="flex items-center justify-between space-x-2 rounded-sm border p-4">
 					<div className="space-y-0.5">
 						<label htmlFor="allow-direct-keys" className="text-sm font-medium">
-							Allow Direct API Keys
+							{i18n.t("workspace.config.security.allowDirectApiKeys")}
 						</label>
-						<p className="text-muted-foreground text-sm">
-							When enabled, callers can pass a provider API key directly in the <b>Authorization</b>, <b>x-api-key</b>, or{" "}
-							<b>x-goog-api-key</b> header alongside <b>x-bf-direct-key: true</b>. Bifrost will use that key directly, bypassing the
-							registered key pool.
-						</p>
+						<p className="text-muted-foreground text-sm">{i18n.t("workspace.config.security.allowDirectApiKeysDescription")}</p>
 					</div>
 					<Switch
 						id="allow-direct-keys"
@@ -414,13 +400,9 @@ export default function SecurityView() {
 					<div className="space-y-2 rounded-sm border p-4">
 						<div className="space-y-0.5">
 							<label htmlFor="allowed-origins" className="text-sm font-medium">
-								Allowed Origins
+								{i18n.t("workspace.config.security.allowedOrigins")}
 							</label>
-							<p className="text-muted-foreground text-sm">
-								Comma-separated list of allowed origins for CORS and WebSocket connections. Localhost origins are always allowed. Each
-								origin must be a complete URL with protocol (e.g., https://app.example.com, http://10.0.0.100:3000). Wildcards are supported
-								for subdomains (e.g., https://*.example.com) or use "*" to allow all origins.
-							</p>
+							<p className="text-muted-foreground text-sm">{i18n.t("workspace.config.security.allowedOriginsDesc")}</p>
 						</div>
 						<Textarea
 							id="allowed-origins"
@@ -436,14 +418,14 @@ export default function SecurityView() {
 					<div className="space-y-2 rounded-sm border p-4">
 						<div className="space-y-0.5">
 							<label htmlFor="allowed-headers" className="text-sm font-medium">
-								Allowed Headers
+								{i18n.t("workspace.config.security.allowedHeaders")}
 							</label>
-							<p className="text-muted-foreground text-sm">Comma-separated list of allowed headers for CORS.</p>
+							<p className="text-muted-foreground text-sm">{i18n.t("workspace.config.security.allowedHeadersDesc")}</p>
 						</div>
 						<Textarea
 							id="allowed-headers"
 							className="h-24"
-							placeholder="X-Stainless-Timeout"
+							placeholder={i18n.t("workspace.config.security.allowedHeadersPlaceholder")}
 							value={localValues.allowed_headers}
 							onChange={(e) => handleAllowedHeadersChange(e.target.value)}
 						/>
@@ -454,18 +436,15 @@ export default function SecurityView() {
 					<div className="space-y-2 rounded-sm border p-4">
 						<div className="space-y-0.5">
 							<label htmlFor="required-headers" className="text-sm font-medium">
-								Required Headers
+								{i18n.t("workspace.config.security.requiredHeaders")}
 							</label>
-							<p className="text-muted-foreground text-sm">
-								Comma-separated list of headers that must be present on every request. Requests missing any of these headers will be
-								rejected with a 400 error. Header names are case-insensitive.
-							</p>
+							<p className="text-muted-foreground text-sm">{i18n.t("workspace.config.security.requiredHeadersDesc")}</p>
 						</div>
 						<Textarea
 							id="required-headers"
 							data-testid="required-headers-textarea"
 							className="h-24"
-							placeholder="X-Tenant-ID, X-Custom-Header"
+							placeholder={i18n.t("workspace.config.security.requiredHeadersPlaceholder")}
 							value={localValues.required_headers}
 							onChange={(e) => handleRequiredHeadersChange(e.target.value)}
 						/>
@@ -476,19 +455,15 @@ export default function SecurityView() {
 					<div className="space-y-2 rounded-sm border p-4">
 						<div className="space-y-0.5">
 							<label htmlFor="whitelisted-routes" className="text-sm font-medium">
-								Whitelisted Routes
+								{i18n.t("workspace.config.security.whitelistedRoutes")}
 							</label>
-							<p className="text-muted-foreground text-sm">
-								Comma-separated list of routes that bypass the auth middleware. Requests to these routes will not require authentication.
-								System routes like <b>/health</b>, <b>/api/session/login</b>, and <b>/api/session/is-auth-enabled</b> are always whitelisted
-								regardless of this setting.
-							</p>
+							<p className="text-muted-foreground text-sm">{i18n.t("workspace.config.security.whitelistedRoutesDescription")}</p>
 						</div>
 						<Textarea
 							id="whitelisted-routes"
 							data-testid="whitelisted-routes-textarea"
 							className="h-24"
-							placeholder="/api/custom-webhook, /api/public-endpoint"
+							placeholder={i18n.t("workspace.config.security.whitelistedRoutesPlaceholder")}
 							value={localValues.whitelisted_routes}
 							onChange={(e) => handleWhitelistedRoutesChange(e.target.value)}
 						/>
@@ -497,22 +472,22 @@ export default function SecurityView() {
 			</div>
 			<div className="bg-card sticky bottom-0 flex justify-end py-2">
 				<Button onClick={handleSave} disabled={!hasChanges || isLoading || !hasSettingsUpdateAccess}>
-					{isLoading ? "Saving..." : "Save Changes"}
+					{isLoading ? i18n.t("common.saving") : i18n.t("workspace.config.saveChanges")}
 				</Button>
 			</div>
 			<Dialog open={!!setupTokenErrorMessage} onOpenChange={(open) => !open && setSetupTokenErrorMessage(null)}>
 				<DialogContent data-testid="setup-token-error-dialog">
 					<DialogHeader>
-						<DialogTitle>Setup token required</DialogTitle>
+						<DialogTitle>{i18n.t("workspace.config.security.setupTokenRequired")}</DialogTitle>
 						<DialogDescription>{setupTokenErrorMessage}</DialogDescription>
 					</DialogHeader>
 					<DialogFooter>
 						<Button variant="outline" onClick={() => setSetupTokenErrorMessage(null)} data-testid="setup-token-error-close">
-							Close
+							{i18n.t("common.close")}
 						</Button>
 						<Button asChild data-testid="setup-token-error-view-docs">
 							<a href="https://docs.getbifrost.ai/quickstart/gateway/setting-up-auth" target="_blank" rel="noopener noreferrer">
-								View docs
+								{i18n.t("workspace.config.security.viewDocs")}
 							</a>
 						</Button>
 					</DialogFooter>
@@ -526,7 +501,7 @@ const RestartWarning = () => {
 	return (
 		<Alert variant="destructive" className="mt-2">
 			<AlertTriangle className="h-4 w-4" />
-			<AlertDescription>Need to restart Bifrost to apply changes.</AlertDescription>
+			<AlertDescription>{i18n.t("workspace.config.security.restartRequired")}</AlertDescription>
 		</Alert>
 	);
 };

@@ -1,3 +1,4 @@
+import i18n from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -22,7 +23,6 @@ import {
 } from "@/lib/store";
 import type { DailyReportAudience, DailyReportJobStatus, DailyReportPreview, DailyReportRunDetail } from "@/lib/types/alerting";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
-import { localize } from "@/lib/i18n/language";
 import { ArrowRight, ChevronLeft, ChevronRight, CircleAlert, Clock3, Eye, Play, RefreshCw, RotateCcw, Save, Send } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -123,10 +123,16 @@ function PreviewPanels({
 			<TabsContent value="internal" className="space-y-3">
 				<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
 					{[
-						[localize("User requests", "用户请求"), preview.snapshot.overview.user_requests.toLocaleString()],
-						[localize("Success rate", "成功率"), formatDailyReportPercent(preview.snapshot.overview.user_success_rate)],
-						[localize("Fallback recoveries", "Fallback 恢复"), preview.snapshot.overview.fallback_recoveries.toLocaleString()],
-						[localize("Slow requests", "慢请求"), preview.snapshot.overview.slow_requests.toLocaleString()],
+						[i18n.t("workspace.alerting.copy.DailyReportsView_user_requests"), preview.snapshot.overview.user_requests.toLocaleString()],
+						[
+							i18n.t("workspace.alerting.copy.DailyReportsView_success_rate"),
+							formatDailyReportPercent(preview.snapshot.overview.user_success_rate),
+						],
+						[
+							i18n.t("workspace.alerting.copy.DailyReportsView_fallback_recoveries"),
+							preview.snapshot.overview.fallback_recoveries.toLocaleString(),
+						],
+						[i18n.t("workspace.alerting.copy.DailyReportsView_slow_requests"), preview.snapshot.overview.slow_requests.toLocaleString()],
 					].map(([label, value]) => (
 						<div key={label} className="bg-muted/30 rounded-sm border p-3">
 							<p className="text-muted-foreground text-xs">{label}</p>
@@ -362,7 +368,7 @@ export function DailyReportsView() {
 								onClick={() => settingsData?.settings && setForm(settingsToForm(settingsData.settings))}
 								data-testid="daily-report-reset-settings"
 							>
-								<RotateCcw className="size-4" /> {localize("Reset", "重置")}
+								<RotateCcw className="size-4" /> {i18n.t("workspace.alerting.copy.DailyReportsView_reset")}
 							</Button>
 							<Button data-testid="daily-report-save-settings" disabled={saving.isLoading} onClick={save} isLoading={saving.isLoading}>
 								<Save className="size-4" /> {copy.saveSettings}

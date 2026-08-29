@@ -15,6 +15,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { AlertTriangle, Copy, Info, Plus, Trash, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm, type Resolver } from "react-hook-form";
+import i18n from "@/lib/i18n";
 
 interface PrometheusFormFragmentProps {
 	currentConfig?: {
@@ -185,15 +186,18 @@ export function PrometheusFormFragment({
 	const renderActions = (tabKey: "pull" | "push", tabDirty: boolean, onResetTab: () => void) => {
 		const thisTabHasErrors = tabKey === "pull" ? hasPullErrors : hasPushErrors;
 		const otherTabHasErrors = tabKey === "pull" ? hasPushErrors : hasPullErrors;
-		const otherTabLabel = tabKey === "pull" ? "Push-based" : "Pull-based";
+		const otherTabLabel =
+			tabKey === "pull"
+				? i18n.t("workspace.observabilitySettings.prometheus.pushBasedTab")
+				: i18n.t("workspace.observabilitySettings.prometheus.pullBased");
 		const saveDisabled = !hasPrometheusAccess || !tabDirty || formIsInvalid;
 		let tooltipMsg = "";
 		if (!tabDirty) {
-			tooltipMsg = "No changes made in this tab";
+			tooltipMsg = i18n.t("workspace.observabilitySettings.prometheus.validationNoChangesTab");
 		} else if (formIsInvalid && otherTabHasErrors && !thisTabHasErrors) {
-			tooltipMsg = `Fix validation errors in the ${otherTabLabel} tab before saving`;
+			tooltipMsg = i18n.t("workspace.observabilitySettings.prometheus.validationOtherTab", { tab: otherTabLabel });
 		} else if (formIsInvalid) {
-			tooltipMsg = "Fix validation errors before saving";
+			tooltipMsg = i18n.t("workspace.observabilitySettings.prometheus.validationFixErrors");
 		}
 
 		return (
@@ -206,8 +210,8 @@ export function PrometheusFormFragment({
 							onClick={onDelete}
 							disabled={isDeleting || !hasPrometheusAccess}
 							data-testid="prometheus-connector-delete-btn"
-							title="Delete connector"
-							aria-label="Delete connector"
+							title={i18n.t("workspace.observabilitySettings.prometheus.deleteConnector")}
+							aria-label={i18n.t("workspace.observabilitySettings.prometheus.deleteConnector")}
 						>
 							<Trash2 className="size-4" />
 						</Button>
@@ -219,13 +223,13 @@ export function PrometheusFormFragment({
 						disabled={!hasPrometheusAccess || isLoading || !tabDirty}
 						data-testid={`prometheus-${tabKey}-reset-btn`}
 					>
-						Reset
+						{i18n.t("workspace.observabilitySettings.prometheus.reset")}
 					</Button>
 					<TooltipProvider>
 						<Tooltip>
 							<TooltipTrigger asChild>
 								<Button type="submit" disabled={saveDisabled} isLoading={isSaving} data-testid={`prometheus-${tabKey}-save-btn`}>
-									Save Prometheus Configuration
+									{i18n.t("workspace.observabilitySettings.prometheus.saveConfiguration")}
 								</Button>
 							</TooltipTrigger>
 							{tooltipMsg && (
@@ -246,10 +250,10 @@ export function PrometheusFormFragment({
 				<Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "pull" | "push")}>
 					<TabsList className="gap-2">
 						<TabsTrigger value="pull" className="px-2 py-1" data-testid="prometheus-tab-pull">
-							Pull-based
+							{i18n.t("workspace.observabilitySettings.prometheus.pullBased")}
 						</TabsTrigger>
 						<TabsTrigger value="push" className="px-2 py-1" data-testid="prometheus-tab-push">
-							Push-based
+							{i18n.t("workspace.observabilitySettings.prometheus.pushBasedTab")}
 						</TabsTrigger>
 					</TabsList>
 
@@ -257,15 +261,17 @@ export function PrometheusFormFragment({
 					<TabsContent value="pull" className="mt-2 space-y-4">
 						<div className="flex items-center justify-between gap-4">
 							<div className="flex flex-col gap-1">
-								<h3 className="text-sm font-medium">Pull-based Scraping</h3>
-								<p className="text-muted-foreground text-xs">Prometheus can scrape metrics from the /metrics endpoint</p>
+								<h3 className="text-sm font-medium">{i18n.t("workspace.observabilitySettings.prometheus.pullBasedScraping")}</h3>
+								<p className="text-muted-foreground text-xs">{i18n.t("workspace.observabilitySettings.prometheus.pullBasedDescription")}</p>
 							</div>
 							<FormField
 								control={form.control}
 								name="metrics_enabled"
 								render={({ field }) => (
 									<FormItem className="flex items-center gap-2">
-										<FormLabel className="text-muted-foreground text-sm font-medium">Enabled</FormLabel>
+										<FormLabel className="text-muted-foreground text-sm font-medium">
+											{i18n.t("workspace.observabilitySettings.prometheus.enabled")}
+										</FormLabel>
 										<FormControl>
 											<Switch
 												checked={field.value}
@@ -282,7 +288,7 @@ export function PrometheusFormFragment({
 						<div className="bg-muted/50 rounded-md p-4">
 							<div className="flex items-center justify-between">
 								<div className="flex flex-col gap-1">
-									<span className="text-sm font-medium">Metrics Endpoint</span>
+									<span className="text-sm font-medium">{i18n.t("workspace.observabilitySettings.prometheus.metricsEndpoint")}</span>
 									<code className="text-muted-foreground text-xs">{metricsEndpoint || "http://<bifrost-host>:<port>/metrics"}</code>
 								</div>
 								{metricsEndpoint && (
@@ -295,12 +301,14 @@ export function PrometheusFormFragment({
 										data-testid="prometheus-copy-endpoint"
 									>
 										<Copy className="mr-2 h-3 w-3" />
-										{copied ? "Copied!" : "Copy"}
+										{copied
+											? i18n.t("workspace.observabilitySettings.prometheus.copied")
+											: i18n.t("workspace.observabilitySettings.prometheus.copy")}
 									</Button>
 								)}
 							</div>
 							<p className="text-muted-foreground mt-2 text-xs">
-								Configure your Prometheus server to scrape this endpoint. Served only while Pull-based scraping is enabled.
+								{i18n.t("workspace.observabilitySettings.prometheus.metricsEndpointHelp")}
 							</p>
 						</div>
 
@@ -312,18 +320,18 @@ export function PrometheusFormFragment({
 						<div className="flex items-center justify-between gap-4">
 							<div className="flex flex-col gap-1">
 								<h3 className="flex flex-row items-center gap-2 text-sm font-medium">
-									Push-based (Push Gateway) <Badge variant="secondary">BETA</Badge>
+									{i18n.t("workspace.observabilitySettings.prometheus.pushBased")} <Badge variant="secondary">BETA</Badge>
 								</h3>
-								<p className="text-muted-foreground text-xs">
-									Push metrics to a Prometheus Push Gateway for proper aggregation in cluster deployments
-								</p>
+								<p className="text-muted-foreground text-xs">{i18n.t("workspace.observabilitySettings.prometheus.pushBasedDescription")}</p>
 							</div>
 							<FormField
 								control={form.control}
 								name="push_gateway_enabled"
 								render={({ field }) => (
 									<FormItem className="flex items-center gap-2">
-										<FormLabel className="text-muted-foreground text-sm font-medium">Enabled</FormLabel>
+										<FormLabel className="text-muted-foreground text-sm font-medium">
+											{i18n.t("workspace.observabilitySettings.prometheus.enabled")}
+										</FormLabel>
 										<FormControl>
 											<Switch
 												checked={field.value}
@@ -339,10 +347,7 @@ export function PrometheusFormFragment({
 
 						<Alert variant="info">
 							<AlertTriangle className="" />
-							<AlertDescription className="text-xs">
-								If you are running multiple Bifrost nodes, use push gateway for accurate metrics. Pull-based /metrics scraping may miss
-								nodes behind a load balancer.
-							</AlertDescription>
+							<AlertDescription className="text-xs">{i18n.t("workspace.observabilitySettings.prometheus.multiNodeAlert")}</AlertDescription>
 						</Alert>
 
 						<div className="space-y-4">
@@ -351,7 +356,7 @@ export function PrometheusFormFragment({
 								name="prometheus_config.push_gateway_url"
 								render={({ field }) => (
 									<FormItem className="w-full">
-										<FormLabel>Push Gateway URL</FormLabel>
+										<FormLabel>{i18n.t("workspace.observabilitySettings.prometheus.pushGatewayUrl")}</FormLabel>
 										<FormControl>
 											<SecretVarInput
 												placeholder="http://pushgateway:9091 or env.PUSHGATEWAY_URL"
@@ -360,7 +365,7 @@ export function PrometheusFormFragment({
 												{...field}
 											/>
 										</FormControl>
-										<FormDescription>URL of your Prometheus Push Gateway</FormDescription>
+										<FormDescription>{i18n.t("workspace.observabilitySettings.prometheus.pushGatewayUrlDescription")}</FormDescription>
 										<FormMessage />
 									</FormItem>
 								)}
@@ -372,11 +377,16 @@ export function PrometheusFormFragment({
 									name="prometheus_config.job_name"
 									render={({ field }) => (
 										<FormItem>
-											<FormLabel>Job Name</FormLabel>
+											<FormLabel>{i18n.t("workspace.observabilitySettings.prometheus.jobName")}</FormLabel>
 											<FormControl>
-												<Input placeholder="bifrost" disabled={!hasPrometheusAccess} data-testid="prometheus-job-name" {...field} />
+												<Input
+													placeholder={i18n.t("workspace.observabilitySettings.prometheus.jobNamePlaceholder")}
+													disabled={!hasPrometheusAccess}
+													data-testid="prometheus-job-name"
+													{...field}
+												/>
 											</FormControl>
-											<FormDescription>Job label for metrics</FormDescription>
+											<FormDescription>{i18n.t("workspace.observabilitySettings.prometheus.jobNameDescription")}</FormDescription>
 											<FormMessage />
 										</FormItem>
 									)}
@@ -387,7 +397,7 @@ export function PrometheusFormFragment({
 									name="prometheus_config.push_interval"
 									render={({ field }) => (
 										<FormItem>
-											<FormLabel>Push Interval (seconds)</FormLabel>
+											<FormLabel>{i18n.t("workspace.observabilitySettings.prometheus.pushInterval")}</FormLabel>
 											<FormControl>
 												<Input
 													type="number"
@@ -399,7 +409,7 @@ export function PrometheusFormFragment({
 													onChange={(e) => field.onChange(parseInt(e.target.value) || 15)}
 												/>
 											</FormControl>
-											<FormDescription>How often to push (1-300s)</FormDescription>
+											<FormDescription>{i18n.t("workspace.observabilitySettings.prometheus.pushIntervalDescription")}</FormDescription>
 											<FormMessage />
 										</FormItem>
 									)}
@@ -412,23 +422,21 @@ export function PrometheusFormFragment({
 								render={({ field }) => (
 									<FormItem>
 										<FormLabel className="flex items-center gap-2">
-											Instance ID
+											{i18n.t("workspace.observabilitySettings.prometheus.instanceId")}
 											<TooltipProvider>
 												<Tooltip>
 													<TooltipTrigger asChild>
 														<Info className="text-muted-foreground h-3 w-3" />
 													</TooltipTrigger>
 													<TooltipContent>
-														<p className="max-w-xs text-xs">
-															Used to identify this Bifrost instance in metrics. If not set, hostname is used automatically.
-														</p>
+														<p className="max-w-xs text-xs">{i18n.t("workspace.observabilitySettings.prometheus.instanceIdTooltip")}</p>
 													</TooltipContent>
 												</Tooltip>
 											</TooltipProvider>
 										</FormLabel>
 										<FormControl>
 											<Input
-												placeholder="Auto-generated from hostname"
+												placeholder={i18n.t("workspace.observabilitySettings.prometheus.instanceIdPlaceholder")}
 												disabled={!hasPrometheusAccess}
 												data-testid="prometheus-instance-id"
 												{...field}
@@ -451,12 +459,12 @@ export function PrometheusFormFragment({
 										data-testid="prometheus-add-basic-auth"
 									>
 										<Plus className="mr-2 h-3 w-3" />
-										Add Basic Auth
+										{i18n.t("workspace.observabilitySettings.prometheus.addBasicAuth")}
 									</Button>
 								) : (
 									<>
 										<div className="flex items-center justify-between">
-											<span className="text-sm font-medium">Basic Authentication</span>
+											<span className="text-sm font-medium">{i18n.t("workspace.observabilitySettings.prometheus.basicAuth")}</span>
 											<Button
 												type="button"
 												variant="ghost"
@@ -465,7 +473,7 @@ export function PrometheusFormFragment({
 												disabled={!hasPrometheusAccess}
 												className="text-muted-foreground hover:text-destructive h-auto p-1"
 												data-testid="prometheus-remove-basic-auth"
-												aria-label="Remove basic auth"
+												aria-label={i18n.t("workspace.observabilitySettings.prometheus.removeBasicAuth")}
 											>
 												<Trash className="h-4 w-4" />
 											</Button>
@@ -476,10 +484,10 @@ export function PrometheusFormFragment({
 												name="prometheus_config.basic_auth_username"
 												render={({ field }) => (
 													<FormItem>
-														<FormLabel>Username</FormLabel>
+														<FormLabel>{i18n.t("workspace.observabilitySettings.prometheus.username")}</FormLabel>
 														<FormControl>
 															<SecretVarInput
-																placeholder="Username or env.PG_USER"
+																placeholder={i18n.t("workspace.observabilitySettings.prometheus.usernamePlaceholder")}
 																disabled={!hasPrometheusAccess}
 																data-testid="prometheus-basic-auth-username"
 																{...field}
@@ -495,11 +503,11 @@ export function PrometheusFormFragment({
 												name="prometheus_config.basic_auth_password"
 												render={({ field }) => (
 													<FormItem>
-														<FormLabel>Password</FormLabel>
+														<FormLabel>{i18n.t("workspace.observabilitySettings.prometheus.password")}</FormLabel>
 														<FormControl>
 															<SecretVarInput
 																type="password"
-																placeholder="Password or env.PG_PASS"
+																placeholder={i18n.t("workspace.observabilitySettings.prometheus.passwordPlaceholder")}
 																disabled={!hasPrometheusAccess}
 																hideValueWhenEnv
 																redactNonEnvValue

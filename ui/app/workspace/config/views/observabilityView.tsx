@@ -8,6 +8,7 @@ import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { AlertTriangle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import i18n from "@/lib/i18n";
 
 export default function ObservabilityView() {
 	const hasSettingsUpdateAccess = useRbac(RbacResource.Settings, RbacOperation.Update);
@@ -47,12 +48,12 @@ export default function ObservabilityView() {
 
 	const handleSave = useCallback(async () => {
 		if (!bifrostConfig) {
-			toast.error("Could not save settings: configuration not loaded.");
+			toast.error(i18n.t("workspace.config.observability.configNotLoaded"));
 			return;
 		}
 		try {
 			await updateCoreConfig({ ...bifrostConfig, client_config: localConfig }).unwrap();
-			toast.success("Observability settings updated successfully.");
+			toast.success(i18n.t("workspace.config.observability.updated"));
 		} catch (error) {
 			toast.error(getErrorMessage(error));
 		}
@@ -64,10 +65,7 @@ export default function ObservabilityView() {
 
 			<Alert variant="destructive">
 				<AlertTriangle className="h-4 w-4" />
-				<AlertDescription>
-					These settings require a Bifrost service restart to take effect. Current connections will continue with existing settings until
-					restart.
-				</AlertDescription>
+				<AlertDescription>{i18n.t("workspace.config.performanceTuning.restartAlert")}</AlertDescription>
 			</Alert>
 
 			<div className="space-y-4">
@@ -76,14 +74,14 @@ export default function ObservabilityView() {
 					<div className="space-y-2 rounded-sm border p-4">
 						<div className="space-y-0.5">
 							<label htmlFor="prometheus-labels" className="text-sm font-medium">
-								Prometheus Labels
+								{i18n.t("workspace.config.observability.prometheusLabels")}
 							</label>
-							<p className="text-muted-foreground text-sm">Comma-separated list of custom labels to add to the Prometheus metrics.</p>
+							<p className="text-muted-foreground text-sm">{i18n.t("workspace.config.observability.prometheusLabelsDescription")}</p>
 						</div>
 						<Textarea
 							id="prometheus-labels"
 							className="h-24"
-							placeholder="teamId, projectId, environment"
+							placeholder={i18n.t("workspace.config.observability.prometheusLabelsPlaceholder")}
 							value={localValues.prometheus_labels}
 							onChange={(e) => handlePrometheusLabelsChange(e.target.value)}
 						/>
@@ -93,7 +91,7 @@ export default function ObservabilityView() {
 			</div>
 			<div className="flex justify-end pt-2">
 				<Button onClick={handleSave} disabled={!hasChanges || isLoading || !hasSettingsUpdateAccess}>
-					{isLoading ? "Saving..." : "Save Changes"}
+					{isLoading ? i18n.t("common.saving") : i18n.t("workspace.config.saveChanges")}
 				</Button>
 			</div>
 		</div>
@@ -101,5 +99,5 @@ export default function ObservabilityView() {
 }
 
 const RestartWarning = () => {
-	return <div className="text-muted-foreground mt-2 pl-4 text-xs font-semibold">Need to restart Bifrost to apply changes.</div>;
+	return <div className="text-muted-foreground mt-2 pl-4 text-xs font-semibold">{i18n.t("workspace.config.security.restartRequired")}</div>;
 };

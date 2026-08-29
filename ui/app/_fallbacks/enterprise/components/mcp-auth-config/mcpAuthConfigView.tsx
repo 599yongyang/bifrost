@@ -1,5 +1,6 @@
 import { ShieldUser } from "lucide-react";
 import ContactUsView from "../views/contactUsView";
+import i18n from "@/lib/i18n";
 
 export default function MCPAuthConfigView() {
 	return (
@@ -7,8 +8,8 @@ export default function MCPAuthConfigView() {
 			<ContactUsView
 				className="mx-auto min-h-[80vh]"
 				icon={<ShieldUser className="h-[5.5rem] w-[5.5rem]" strokeWidth={1} />}
-				title="Unlock MCP Auth Config"
-				description="This feature is a part of the Bifrost enterprise license. Configure authentication for MCP servers to secure your MCP connections."
+				title={i18n.t("workspace.enterpriseFallbacks.mcpAuthTitle")}
+				description={i18n.t("workspace.enterpriseFallbacks.mcpAuthDescription")}
 				readmeLink="https://docs.getbifrost.ai/mcp/overview"
 			/>
 		</div>

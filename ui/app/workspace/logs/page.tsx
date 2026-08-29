@@ -33,6 +33,7 @@ import { useLocation } from "@tanstack/react-router";
 import { AlertCircle, BarChart, CheckCircle, Clock, CloudUpload, DollarSign, Hash, Info } from "lucide-react";
 import { toast } from "sonner";
 import { parseAsSafeArrayOf, parseAsSafeString } from "@/lib/queryParamsParser";
+import i18n from "@/lib/i18n";
 import { parseAsBoolean, parseAsInteger, parseAsString, useQueryStates } from "nuqs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -562,9 +563,9 @@ export default function LogsPage() {
 				subValue: (
 					<>
 						<NumberFlow value={stats?.prompt_tokens ?? 0} format={COMPACT_NUMBER_FORMAT} />
-						<span> in / </span>
+						<span> {i18n.t("workspace.logs.detail.inputOutputSeparator")} </span>
 						<NumberFlow value={stats?.completion_tokens ?? 0} format={COMPACT_NUMBER_FORMAT} />
-						<span> out</span>
+						<span> {i18n.t("workspace.logs.detail.outputShort")}</span>
 					</>
 				),
 				description: "Total tokens used, split into input (prompt) and output (completion) tokens.",

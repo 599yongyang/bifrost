@@ -40,6 +40,7 @@ import {
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import { FilePreviewPane, getFileServeUrl } from "./filePreview";
 import { formatYamlRecord } from "./helpers";
+import i18n from "@/lib/i18n";
 
 const LazyMarkdown = lazy(() => import("@/components/ui/markdown").then((m) => ({ default: m.Markdown })));
 const Markdown = (props: ComponentProps<typeof LazyMarkdown>) => (
@@ -121,7 +122,7 @@ function ClampedDescription({ description }: { description: string }) {
 						onClick={() => setExpanded(false)}
 						className="ml-1 cursor-pointer text-xs font-medium text-blue-600 transition-colors hover:underline dark:text-blue-400"
 					>
-						Show less
+						{i18n.t("workspace.logs.detail.showLess")}
 					</button>
 				)}
 			</p>
@@ -132,7 +133,7 @@ function ClampedDescription({ description }: { description: string }) {
 					className="bg-card absolute right-0 bottom-0 cursor-pointer pr-4 pl-8 text-xs font-medium text-blue-600 transition-colors hover:underline dark:text-blue-400"
 				>
 					<span className="from-card pointer-events-none absolute top-0 right-full h-full w-8 bg-gradient-to-l to-transparent" />
-					Show more
+					{i18n.t("supplemental.showMore")}
 				</button>
 			)}
 		</div>
@@ -228,7 +229,7 @@ export function SkillHeader({
 							{downloadSkillName && (
 								<Button variant="outline" size="sm" asChild>
 									<a href={`${getApiBaseUrl()}/skills/serve/${encodeURIComponent(downloadSkillName)}/download.zip`} download>
-										Download ZIP
+										{i18n.t("supplemental.downloadZip")}
 									</a>
 								</Button>
 							)}
@@ -269,7 +270,7 @@ export function SkillHeader({
 								</Button>
 								<DialogClose className="text-muted-foreground hover:bg-card hover:text-foreground flex h-8 w-8 cursor-pointer items-center justify-center rounded-sm transition-colors">
 									<X className="h-4 w-4" />
-									<span className="sr-only">Close</span>
+									<span className="sr-only">{i18n.t("common.close")}</span>
 								</DialogClose>
 							</div>
 							<ScrollArea className="h-full" viewportClassName="bg-muted">
@@ -339,11 +340,11 @@ export function ReadOnlyMetadataTable({ value, className }: { value: Record<stri
 	const entries = Object.entries(value);
 
 	return (
-		<FormSection title="Metadata" className={cn("flex flex-1 flex-col", className)}>
+		<FormSection title={i18n.t("workspace.mcpLogs.metadata")} className={cn("flex flex-1 flex-col", className)}>
 			<div className="flex flex-1 flex-col rounded-sm border">
 				<div className="bg-muted/30 sticky top-0 z-10 grid grid-cols-1 border-b px-3 py-2 text-sm font-medium sm:grid-cols-2">
 					<span>Key</span>
-					<span>Value</span>
+					<span>{i18n.t("workspace.promptRepository.variables.value")}</span>
 				</div>
 				<div className="text-muted-foreground flex-1 divide-y overflow-y-auto">
 					{entries.map(([key, item]) => (
@@ -470,7 +471,7 @@ export function SkillMarkdown({
 			<Dialog open={externalLink != null} onOpenChange={(open) => !open && setExternalLink(null)}>
 				<DialogContent>
 					<DialogHeader>
-						<DialogTitle>Open external link?</DialogTitle>
+						<DialogTitle>{i18n.t("supplemental.openExternalLink")}</DialogTitle>
 						<DialogDescription>This link opens outside Bifrost in a new browser tab.</DialogDescription>
 					</DialogHeader>
 					<div className="bg-muted/40 rounded-sm border px-3 py-2">
@@ -479,7 +480,7 @@ export function SkillMarkdown({
 					</div>
 					<DialogFooter>
 						<Button variant="outline" onClick={() => setExternalLink(null)}>
-							Cancel
+							{i18n.t("common.cancel")}
 						</Button>
 						<Button
 							onClick={() => {
@@ -489,7 +490,7 @@ export function SkillMarkdown({
 							}}
 						>
 							<ExternalLink className="h-4 w-4" />
-							Open link
+							{i18n.t("supplemental.openLink")}
 						</Button>
 					</DialogFooter>
 				</DialogContent>
@@ -515,10 +516,10 @@ export function ReadOnlySkillBody({
 				<h2 className="text-foreground text-base leading-[normal] font-semibold">SKILL.md Body</h2>
 				<TabsList className="bg-muted h-8">
 					<TabsTrigger value="preview" className="h-6 px-2.5 text-xs">
-						Preview
+						{i18n.t("supplemental.preview")}
 					</TabsTrigger>
 					<TabsTrigger value="raw" className="h-6 px-2.5 text-xs">
-						Raw
+						{i18n.t("supplemental.raw")}
 					</TabsTrigger>
 				</TabsList>
 			</div>
@@ -803,7 +804,7 @@ export function ReadOnlyFileTree({
 										<DropdownMenuContent align="end">
 											<DropdownMenuItem className="cursor-pointer" onSelect={() => downloadFile()}>
 												<Download className="h-3.5 w-3.5" />
-												Download
+												{i18n.t("supplemental.download")}
 											</DropdownMenuItem>
 										</DropdownMenuContent>
 									</DropdownMenu>
@@ -818,23 +819,23 @@ export function ReadOnlyFileTree({
 								>
 									<DropdownMenu>
 										<DropdownMenuTrigger asChild>
-											<Button variant="ghost" size="icon" className="h-6 w-6" aria-label="File actions">
+											<Button variant="ghost" size="icon" className="h-6 w-6" aria-label={i18n.t("supplemental.fileActions")}>
 												<MoreHorizontal className="h-3.5 w-3.5" />
 											</Button>
 										</DropdownMenuTrigger>
 										<DropdownMenuContent align="end">
 											<DropdownMenuItem className="cursor-pointer" disabled={isAllExpanded} onSelect={() => onExpandAll()}>
 												<ChevronsUpDown className="h-3.5 w-3.5" />
-												Expand all
+												{i18n.t("supplemental.expandAll")}
 											</DropdownMenuItem>
 											<DropdownMenuItem className="cursor-pointer" disabled={isAllCollapsed} onSelect={() => onCollapseAll()}>
 												<ChevronsDownUp className="h-3.5 w-3.5" />
-												Collapse all
+												{i18n.t("supplemental.collapseAll")}
 											</DropdownMenuItem>
 											<DropdownMenuItem className="cursor-pointer" asChild>
 												<a href={downloadUrl} download>
 													<Download className="h-3.5 w-3.5" />
-													Download ZIP
+													{i18n.t("supplemental.downloadZip")}
 												</a>
 											</DropdownMenuItem>
 										</DropdownMenuContent>
@@ -850,7 +851,7 @@ export function ReadOnlyFileTree({
 
 	if (bare) return tree;
 
-	return <FormSection title="Files">{tree}</FormSection>;
+	return <FormSection title={i18n.t("supplemental.files")}>{tree}</FormSection>;
 }
 
 export function SkillReadOnlyContent({
@@ -900,7 +901,7 @@ export function SkillReadOnlyContent({
 									selected === METADATA_KEY ? "border-primary/20 bg-primary/10 text-primary hover:bg-primary/10" : "bg-card hover:bg-muted",
 								)}
 							>
-								Metadata
+								{i18n.t("workspace.mcpLogs.metadata")}
 							</button>
 						)}
 						{hasFrontmatter && (
@@ -915,7 +916,7 @@ export function SkillReadOnlyContent({
 										: "bg-card hover:bg-muted",
 								)}
 							>
-								Extra Frontmatter
+								{i18n.t("supplemental.extraFrontmatter")}
 							</button>
 						)}
 					</div>
@@ -938,7 +939,7 @@ export function SkillReadOnlyContent({
 				{selected === METADATA_KEY && metadata ? (
 					<ReadOnlyMetadataTable value={metadata} />
 				) : selected === FRONTMATTER_KEY && extraFrontmatter ? (
-					<ReadOnlyYamlBlock title="Extra Frontmatter" value={extraFrontmatter} />
+					<ReadOnlyYamlBlock title={i18n.t("supplemental.extraFrontmatter")} value={extraFrontmatter} />
 				) : selectedFile ? (
 					<FilePreviewPane file={selectedFile} skillName={skillName} mode="view" />
 				) : (
@@ -971,7 +972,7 @@ function SkillFilesSidebar({
 				<div className="relative grow">
 					<Search className="text-muted-foreground absolute top-1/2 left-2.5 h-4 w-4 -translate-y-1/2" />
 					<Input
-						placeholder="Search files..."
+						placeholder={i18n.t("supplemental.searchFiles")}
 						value={searchQuery}
 						onChange={(e) => setSearchQuery(e.target.value)}
 						data-testid="sidebar-search"

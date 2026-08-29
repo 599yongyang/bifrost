@@ -9,15 +9,16 @@ import { baseRoutingFields } from "@/lib/config/celFieldsRouting";
 import { getOperatorLabel } from "@/lib/config/celOperatorsRouting";
 import { ProviderIconType, RenderProviderIcon } from "@/lib/constants/icons";
 import { getProviderLabel } from "@/lib/constants/logs";
-import { localize } from "@/lib/i18n/language";
 import { useGetCustomerQuery, useGetTeamQuery, useGetVirtualKeyQuery } from "@/lib/store/apis/governanceApi";
 import { RoutingErrorFallback, RoutingRule } from "@/lib/types/routingRules";
-import { getScopeLabel } from "@/lib/utils/labels";
 import { formatDistanceToNow } from "date-fns";
+import { enUS, zhCN } from "date-fns/locale";
 import { Check, Copy, GitMerge, Key } from "lucide-react";
 import { useMemo, useState } from "react";
 import { RuleGroupType, RuleType } from "react-querybuilder";
 import { toast } from "sonner";
+import { routingRulesCopy as copy } from "../routingRulesCopy";
+import i18n from "@/lib/i18n";
 
 interface Props {
 	rule: RoutingRule | null;
@@ -75,7 +76,7 @@ function CopyButton({ value, label, testId }: { value: string; label?: string; t
 			setCopied(true);
 			setTimeout(() => setCopied(false), 1500);
 		} catch {
-			toast.error("Failed to copy to clipboard");
+			toast.error(copy.copyFailed);
 		}
 	};
 
@@ -88,13 +89,13 @@ function CopyButton({ value, label, testId }: { value: string; label?: string; t
 					size="icon"
 					className="h-6 w-6 shrink-0"
 					onClick={handleCopy}
-					aria-label={copied ? `${label ?? "value"} copied` : `Copy ${label ?? "value"}`}
+					aria-label={copied ? copy.copiedLabel(label ?? copy.value) : copy.copyLabel(label ?? copy.value)}
 					data-testid={testId}
 				>
 					{copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
 				</Button>
 			</TooltipTrigger>
-			<TooltipContent>{copied ? "Copied!" : `Copy ${label ?? "value"}`}</TooltipContent>
+			<TooltipContent>{copied ? copy.copied : copy.copyLabel(label ?? copy.value)}</TooltipContent>
 		</Tooltip>
 	);
 }
@@ -130,12 +131,12 @@ function ConditionRow({ rule }: { rule: RuleType }) {
 				<Badge variant="outline" className="shrink-0 font-medium">
 					{isHeader && keyName ? (
 						<span className="flex items-center gap-1">
-							<span className="text-muted-foreground font-normal">header</span>
+							<span className="text-muted-foreground font-normal">{copy.header}</span>
 							<span className="font-mono">{keyName}</span>
 						</span>
 					) : isParam && keyName ? (
 						<span className="flex items-center gap-1">
-							<span className="text-muted-foreground font-normal">param</span>
+							<span className="text-muted-foreground font-normal">{copy.param}</span>
 							<span className="font-mono">{keyName}</span>
 						</span>
 					) : (
@@ -176,7 +177,7 @@ function ConditionGroup({ group, depth = 0 }: { group: RuleGroupType; depth?: nu
 
 	return (
 		<div className="border-foreground/25 relative mx-3 my-1 rounded border border-dashed py-1">
-			<span className="bg-background text-muted-foreground absolute -top-2 right-2 rounded px-1 text-[10px] font-medium">Group</span>
+			<span className="bg-background text-muted-foreground absolute -top-2 right-2 rounded px-1 text-[10px] font-medium">{copy.group}</span>
 			{content}
 		</div>
 	);
@@ -185,7 +186,7 @@ function ConditionGroup({ group, depth = 0 }: { group: RuleGroupType; depth?: nu
 // ─── target card ─────────────────────────────────────────────────────────────
 
 function TargetCard({ target, total }: { target: RoutingRule["targets"][0]; index: number; total: number }) {
-	const providerLabel = target.provider ? getProviderLabel(target.provider) : "Incoming provider";
+	const providerLabel = target.provider ? getProviderLabel(target.provider) : copy.incomingProvider;
 	const weightPercent = total > 0 ? Math.round(target.weight * 100) : 0;
 
 	return (
@@ -198,7 +199,7 @@ function TargetCard({ target, total }: { target: RoutingRule["targets"][0]; inde
 						{target.model ? (
 							<span className="text-muted-foreground font-mono text-xs">{target.model}</span>
 						) : (
-							<span className="text-muted-foreground text-xs">Incoming model</span>
+							<span className="text-muted-foreground text-xs">{copy.incomingModel}</span>
 						)}
 					</div>
 				</div>
@@ -211,15 +212,17 @@ function TargetCard({ target, total }: { target: RoutingRule["targets"][0]; inde
 							<span className="text-muted-foreground w-8 text-right font-mono text-xs">{weightPercent}%</span>
 						</div>
 					</TooltipTrigger>
-					<TooltipContent>Weight: {target.weight} (raw)</TooltipContent>
+					<TooltipContent>
+						{copy.weight}: {target.weight} ({copy.raw})
+					</TooltipContent>
 				</Tooltip>
 			</div>
 			{target.key_id && (
 				<div className="bg-muted/50 flex items-center gap-1.5 rounded-md px-2 py-1">
 					<Key className="text-muted-foreground h-3 w-3 shrink-0" />
-					<span className="text-muted-foreground text-xs">Pinned key:</span>
+					<span className="text-muted-foreground text-xs">{copy.pinnedKey}:</span>
 					<code className="truncate font-mono text-xs">{target.key_id}</code>
-					<CopyButton value={target.key_id} label="key ID" testId="routing-rule-copy-key-id-btn" />
+					<CopyButton value={target.key_id} label={copy.keyId} testId="routing-rule-copy-key-id-btn" />
 				</div>
 			)}
 		</div>
@@ -233,8 +236,8 @@ function FallbackChain({ fallbacks }: { fallbacks: string[] }) {
 		<div className="flex flex-wrap items-center gap-y-2">
 			{fallbacks.map((fb, i) => {
 				const parts = fb.split("/");
-				const provider = parts[0] || "Incoming provider";
-				const model = parts.length > 1 ? parts.slice(1).join("/") : "Incoming model";
+				const provider = parts[0] || copy.incomingProvider;
+				const model = parts.length > 1 ? parts.slice(1).join("/") : copy.incomingModel;
 
 				return (
 					<div key={i} className="flex items-center">
@@ -253,28 +256,47 @@ function FallbackChain({ fallbacks }: { fallbacks: string[] }) {
 function ErrorFallbackRuleCard({ rule }: { rule: RoutingErrorFallback }) {
 	const matcherRows = rule.scenario
 		? [
-				{ label: localize("Scenario", "错误场景"), value: rule.scenario.replaceAll("_", " ") },
-				rule.supplement?.providers?.length ? { label: localize("Providers", "供应商"), value: rule.supplement.providers.join(", ") } : null,
+				{ label: i18n.t("workspace.routingRules.copy.routingRuleInfoSheet_scenario"), value: rule.scenario.replaceAll("_", " ") },
+				rule.supplement?.providers?.length
+					? { label: i18n.t("workspace.routingRules.copy.routingRuleInfoSheet_providers"), value: rule.supplement.providers.join(", ") }
+					: null,
 				rule.supplement?.error_types?.length
-					? { label: localize("Error types", "错误类型"), value: rule.supplement.error_types.join(", ") }
+					? { label: i18n.t("workspace.routingRules.copy.routingRuleInfoSheet_error_types"), value: rule.supplement.error_types.join(", ") }
 					: null,
 				rule.supplement?.error_codes?.length
-					? { label: localize("Error codes", "错误代码"), value: rule.supplement.error_codes.join(", ") }
+					? { label: i18n.t("workspace.routingRules.copy.routingRuleInfoSheet_error_codes"), value: rule.supplement.error_codes.join(", ") }
 					: null,
 				rule.supplement?.status_codes?.length
-					? { label: localize("Status codes", "状态码"), value: rule.supplement.status_codes.join(", ") }
+					? {
+							label: i18n.t("workspace.routingRules.copy.routingRuleInfoSheet_status_codes"),
+							value: rule.supplement.status_codes.join(", "),
+						}
 					: null,
 				rule.supplement?.message_contains_any?.length
-					? { label: localize("Message clues", "消息线索"), value: rule.supplement.message_contains_any.join(", ") }
+					? {
+							label: i18n.t("workspace.routingRules.copy.routingRuleInfoSheet_message_clues"),
+							value: rule.supplement.message_contains_any.join(", "),
+						}
 					: null,
 			]
 		: [
-				rule.when?.categories?.length ? { label: localize("Categories", "错误类别"), value: rule.when.categories.join(", ") } : null,
-				rule.when?.error_types?.length ? { label: localize("Error types", "错误类型"), value: rule.when.error_types.join(", ") } : null,
-				rule.when?.error_codes?.length ? { label: localize("Error codes", "错误代码"), value: rule.when.error_codes.join(", ") } : null,
-				rule.when?.status_codes?.length ? { label: localize("Status codes", "状态码"), value: rule.when.status_codes.join(", ") } : null,
+				rule.when?.categories?.length
+					? { label: i18n.t("workspace.routingRules.copy.routingRuleInfoSheet_categories"), value: rule.when.categories.join(", ") }
+					: null,
+				rule.when?.error_types?.length
+					? { label: i18n.t("workspace.routingRules.copy.routingRuleInfoSheet_error_types_2"), value: rule.when.error_types.join(", ") }
+					: null,
+				rule.when?.error_codes?.length
+					? { label: i18n.t("workspace.routingRules.copy.routingRuleInfoSheet_error_codes_2"), value: rule.when.error_codes.join(", ") }
+					: null,
+				rule.when?.status_codes?.length
+					? { label: i18n.t("workspace.routingRules.copy.routingRuleInfoSheet_status_codes_2"), value: rule.when.status_codes.join(", ") }
+					: null,
 				rule.when?.message_contains?.length
-					? { label: localize("Message contains", "消息包含"), value: rule.when.message_contains.join(", ") }
+					? {
+							label: i18n.t("workspace.routingRules.copy.routingRuleInfoSheet_message_contains"),
+							value: rule.when.message_contains.join(", "),
+						}
 					: null,
 			];
 	const rows = matcherRows.filter((row): row is { label: string; value: string } => row !== null);
@@ -282,8 +304,10 @@ function ErrorFallbackRuleCard({ rule }: { rule: RoutingErrorFallback }) {
 	return (
 		<div className="space-y-3 rounded-lg border p-4">
 			<div className="flex items-center justify-between gap-2">
-				<span className="text-sm font-semibold">{rule.name?.trim() || localize("Unnamed error rule", "未命名错误规则")}</span>
-				<Badge variant="outline">{localize("Dedicated chain", "专用备用链")}</Badge>
+				<span className="text-sm font-semibold">
+					{rule.name?.trim() || i18n.t("workspace.routingRules.copy.routingRuleInfoSheet_unnamed_error_rule")}
+				</span>
+				<Badge variant="outline">{i18n.t("workspace.routingRules.copy.routingRuleInfoSheet_dedicated_chain")}</Badge>
 			</div>
 			<div className="space-y-2">
 				{rows.map((row) => (
@@ -326,18 +350,16 @@ export function RoutingRuleInfoSheet({ rule, open, onOpenChange, onNavigate, has
 							<div className="flex flex-col items-start gap-1">
 								<div className="flex w-full flex-wrap items-center gap-2">
 									<SheetTitle className="text-base">{rule.name}</SheetTitle>
-									<Badge variant={rule.enabled ? "default" : "secondary"}>{rule.enabled ? "Enabled" : "Disabled"}</Badge>
+									<Badge variant={rule.enabled ? "default" : "secondary"}>{rule.enabled ? copy.enabled : copy.disabled}</Badge>
 									{rule.chain_rule && (
 										<Tooltip>
 											<TooltipTrigger asChild>
 												<Badge variant="outline" className="cursor-default gap-1">
 													<GitMerge className="h-3 w-3" />
-													Chain Rule
+													{copy.chainRule}
 												</Badge>
 											</TooltipTrigger>
-											<TooltipContent className="max-w-64">
-												After this rule matches, routing rules are re-evaluated using the resolved provider/model as the new context.
-											</TooltipContent>
+											<TooltipContent className="max-w-64">{copy.chainRuleDetail}</TooltipContent>
 										</Tooltip>
 									)}
 								</div>
@@ -349,24 +371,24 @@ export function RoutingRuleInfoSheet({ rule, open, onOpenChange, onNavigate, has
 								onNavigate={(dir) => onNavigate?.(dir)}
 								prevKeys={prevKeys}
 								nextKeys={nextKeys}
-								entityLabel="rule"
+								entityLabel={copy.ruleEntity}
 							/>
 						</SheetHeader>
 
 						<div className="-mx-4 space-y-6 overflow-y-auto px-4 pb-8 md:-mx-8 md:px-8">
 							{/* Overview */}
 							<div className="space-y-3">
-								<h3 className="text-sm font-semibold">Overview</h3>
+								<h3 className="text-sm font-semibold">{copy.overview}</h3>
 								<div className="grid gap-3">
 									<div className="grid grid-cols-1 items-center gap-4 md:grid-cols-3">
-										<span className="text-muted-foreground text-sm">Scope</span>
+										<span className="text-muted-foreground text-sm">{copy.scope}</span>
 										<div className="col-span-2 flex items-center gap-1.5">
-											<Badge variant="secondary">{getScopeLabel(rule.scope)}</Badge>
+											<Badge variant="secondary">{copy.scopeLabel(rule.scope)}</Badge>
 											{scopeName && <span className="text-sm">{scopeName}</span>}
 										</div>
 									</div>
 									<div className="grid grid-cols-1 items-center gap-4 md:grid-cols-3">
-										<span className="text-muted-foreground text-sm">Priority</span>
+										<span className="text-muted-foreground text-sm">{copy.priority}</span>
 										<div className="col-span-2">
 											<span className="bg-primary text-primary-foreground inline-block rounded px-2.5 py-0.5 text-xs font-medium">
 												{rule.priority}
@@ -380,20 +402,20 @@ export function RoutingRuleInfoSheet({ rule, open, onOpenChange, onNavigate, has
 
 							{/* Conditions */}
 							<div className="space-y-3">
-								<h3 className="text-sm font-semibold">Conditions</h3>
+								<h3 className="text-sm font-semibold">{copy.conditions}</h3>
 								{hasQuery ? (
 									<ConditionGroup group={rule.query!} />
 								) : hasCel ? (
-									<p className="text-muted-foreground text-sm">Defined as a CEL expression below</p>
+									<p className="text-muted-foreground text-sm">{copy.definedAsCel}</p>
 								) : (
-									<p className="text-muted-foreground text-sm">Matches all requests</p>
+									<p className="text-muted-foreground text-sm">{copy.matchesAll}</p>
 								)}
 
 								{/* CEL expression */}
 								<div className="space-y-1.5">
 									<div className="flex items-center justify-between">
-										<span className="text-sm font-semibold">CEL Expression</span>
-										<CopyButton value={rule.cel_expression} label="expression" testId="routing-rule-copy-expression-btn" />
+										<span className="text-sm font-semibold">{copy.celExpression}</span>
+										<CopyButton value={rule.cel_expression} label={copy.expressionLabel} testId="routing-rule-copy-expression-btn" />
 									</div>
 									<code className="bg-muted/50 block w-full rounded-md border px-3 py-2 font-mono text-xs break-all">
 										{rule.cel_expression || <span className="text-muted-foreground italic">true</span>}
@@ -405,7 +427,9 @@ export function RoutingRuleInfoSheet({ rule, open, onOpenChange, onNavigate, has
 
 							{/* Targets */}
 							<div className="space-y-3">
-								<h3 className="text-sm font-semibold">Targets ({targets.length})</h3>
+								<h3 className="text-sm font-semibold">
+									{copy.targets} ({targets.length})
+								</h3>
 								{targets.length > 0 ? (
 									<div className="space-y-2">
 										{targets.map((target, i) => (
@@ -413,7 +437,7 @@ export function RoutingRuleInfoSheet({ rule, open, onOpenChange, onNavigate, has
 										))}
 									</div>
 								) : (
-									<p className="text-muted-foreground text-sm">No targets configured</p>
+									<p className="text-muted-foreground text-sm">{copy.noTargets}</p>
 								)}
 							</div>
 
@@ -421,18 +445,20 @@ export function RoutingRuleInfoSheet({ rule, open, onOpenChange, onNavigate, has
 
 							{/* Fallback Chain */}
 							<div className="space-y-3">
-								<h3 className="text-sm font-semibold">Fallback Chain</h3>
+								<h3 className="text-sm font-semibold">{copy.fallbackChain}</h3>
 								{fallbacks.length > 0 ? (
 									<FallbackChain fallbacks={fallbacks} />
 								) : (
-									<p className="text-muted-foreground text-sm">No fallbacks configured</p>
+									<p className="text-muted-foreground text-sm">{copy.noFallbacks}</p>
 								)}
 							</div>
 
 							<DottedSeparator />
 
 							<div className="space-y-3">
-								<h3 className="text-sm font-semibold">{localize("Error-aware fallbacks", "错误专用备用链")}</h3>
+								<h3 className="text-sm font-semibold">
+									{i18n.t("workspace.routingRules.copy.routingRuleInfoSheet_error_aware_fallbacks")}
+								</h3>
 								{errorFallbacks.length > 0 ? (
 									<div className="space-y-3">
 										{errorFallbacks.map((errorFallback, index) => (
@@ -440,7 +466,9 @@ export function RoutingRuleInfoSheet({ rule, open, onOpenChange, onNavigate, has
 										))}
 									</div>
 								) : (
-									<p className="text-muted-foreground text-sm">{localize("No error-aware fallbacks configured", "未配置错误专用备用链")}</p>
+									<p className="text-muted-foreground text-sm">
+										{i18n.t("workspace.routingRules.copy.routingRuleInfoSheet_no_error_aware_fallbacks_configured")}
+									</p>
 								)}
 							</div>
 
@@ -449,18 +477,20 @@ export function RoutingRuleInfoSheet({ rule, open, onOpenChange, onNavigate, has
 							{/* Timestamps */}
 							<div className="grid grid-cols-1 gap-4 md:grid-cols-2">
 								<div>
-									<p className="text-muted-foreground mb-1 text-xs font-medium tracking-wider uppercase">Created</p>
+									<p className="text-muted-foreground mb-1 text-xs font-medium tracking-wider uppercase">{copy.created}</p>
 									<span className="text-sm">
 										{formatDistanceToNow(new Date(rule.created_at), {
 											addSuffix: true,
+											locale: i18n.resolvedLanguage?.startsWith("zh") ? zhCN : enUS,
 										})}
 									</span>
 								</div>
 								<div>
-									<p className="text-muted-foreground mb-1 text-xs font-medium tracking-wider uppercase">Last Updated</p>
+									<p className="text-muted-foreground mb-1 text-xs font-medium tracking-wider uppercase">{copy.lastUpdated}</p>
 									<span className="text-sm">
 										{formatDistanceToNow(new Date(rule.updated_at), {
 											addSuffix: true,
+											locale: i18n.resolvedLanguage?.startsWith("zh") ? zhCN : enUS,
 										})}
 									</span>
 								</div>

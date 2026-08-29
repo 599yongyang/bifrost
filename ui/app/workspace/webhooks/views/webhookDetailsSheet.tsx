@@ -11,6 +11,7 @@ import { format, formatDistanceToNow } from "date-fns";
 import { ChevronDown, ChevronLeft, ChevronRight, Info, Loader2, RefreshCcw, Send } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import i18n from "@/lib/i18n";
 
 const PAGE_SIZE = 25;
 
@@ -176,7 +177,7 @@ export function WebhookDetailsSheet({ endpoint, isTesting, canManage, onTest, on
 		setRedeliveringIds((prev) => new Set(prev).add(deliveryId));
 		try {
 			await redeliverWebhookDelivery(deliveryId).unwrap();
-			toast.success("Redelivery queued under the original webhook id");
+			toast.success(i18n.t("supplemental.redeliveryQueued"));
 		} catch (err) {
 			toast.error(getErrorMessage(err));
 		} finally {
@@ -202,11 +203,11 @@ export function WebhookDetailsSheet({ endpoint, isTesting, canManage, onTest, on
 						<p className="text-md max-w-full truncate">{endpoint?.name}</p>
 						{endpoint?.disabled ? (
 							<Badge variant="outline" className="bg-gray-100 text-gray-800">
-								disabled
+								{i18n.t("workspace.providers.keyTable.itemDisabled")}
 							</Badge>
 						) : (
 							<Badge variant="outline" className="bg-green-100 text-green-800">
-								enabled
+								{i18n.t("workspace.providers.keyTable.itemEnabled")}
 							</Badge>
 						)}
 					</SheetTitle>
@@ -242,7 +243,7 @@ export function WebhookDetailsSheet({ endpoint, isTesting, canManage, onTest, on
 				</div>
 
 				<div className="mt-4 flex items-center justify-between">
-					<h3 className="font-semibold">Delivery History</h3>
+					<h3 className="font-semibold">{i18n.t("supplemental.deliveryHistory")}</h3>
 					{canManage && (
 						<DropdownMenu>
 							<DropdownMenuTrigger asChild>
@@ -254,7 +255,7 @@ export function WebhookDetailsSheet({ endpoint, isTesting, canManage, onTest, on
 									data-testid="webhook-test-fire-btn"
 								>
 									{isTesting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-									<span className="flex-1 text-center">Send Test Event</span>
+									<span className="flex-1 text-center">{i18n.t("supplemental.sendTestEvent")}</span>
 									<ChevronDown className="h-3 w-3" />
 								</Button>
 							</DropdownMenuTrigger>
@@ -279,32 +280,33 @@ export function WebhookDetailsSheet({ endpoint, isTesting, canManage, onTest, on
 						<TableHeader className="bg-muted sticky top-0 z-10">
 							<TableRow>
 								<TableHead className="w-8 px-2"></TableHead>
-								<TableHead>Time</TableHead>
-								<TableHead>Request ID</TableHead>
-								<TableHead>Event</TableHead>
+								<TableHead>{i18n.t("workspace.logs.colTime")}</TableHead>
+								<TableHead>{i18n.t("workspace.mcpLogs.details.requestId")}</TableHead>
+								<TableHead>{i18n.t("supplemental.event")}</TableHead>
 								<TableHead>
 									<Tooltip>
 										<TooltipTrigger asChild>
 											<span className="inline-flex cursor-help items-center gap-1.5">
-												Status
+												{i18n.t("workspace.virtualKeys.status")}
 												<Info className="text-muted-foreground size-3" />
 											</span>
 										</TooltipTrigger>
 										<TooltipContent className="max-w-xs">
 											<div className="space-y-1">
 												<p>
-													<span className="font-medium">delivered</span>: receiver returned a 2xx.
+													<span className="font-medium">{i18n.t("supplemental.delivered")}</span>:{" "}
+													{i18n.t("supplemental.webhookDeliveredHelp")}
 												</p>
 												<p>
-													<span className="font-medium">retrying</span>: transient failure (network error, timeout, 429, or 5xx); another
-													attempt is scheduled.
+													<span className="font-medium">{i18n.t("supplemental.retrying")}</span>:{" "}
+													{i18n.t("supplemental.webhookRetryingHelp")}
 												</p>
 												<p>
-													<span className="font-medium">failed</span>: permanent error (a non-retryable 4xx such as 401/404); not retried
-													automatically.
+													<span className="font-medium">{i18n.t("supplemental.failed")}</span>: {i18n.t("supplemental.webhookFailedHelp")}
 												</p>
 												<p>
-													<span className="font-medium">retries exhausted</span>: kept failing until the retry budget ran out.
+													<span className="font-medium">{i18n.t("supplemental.retriesExhausted")}</span>:{" "}
+													{i18n.t("supplemental.webhookExhaustedHelp")}
 												</p>
 											</div>
 										</TooltipContent>
@@ -314,17 +316,14 @@ export function WebhookDetailsSheet({ endpoint, isTesting, canManage, onTest, on
 									<Tooltip>
 										<TooltipTrigger asChild>
 											<span className="inline-flex cursor-help items-center gap-1.5">
-												Responses
+												{i18n.t("supplemental.responses")}
 												<Info className="text-muted-foreground size-3" />
 											</span>
 										</TooltipTrigger>
-										<TooltipContent className="max-w-xs">
-											One chip per delivery attempt, oldest to newest: the receiver's response code, or a dash when no response arrived.
-											Hover a failed code for its error.
-										</TooltipContent>
+										<TooltipContent className="max-w-xs">{i18n.t("supplemental.webhookResponseChipsHelp")}</TooltipContent>
 									</Tooltip>
 								</TableHead>
-								<TableHead className="text-right">Actions</TableHead>
+								<TableHead className="text-right">{i18n.t("workspace.routingRules.actions")}</TableHead>
 							</TableRow>
 						</TableHeader>
 						<TableBody>
@@ -337,13 +336,13 @@ export function WebhookDetailsSheet({ endpoint, isTesting, canManage, onTest, on
 							) : isError ? (
 								<TableRow>
 									<TableCell colSpan={7} className="text-destructive h-24 text-center" data-testid="webhook-delivery-history-error">
-										Failed to load delivery history. Retrying…
+										{i18n.t("supplemental.deliveryHistoryFailed")}
 									</TableCell>
 								</TableRow>
 							) : deliveries.length === 0 ? (
 								<TableRow>
 									<TableCell colSpan={7} className="text-muted-foreground h-24 text-center">
-										No deliveries yet.
+										{i18n.t("supplemental.noDeliveries")}
 									</TableCell>
 								</TableRow>
 							) : (
@@ -367,7 +366,9 @@ export function WebhookDetailsSheet({ endpoint, isTesting, canManage, onTest, on
 															className="size-8"
 															onClick={() => toggleExpanded(webhookId)}
 															aria-expanded={expanded}
-															aria-label={expanded ? "Collapse redeliveries" : "Expand redeliveries"}
+															aria-label={
+																expanded ? i18n.t("supplemental.collapseRedeliveries") : i18n.t("supplemental.expandRedeliveries")
+															}
 															data-testid={`webhook-delivery-expand-${webhookId}`}
 														>
 															{expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
@@ -417,7 +418,7 @@ export function WebhookDetailsSheet({ endpoint, isTesting, canManage, onTest, on
 															onClick={() => handleRedeliver(latest.id)}
 															disabled={redeliveringIds.has(latest.id) || latest.outcome === "retryable_failure" || endpoint?.disabled}
 															data-testid={`webhook-redeliver-btn-${webhookId}`}
-															aria-label="Redeliver"
+															aria-label={i18n.t("supplemental.redeliver")}
 														>
 															{redeliveringIds.has(latest.id) ? (
 																<Loader2 className="h-4 w-4 animate-spin" />
@@ -473,7 +474,7 @@ export function WebhookDetailsSheet({ endpoint, isTesting, canManage, onTest, on
 								size="sm"
 								onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
 								disabled={offset === 0}
-								aria-label="Previous page"
+								aria-label={i18n.t("supplemental.previousPage")}
 							>
 								<ChevronLeft className="size-3" />
 							</Button>
@@ -487,7 +488,7 @@ export function WebhookDetailsSheet({ endpoint, isTesting, canManage, onTest, on
 								size="sm"
 								onClick={() => setOffset(offset + PAGE_SIZE)}
 								disabled={offset + PAGE_SIZE >= totalCount}
-								aria-label="Next page"
+								aria-label={i18n.t("supplemental.nextPage")}
 							>
 								<ChevronRight className="size-3" />
 							</Button>

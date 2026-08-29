@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { ChevronDown, ChevronUp, Copy } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import i18n from "@/lib/i18n";
 
 interface CollapsibleBoxProps {
 	title: string;
@@ -72,12 +73,12 @@ export default function CollapsibleBox({ title, children, collapsedHeight = 60, 
 					{isExpanded ? (
 						<>
 							<ChevronUp className="h-3 w-3" />
-							show less
+							{i18n.t("workspace.logs.media.showLess")}
 						</>
 					) : (
 						<>
 							<ChevronDown className="h-3 w-3" />
-							show more
+							{i18n.t("workspace.logs.media.showMore")}
 						</>
 					)}
 				</button>

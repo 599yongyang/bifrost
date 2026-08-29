@@ -11,6 +11,7 @@ import { cleanNumericInput } from "@/lib/utils/strings";
 import { ChevronDown, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { components, MultiValueProps, OptionProps } from "react-select";
+import i18n from "@/lib/i18n";
 
 // Generic, core-owned shapes so both the Access Profile (enterprise) and Virtual
 // Key (core) forms can drive this card. `"*"` in allowedModels/keyIds means "all".
@@ -123,7 +124,7 @@ function WeightInput({
 			inputMode="decimal"
 			data-testid={testId}
 			value={display}
-			placeholder="Exclude from routing"
+			placeholder={i18n.t("workspace.virtualKeys.excludeFromRouting")}
 			onChange={(e) => {
 				const cleaned = cleanNumericInput(e.target.value);
 				setDisplay(cleaned);
@@ -266,11 +267,11 @@ export function ProviderConfigCard({
 						)}
 					>
 						<span className="text-muted-foreground/50 text-sm">└</span>
-						<span className="text-muted-foreground text-sm font-medium whitespace-nowrap">Provider budget</span>
+						<span className="text-muted-foreground text-sm font-medium whitespace-nowrap">{i18n.t("supplemental.providerBudget")}</span>
 						<span className="text-muted-foreground min-w-0 flex-1 truncate text-sm">{capLabel}</span>
 						{ws != null && (
 							<span className="text-muted-foreground/70 shrink-0 text-sm whitespace-nowrap">
-								Global provider cap {money(ws.max_limit)}
+								{i18n.t("supplemental.globalProviderCap")} {money(ws.max_limit)}
 								{ws.reset_duration ? `/${shortPeriod(ws.reset_duration)}` : ""}
 							</span>
 						)}
@@ -319,7 +320,7 @@ export function ProviderConfigCard({
 								className="hover:bg-accent/30 flex cursor-pointer items-center gap-2.5 border-t py-2.5 pr-3.5 pl-10"
 							>
 								<span className="text-muted-foreground/50 text-sm">└</span>
-								<span className="text-muted-foreground text-sm font-medium whitespace-nowrap">Model budgets</span>
+								<span className="text-muted-foreground text-sm font-medium whitespace-nowrap">{i18n.t("supplemental.modelBudgets")}</span>
 								<span className="text-muted-foreground/60 min-w-0 flex-1 truncate text-sm">
 									{modelsOpen
 										? "If you skip this, models share the provider budget freely"
@@ -412,7 +413,7 @@ export function ProviderConfigCard({
 														dataTestId={`${tid}-modelTokenLimit-${index}-${mbIndex}`}
 														labelClassName="font-medium"
 														label="Maximum tokens"
-														placeholder="No limit"
+														placeholder={i18n.t("supplemental.noLimit")}
 														value={mb.rate_limit?.token_max_limit}
 														selectValue={mb.rate_limit?.token_reset_duration || "1h"}
 														onChangeNumber={(v) => {
@@ -445,7 +446,7 @@ export function ProviderConfigCard({
 														dataTestId={`${tid}-modelRequestLimit-${index}-${mbIndex}`}
 														labelClassName="font-medium"
 														label="Maximum requests"
-														placeholder="No limit"
+														placeholder={i18n.t("supplemental.noLimit")}
 														value={mb.rate_limit?.request_max_limit}
 														selectValue={mb.rate_limit?.request_reset_duration || "1h"}
 														onChangeNumber={(v) => {
@@ -497,7 +498,7 @@ export function ProviderConfigCard({
 												});
 												setOpenModelEditor(model);
 											}}
-											placeholder="Add model…"
+											placeholder={i18n.t("supplemental.addModel")}
 										/>
 									</div>
 								</div>
@@ -519,7 +520,7 @@ export function ProviderConfigCard({
 						className="hover:bg-accent/30 flex cursor-pointer items-center gap-2.5 border-t py-2.5 pr-3.5 pl-10"
 					>
 						<span className="text-muted-foreground/50 text-sm">└</span>
-						<span className="text-muted-foreground text-sm font-medium whitespace-nowrap">Access & rate limits</span>
+						<span className="text-muted-foreground text-sm font-medium whitespace-nowrap">{i18n.t("supplemental.accessRateLimits")}</span>
 						<span className="text-muted-foreground/60 min-w-0 flex-1 truncate text-sm">
 							{keysSummary} · {modelsSummary} · {rlSummary}
 						</span>
@@ -563,7 +564,7 @@ export function ProviderConfigCard({
 									return (
 										<div className="w-[260px] shrink-0 space-y-1.5">
 											<div className="flex h-5 items-center">
-												<Label>Provider keys</Label>
+												<Label>{i18n.t("supplemental.providerKeys")}</Label>
 											</div>
 											<AsyncMultiSelect
 												hideSelectedOptions
@@ -635,7 +636,7 @@ export function ProviderConfigCard({
 									return (
 										<div className="min-w-0 flex-1 space-y-1.5">
 											<div className="flex h-5 items-center">
-												<Label>Allowed models</Label>
+												<Label>{i18n.t("supplemental.allowedModels")}</Label>
 											</div>
 											<ModelMultiselect
 												allowAllOption
@@ -664,7 +665,7 @@ export function ProviderConfigCard({
 							<div className="flex items-start gap-3.5">
 								<div className="w-[260px] shrink-0 space-y-1.5">
 									<div className="flex h-5 items-center">
-										<Label htmlFor={`${tid}-weight-${index}`}>Weight</Label>
+										<Label htmlFor={`${tid}-weight-${index}`}>{i18n.t("workspace.virtualKeys.weight")}</Label>
 									</div>
 									<WeightInput
 										id={`${tid}-weight-${index}`}
@@ -675,7 +676,7 @@ export function ProviderConfigCard({
 								</div>
 								<div className="min-w-0 flex-1 space-y-1.5">
 									<div className="flex h-5 items-center">
-										<Label>Blocked models</Label>
+										<Label>{i18n.t("supplemental.blockedModels")}</Label>
 									</div>
 									{(() => {
 										const hasWildcardBlocked = value.blacklistedModels.includes("*");
@@ -709,7 +710,7 @@ export function ProviderConfigCard({
 								dataTestId={`${tid}-providerTokenLimit-${index}`}
 								labelClassName="font-medium"
 								label="Maximum tokens"
-								placeholder="No limit"
+								placeholder={i18n.t("supplemental.noLimit")}
 								value={value.rateLimit?.token_max_limit}
 								selectValue={value.rateLimit?.token_reset_duration || "1h"}
 								onChangeNumber={(v) => {
@@ -727,7 +728,7 @@ export function ProviderConfigCard({
 								dataTestId={`${tid}-providerRequestLimit-${index}`}
 								labelClassName="font-medium"
 								label="Maximum requests"
-								placeholder="No limit"
+								placeholder={i18n.t("supplemental.noLimit")}
 								value={value.rateLimit?.request_max_limit}
 								selectValue={value.rateLimit?.request_reset_duration || "1h"}
 								onChangeNumber={(v) => {

@@ -21,6 +21,7 @@ import { Label } from "@/components/ui/label";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Eye, EyeOff, Info, Loader2 } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
+import i18n from "@/lib/i18n";
 
 export interface HeadersFormProps {
 	// Required keys — admin-declared, immutable in this form. Labels and
@@ -119,7 +120,7 @@ export default function HeadersForm({
 			{adminHeaderKeys && adminHeaderKeys.length > 0 && (
 				<div className="border-muted-foreground/20 bg-muted/40 rounded-md border p-3">
 					<div className="flex items-center gap-1.5">
-						<p className="text-muted-foreground text-xs font-medium">Static admin headers</p>
+						<p className="text-muted-foreground text-xs font-medium">{i18n.t("supplemental.staticAdminHeaders")}</p>
 						<TooltipProvider>
 							<Tooltip>
 								<TooltipTrigger asChild>
@@ -146,7 +147,7 @@ export default function HeadersForm({
 
 			<div className="space-y-3">
 				{requiredKeys.length === 0 ? (
-					<p className="text-muted-foreground text-sm">No header keys have been declared on this MCP client.</p>
+					<p className="text-muted-foreground text-sm">{i18n.t("supplemental.noDeclaredHeaders")}</p>
 				) : (
 					requiredKeys.map((key) => {
 						const isRevealed = reveal[key] === true;
@@ -157,7 +158,7 @@ export default function HeadersForm({
 									<Label htmlFor={`${testIdPrefix}-${key}`} className="font-mono text-xs">
 										{key}
 									</Label>
-									{wasSubmitted && <span className="text-muted-foreground text-xs">Previously submitted</span>}
+									{wasSubmitted && <span className="text-muted-foreground text-xs">{i18n.t("supplemental.previouslySubmitted")}</span>}
 								</div>
 								<div className="relative">
 									<Input

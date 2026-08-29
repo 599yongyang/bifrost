@@ -11,6 +11,9 @@ import { SecretVar } from "@/lib/types/schemas";
 import { cn } from "@/lib/utils";
 import { ChevronDown, ChevronRight, Trash } from "lucide-react";
 import { useId, useMemo, useRef, useState } from "react";
+import i18n from "@/lib/i18n";
+
+const dt = (key: string, options?: Record<string, unknown>) => i18n.t(`workspace.providers.deployments.${key}`, options);
 
 type DeploymentsValue = Record<string, AliasConfig> | undefined | null;
 
@@ -161,9 +164,9 @@ function TriStateOverrideRow({
 					<SelectValue />
 				</SelectTrigger>
 				<SelectContent>
-					<SelectItem value="inherit">Use key setting</SelectItem>
-					<SelectItem value="on">On</SelectItem>
-					<SelectItem value="off">Off</SelectItem>
+					<SelectItem value="inherit">{dt("useKeySetting")}</SelectItem>
+					<SelectItem value="on">{dt("on")}</SelectItem>
+					<SelectItem value="off">{i18n.t("workspace.routingRules.off")}</SelectItem>
 				</SelectContent>
 			</Select>
 		</div>
@@ -173,11 +176,8 @@ function TriStateOverrideRow({
 function AzureSection({ config, onChange, disabled }: ProviderSectionProps) {
 	return (
 		<div className="space-y-4">
-			<SectionHeader
-				title="Azure overrides"
-				description="Override key-level Azure defaults for this deployment. Leave blank to use the key's settings."
-			/>
-			<FieldRow label="API version" hint="Override the Azure OpenAI api-version query parameter.">
+			<SectionHeader title={dt("azureOverrides")} description={dt("overrideDefaults", { provider: "Azure" })} />
+			<FieldRow label={dt("apiVersion")} hint={dt("apiVersionHint")}>
 				<StringField
 					value={config.api_version}
 					onChange={(v) => onChange({ api_version: v })}
@@ -185,7 +185,7 @@ function AzureSection({ config, onChange, disabled }: ProviderSectionProps) {
 					disabled={disabled}
 				/>
 			</FieldRow>
-			<FieldRow label="Anthropic version" hint="Override the anthropic-version header for Claude-on-Azure deployments.">
+			<FieldRow label={dt("anthropicVersion")} hint={dt("anthropicVersionHint")}>
 				<StringField
 					value={config.anthropic_version}
 					onChange={(v) => onChange({ anthropic_version: v })}
@@ -193,11 +193,11 @@ function AzureSection({ config, onChange, disabled }: ProviderSectionProps) {
 					disabled={disabled}
 				/>
 			</FieldRow>
-			<FieldRow label="Endpoint" hint="Point this deployment at a different Azure resource than the key default.">
+			<FieldRow label={dt("endpoint")} hint={dt("endpointHint")}>
 				<SecretVarField
 					value={config.endpoint}
 					onChange={(v) => onChange({ endpoint: v })}
-					placeholder="https://your-resource.openai.azure.com or env.AZURE_ENDPOINT"
+					placeholder={i18n.t("workspace.providers.apiKeyForm.azureEndpointPlaceholder")}
 					disabled={disabled}
 				/>
 			</FieldRow>
@@ -208,40 +208,35 @@ function AzureSection({ config, onChange, disabled }: ProviderSectionProps) {
 function VertexSection({ config, onChange, disabled }: ProviderSectionProps) {
 	return (
 		<div className="space-y-4">
-			<SectionHeader
-				title="Vertex overrides"
-				description="Override key-level Vertex defaults for this deployment. Leave blank to use the key's settings."
-			/>
-			<FieldRow label="Project ID">
+			<SectionHeader title={dt("vertexOverrides")} description={dt("overrideDefaults", { provider: "Vertex" })} />
+			<FieldRow label={dt("projectId")}>
 				<SecretVarField
 					value={config.project_id}
 					onChange={(v) => onChange({ project_id: v })}
-					placeholder="gcp-project-id or env.VERTEX_PROJECT_ID"
+					placeholder={dt("vertexProjectPlaceholder")}
 					disabled={disabled}
 				/>
 			</FieldRow>
-			<FieldRow label="Project number" hint="Required for fine-tuned models.">
+			<FieldRow label={dt("projectNumber")} hint={dt("fineTunedRequired")}>
 				<SecretVarField
 					value={config.project_number}
 					onChange={(v) => onChange({ project_number: v })}
-					placeholder="123456789 or env.VERTEX_PROJECT_NUMBER"
+					placeholder={dt("vertexProjectNumberPlaceholder")}
 					disabled={disabled}
 				/>
 			</FieldRow>
-			<FieldRow label="Region" hint="Multi-region-only models are auto-routed to a multi-region endpoint unless Force single region is on.">
+			<FieldRow label={dt("region")} hint={dt("regionHint")}>
 				<SecretVarField
 					value={config.region}
 					onChange={(v) => onChange({ region: v })}
-					placeholder="us-central1 or env.VERTEX_REGION"
+					placeholder={i18n.t("workspace.providers.apiKeyForm.vertexRegionPlaceholder")}
 					disabled={disabled}
 				/>
 			</FieldRow>
 			<div className="flex items-start justify-between gap-4 rounded-md border p-3">
 				<div className="space-y-0.5">
-					<label className="text-sm font-medium">Force single region</label>
-					<p className="text-muted-foreground text-xs">
-						Call the region above as-is and skip multi-region promotion of multi-region-only models. Use for provisioned throughput.
-					</p>
+					<label className="text-sm font-medium">{dt("forceSingleRegion")}</label>
+					<p className="text-muted-foreground text-xs">{dt("forceSingleRegionHint")}</p>
 				</div>
 				<Switch
 					checked={config.force_single_region ?? false}
@@ -256,34 +251,28 @@ function VertexSection({ config, onChange, disabled }: ProviderSectionProps) {
 function BedrockSection({ config, onChange, disabled }: ProviderSectionProps) {
 	return (
 		<div className="space-y-4">
-			<SectionHeader
-				title="Bedrock overrides"
-				description="Override key-level Bedrock defaults for this deployment. Leave blank to use the key's settings."
-			/>
-			<FieldRow label="Region">
+			<SectionHeader title={dt("bedrockOverrides")} description={dt("overrideDefaults", { provider: "Bedrock" })} />
+			<FieldRow label={dt("region")}>
 				<SecretVarField
 					value={config.region}
 					onChange={(v) => onChange({ region: v })}
-					placeholder="us-east-1 or env.BEDROCK_REGION"
+					placeholder={dt("regionPlaceholder")}
 					disabled={disabled}
 				/>
 			</FieldRow>
-			<FieldRow label="Inference profile ARN" hint="Cross-region inference profile ARN to invoke instead of the model ID.">
+			<FieldRow label={dt("inferenceProfileArn")} hint={dt("inferenceProfileArnHint")}>
 				<SecretVarField
 					value={config.inference_profile_arn}
 					onChange={(v) => onChange({ inference_profile_arn: v })}
-					placeholder="arn:aws:bedrock:us-east-1:123:inference-profile/... or env.BEDROCK_PROFILE_ARN"
+					placeholder={dt("inferenceProfilePlaceholder")}
 					disabled={disabled}
 				/>
 			</FieldRow>
-			<FieldRow
-				label="Project ID"
-				hint="Scope this deployment's Bedrock Mantle (gpt-*/Gemma) calls to a specific project via the OpenAI-Project header. Leave blank to use the key's project."
-			>
+			<FieldRow label={dt("projectId")} hint={dt("bedrockProjectHint")}>
 				<SecretVarField
 					value={config.project_id}
 					onChange={(v) => onChange({ project_id: v })}
-					placeholder="proj_xxxxxxxx or env.BEDROCK_PROJECT_ID"
+					placeholder={dt("bedrockProjectPlaceholder")}
 					disabled={disabled}
 				/>
 			</FieldRow>
@@ -294,26 +283,20 @@ function BedrockSection({ config, onChange, disabled }: ProviderSectionProps) {
 function BedrockMantleSection({ config, onChange, disabled }: ProviderSectionProps) {
 	return (
 		<div className="space-y-4">
-			<SectionHeader
-				title="Bedrock Mantle overrides"
-				description="Override key-level Bedrock Mantle defaults for this deployment. Leave blank to use the key's settings."
-			/>
-			<FieldRow label="Region">
+			<SectionHeader title={dt("bedrockMantleOverrides")} description={dt("overrideDefaults", { provider: "Bedrock Mantle" })} />
+			<FieldRow label={dt("region")}>
 				<SecretVarField
 					value={config.region}
 					onChange={(v) => onChange({ region: v })}
-					placeholder="us-east-1 or env.BEDROCK_REGION"
+					placeholder={dt("regionPlaceholder")}
 					disabled={disabled}
 				/>
 			</FieldRow>
-			<FieldRow
-				label="Project ID"
-				hint="Scope this deployment to a specific project via the OpenAI-Project / anthropic-workspace-id header. Leave blank to use the key's project."
-			>
+			<FieldRow label={dt("projectId")} hint={dt("mantleProjectHint")}>
 				<SecretVarField
 					value={config.project_id}
 					onChange={(v) => onChange({ project_id: v })}
-					placeholder="proj_xxxxxxxx or env.BEDROCK_PROJECT_ID"
+					placeholder={dt("bedrockProjectPlaceholder")}
 					disabled={disabled}
 				/>
 			</FieldRow>
@@ -324,10 +307,10 @@ function BedrockMantleSection({ config, onChange, disabled }: ProviderSectionPro
 function ReplicateSection({ config, onChange, disabled }: ProviderSectionProps) {
 	return (
 		<div className="space-y-4">
-			<SectionHeader title="Replicate overrides" description="Override key-level Replicate defaults for this deployment." />
+			<SectionHeader title={dt("replicateOverrides")} description={dt("overrideDefaults", { provider: "Replicate" })} />
 			<TriStateOverrideRow
-				label="Use deployments endpoint"
-				hint="Route through Replicate's deployments endpoint instead of the models endpoint."
+				label={dt("useDeploymentsEndpoint")}
+				hint={dt("useDeploymentsEndpointHint")}
 				value={config.use_deployments_endpoint}
 				onChange={(next) => onChange({ use_deployments_endpoint: next })}
 				disabled={disabled}
@@ -340,10 +323,13 @@ function ReplicateSection({ config, onChange, disabled }: ProviderSectionProps) 
 function UseAnthropicEndpointsToggleSection({ config, onChange, disabled, providerName }: ProviderSectionProps & { providerName: string }) {
 	return (
 		<div className="space-y-4">
-			<SectionHeader title={`${providerName} overrides`} description={`Override key-level ${providerName} defaults for this deployment.`} />
+			<SectionHeader
+				title={`${providerName} ${i18n.t("workspace.providers.override").toLowerCase()}`}
+				description={dt("overrideDefaults", { provider: providerName })}
+			/>
 			<TriStateOverrideRow
-				label="Use Anthropic endpoints"
-				hint="Route chat completions and responses requests through Anthropic-compatible endpoints."
+				label={dt("useAnthropicEndpoints")}
+				hint={dt("useAnthropicEndpointsHint")}
 				value={config.use_anthropic_endpoints}
 				onChange={(next) => onChange({ use_anthropic_endpoints: next })}
 				disabled={disabled}
@@ -392,25 +378,25 @@ function ExpandedConfigPanel({
 	return (
 		<div className="space-y-6 border-t p-4">
 			<div className="space-y-4">
-				<FieldRow label="Canonical model name" hint="The canonical name used for routing and pricing. Defaults to the model ID when blank.">
+				<FieldRow label={dt("canonicalModelName")} hint={dt("canonicalModelHint")}>
 					<StringField
 						value={config.model_name}
 						onChange={(v) => onChange({ model_name: v })}
-						placeholder="e.g. claude-sonnet-4-5"
+						placeholder={dt("canonicalModelPlaceholder")}
 						disabled={disabled}
 					/>
 				</FieldRow>
-				<FieldRow label="Model family" hint="Forces the family used for routing decisions. Derived from model name when left blank.">
+				<FieldRow label={dt("modelFamily")} hint={dt("modelFamilyHint")}>
 					<Select
 						value={config.model_family ?? "__none__"}
 						onValueChange={(v) => onChange({ model_family: v === "__none__" ? undefined : (v as ModelFamily) })}
 						disabled={disabled}
 					>
 						<SelectTrigger className="w-full">
-							<SelectValue placeholder="Select a model family" />
+							<SelectValue placeholder={dt("selectModelFamily")} />
 						</SelectTrigger>
 						<SelectContent>
-							<SelectItem value="__none__">None</SelectItem>
+							<SelectItem value="__none__">{i18n.t("workspace.mcpForm.none")}</SelectItem>
 							{ModelFamilyValues.map((f) => (
 								<SelectItem key={f} value={f}>
 									{f}
@@ -419,14 +405,14 @@ function ExpandedConfigPanel({
 						</SelectContent>
 					</Select>
 				</FieldRow>
-				<FieldRow label="Description" hint="Note for users. Not used by Bifrost.">
+				<FieldRow label={dt("description")} hint={dt("descriptionHint")}>
 					<Textarea
 						value={config.description ?? ""}
 						onChange={(e) => {
 							const v = e.target.value;
 							onChange({ description: v === "" ? undefined : v });
 						}}
-						placeholder="What is this deployment used for?"
+						placeholder={dt("descriptionPlaceholder")}
 						rows={2}
 						disabled={disabled}
 					/>
@@ -559,9 +545,9 @@ export function DeploymentsTable({ value, onChange, providerName, disabled = fal
 		<div className="overflow-hidden rounded-md border">
 			<div className="bg-muted/50 text-foreground grid h-10 grid-cols-[28px_1fr_1fr_28px] items-center gap-2 border-b px-4 text-sm font-medium">
 				<div />
-				<div>Deployment name</div>
-				<div>Model ID</div>
-				<span className="sr-only">Actions</span>
+				<div>{dt("deploymentName")}</div>
+				<div>{dt("modelId")}</div>
+				<span className="sr-only">{i18n.t("workspace.routingRules.actions")}</span>
 			</div>
 			<div className="divide-y">
 				{rowsWithIds.map((row) => {
@@ -586,14 +572,12 @@ export function DeploymentsTable({ value, onChange, providerName, disabled = fal
 										<Input
 											value={pending ?? row.name}
 											onChange={(e) => renameRow(row.rowId, row.name, e.target.value)}
-											placeholder="Request model name"
+											placeholder={i18n.t("workspace.providers.apiKeyForm.requestModelNamePlaceholder")}
 											disabled={disabled}
 											data-testid={`deployment-name-${row.name}`}
 										/>
 										{pending !== undefined && (
-											<p className="text-destructive text-xs">
-												{pending.trim() === "" ? "Name cannot be empty." : "A deployment with this name already exists."}
-											</p>
+											<p className="text-destructive text-xs">{pending.trim() === "" ? dt("nameEmpty") : dt("nameExists")}</p>
 										)}
 									</div>
 									<ModelMultiselect
@@ -601,7 +585,7 @@ export function DeploymentsTable({ value, onChange, providerName, disabled = fal
 										provider={providerName}
 										value={row.config.model_id}
 										onChange={(v) => patchConfig(row.name, { model_id: typeof v === "string" ? v : "" })}
-										placeholder="Deployment / profile / resource ID"
+										placeholder={i18n.t("workspace.providers.apiKeyForm.deploymentProfilePlaceholder")}
 										disabled={disabled}
 										unfiltered={true}
 										data-testid={`deployment-model-${row.name}`}
@@ -648,7 +632,7 @@ export function DeploymentsTable({ value, onChange, providerName, disabled = fal
 										commitDraftIfReady();
 									}
 								}}
-								placeholder="Request model name"
+								placeholder={i18n.t("workspace.providers.apiKeyForm.requestModelNamePlaceholder")}
 								disabled={disabled}
 								data-testid="draft-deployment-name"
 							/>
@@ -662,7 +646,7 @@ export function DeploymentsTable({ value, onChange, providerName, disabled = fal
 									setDraftRow(nextDraft);
 									commitDraftIfReady(nextDraft);
 								}}
-								placeholder="Deployment / profile / resource ID"
+								placeholder={i18n.t("workspace.providers.apiKeyForm.deploymentProfilePlaceholder")}
 								disabled={disabled}
 								unfiltered={true}
 								data-testid="draft-deployment-model"
@@ -671,9 +655,7 @@ export function DeploymentsTable({ value, onChange, providerName, disabled = fal
 						</div>
 						{(draftRow.name.trim() !== "" || draftRow.config.model_id.trim() !== "") &&
 							!(draftRow.name.trim() && draftRow.config.model_id.trim()) && (
-								<p className="text-muted-foreground px-4 pb-2 text-xs">
-									Both deployment name and model ID are required; this row will not be saved until both are filled.
-								</p>
+								<p className="text-muted-foreground px-4 pb-2 text-xs">{dt("draftIncomplete")}</p>
 							)}
 						<CollapsibleContent>
 							<ExpandedConfigPanel config={draftRow.config} onChange={patchDraftConfig} providerName={providerName} disabled={disabled} />

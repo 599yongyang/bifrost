@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 import * as React from "react";
 import { useEffect, useRef } from "react";
 import { Badge } from "./badge";
+import i18n from "@/lib/i18n";
 
 type BaseSecretVarInputProps = {
 	value?: SecretVar;
@@ -166,7 +167,7 @@ export const SecretVarInput = React.forwardRef<HTMLInputElement | HTMLTextAreaEl
 						</Badge>
 					)}
 				</div>
-				{showEnvHint && <p className="mt-1.5 text-xs text-orange-400">The resolved value will appear after saving</p>}
+				{showEnvHint && <p className="mt-1.5 text-xs text-orange-400">{i18n.t("supplemental.resolvedAfterSaving")}</p>}
 			</div>
 		);
 	},

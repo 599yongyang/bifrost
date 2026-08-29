@@ -8,6 +8,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
+import i18n from "@/lib/i18n";
 
 /**
  * Animation types and configurations
@@ -656,7 +657,7 @@ export const MultiSelect = React.forwardRef<MultiSelectRef, MultiSelectProps>(
 
 				<Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen} modal={modalPopover}>
 					<div id={triggerDescriptionId} className="sr-only">
-						Multi-select dropdown. Use arrow keys to navigate, Enter to select, and Escape to close.
+						{i18n.t("supplemental.multiSelectAria")}
 					</div>
 					<div id={selectedCountId} className="sr-only" aria-live="polite">
 						{selectedValues.length === 0
@@ -833,7 +834,7 @@ export const MultiSelect = React.forwardRef<MultiSelectRef, MultiSelectProps>(
 						id={listboxId}
 						role="listbox"
 						aria-multiselectable="true"
-						aria-label="Available options"
+						aria-label={i18n.t("supplemental.availableOptions")}
 						className={cn("w-full overflow-hidden p-0", popoverClassName)}
 						style={{
 							touchAction: "manipulation",
@@ -847,17 +848,17 @@ export const MultiSelect = React.forwardRef<MultiSelectRef, MultiSelectProps>(
 						<Command className={cn("flex w-full flex-col", commandClassName)}>
 							{searchable && (
 								<CommandInput
-									placeholder="Search options..."
+									placeholder={i18n.t("supplemental.searchOptions")}
 									onKeyDown={handleInputKeyDown}
 									value={searchValue}
 									onValueChange={setSearchValue}
-									aria-label="Search through available options"
+									aria-label={i18n.t("supplemental.searchAvailableOptions")}
 									aria-describedby={`${multiSelectId}-search-help`}
 								/>
 							)}
 							{searchable && (
 								<div id={`${multiSelectId}-search-help`} className="sr-only">
-									Type to filter options. Use arrow keys to navigate results.
+									{i18n.t("supplemental.filterOptionsHelp")}
 								</div>
 							)}
 							<CommandList

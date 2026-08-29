@@ -9,7 +9,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Switch } from "@/components/ui/switch";
 import { RenderProviderIcon, type ProviderIconType } from "@/lib/constants/icons";
 import { getProviderLabel } from "@/lib/constants/logs";
-import i18n from "./circuitBreakerI18n";
+import i18n from "@/lib/i18n";
 import { getErrorMessage } from "@/lib/store";
 import { useGetAllKeysQuery, useGetProvidersQuery } from "@/lib/store/apis/providersApi";
 import {

@@ -4,6 +4,7 @@ import { Image, ChevronLeft, ChevronRight } from "lucide-react";
 import { ImageMessage } from "@/components/chat/ImageMessage";
 import { Button } from "@/components/ui/button";
 import { RequestTypeLabels } from "@/lib/constants/logs";
+import i18n from "@/lib/i18n";
 
 interface ImageGenerationInput {
 	prompt: string;
@@ -71,7 +72,7 @@ export default function ImageView({ imageInput, imageEditInput, imageVariationIn
 				<div className="w-full rounded-sm border">
 					<div className="flex items-center gap-2 border-b px-6 py-2 text-sm font-medium">
 						<Image className="h-4 w-4" />
-						{methodTypeLabel} Input
+						{methodTypeLabel} {i18n.t("workspace.logs.media.input")}
 					</div>
 					<div className="space-y-4 p-6">
 						<div className="text-muted-foreground mb-2 text-xs font-medium">PROMPT</div>
@@ -85,19 +86,19 @@ export default function ImageView({ imageInput, imageEditInput, imageVariationIn
 				<div className="w-full rounded-sm border">
 					<div className="flex items-center gap-2 border-b px-6 py-2 text-sm font-medium">
 						<Image className="h-4 w-4" />
-						{methodTypeLabel} Input
+						{methodTypeLabel} {i18n.t("workspace.logs.media.input")}
 					</div>
 					<div className="space-y-4 p-6">
 						{imageEditInput.images && imageEditInput.images.length > 0 && (
 							<div>
-								<div className="text-muted-foreground mb-2 text-xs font-medium">INPUT IMAGES</div>
+								<div className="text-muted-foreground mb-2 text-xs font-medium">{i18n.t("supplemental.inputImages")}</div>
 								<div className="flex flex-wrap gap-2">
 									{imageEditInput.images.map((img, i) =>
 										img.image ? (
 											<img
 												key={i}
 												src={getImageSrc(img.image)}
-												alt={`Input image ${i + 1}`}
+												alt={i18n.t("workspace.logs.media.inputImageNumber", { number: i + 1 })}
 												className="max-h-48 max-w-48 rounded border object-contain"
 											/>
 										) : null,
@@ -118,13 +119,13 @@ export default function ImageView({ imageInput, imageEditInput, imageVariationIn
 				<div className="w-full rounded-sm border">
 					<div className="flex items-center gap-2 border-b px-6 py-2 text-sm font-medium">
 						<Image className="h-4 w-4" />
-						{methodTypeLabel} Input
+						{methodTypeLabel} {i18n.t("workspace.logs.media.input")}
 					</div>
 					<div className="space-y-4 p-6">
-						<div className="text-muted-foreground mb-2 text-xs font-medium">INPUT IMAGE</div>
+						<div className="text-muted-foreground mb-2 text-xs font-medium">{i18n.t("supplemental.inputImage")}</div>
 						<img
 							src={getImageSrc(imageVariationInput.image.image)}
-							alt="Input image"
+							alt={i18n.t("workspace.logs.media.inputImage")}
 							className="max-h-48 max-w-48 rounded border object-contain"
 						/>
 					</div>
@@ -136,14 +137,14 @@ export default function ImageView({ imageInput, imageEditInput, imageVariationIn
 				<div className="w-full rounded-sm border">
 					<div className="flex items-center gap-2 border-b px-6 py-2 text-sm font-medium">
 						<Image className="h-4 w-4" />
-						{methodTypeLabel} Output
+						{methodTypeLabel} {i18n.t("workspace.logs.media.output")}
 					</div>
 					<div className="space-y-4 p-6">
 						{currentImage && (
 							<>
 								{currentImage.revised_prompt && (
 									<div className="mb-4">
-										<div className="text-muted-foreground mb-2 text-xs font-medium">REVISED PROMPT</div>
+										<div className="text-muted-foreground mb-2 text-xs font-medium">{i18n.t("supplemental.revisedPrompt")}</div>
 										<div className="font-mono text-xs">{currentImage.revised_prompt}</div>
 									</div>
 								)}
@@ -156,13 +157,25 @@ export default function ImageView({ imageInput, imageEditInput, imageVariationIn
 
 								{totalImages > 1 && (
 									<div className="mt-3 flex items-center justify-center gap-4">
-										<Button variant="outline" size="sm" onClick={goToPrevious} aria-label="Previous image" title="Previous image">
+										<Button
+											variant="outline"
+											size="sm"
+											onClick={goToPrevious}
+											aria-label={i18n.t("supplemental.previousImage")}
+											title={i18n.t("supplemental.previousImage")}
+										>
 											<ChevronLeft className="h-4 w-4" />
 										</Button>
 										<span className="text-muted-foreground text-sm">
 											{currentIndex + 1} / {totalImages}
 										</span>
-										<Button variant="outline" size="sm" onClick={goToNext} aria-label="Next image" title="Next image">
+										<Button
+											variant="outline"
+											size="sm"
+											onClick={goToNext}
+											aria-label={i18n.t("supplemental.nextImage")}
+											title={i18n.t("supplemental.nextImage")}
+										>
 											<ChevronRight className="h-4 w-4" />
 										</Button>
 									</div>

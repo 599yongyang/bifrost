@@ -1,5 +1,6 @@
 import { BookUser } from "lucide-react";
 import ContactUsView from "../views/contactUsView";
+import i18n from "@/lib/i18n";
 
 export default function SCIMView() {
 	// Same bordered panel the other enterprise placeholders use, so the upsell
@@ -10,8 +11,8 @@ export default function SCIMView() {
 				<ContactUsView
 					className="mx-auto w-full max-w-lg"
 					icon={<BookUser className="h-[5.5rem] w-[5.5rem]" strokeWidth={1} />}
-					title="Unlock SCIM based access management for user provisioning"
-					description="This feature is a part of the Bifrost enterprise license. We would love to know more about your use case and how we can help you."
+					title={i18n.t("workspace.enterpriseFallbacks.scimTitle")}
+					description={i18n.t("workspace.enterpriseFallbacks.commonDescription")}
 					readmeLink="https://docs.getbifrost.ai/enterprise/advanced-governance"
 				/>
 			</div>

@@ -4,6 +4,7 @@ import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Too
 import { formatFullTimestamp, formatTimestamp, formatTokensPerSecond, THROUGHPUT_COLOR } from "../../utils/chartUtils";
 import { ChartErrorBoundary } from "./chartErrorBoundary";
 import type { ChartType } from "./chartTypeToggle";
+import i18n from "@/lib/i18n";
 
 interface ThroughputChartProps {
 	data: ThroughputHistogramResponse | null;
@@ -25,16 +26,16 @@ function CustomTooltip({ active, payload }: any) {
 				<div className="flex items-center justify-between gap-4">
 					<span className="flex items-center gap-1.5">
 						<span className="h-2 w-2 rounded-full" style={{ backgroundColor: THROUGHPUT_COLOR }} />
-						<span className="text-zinc-600 dark:text-zinc-400">Throughput</span>
+						<span className="text-zinc-600 dark:text-zinc-400">{i18n.t("workspace.dashboard.throughput")}</span>
 					</span>
 					<span className="font-medium">{formatTokensPerSecond(data.tokens_per_second)}</span>
 				</div>
 				<div className="flex items-center justify-between gap-4">
-					<span className="text-zinc-600 dark:text-zinc-400">Completion tokens</span>
+					<span className="text-zinc-600 dark:text-zinc-400">{i18n.t("workspace.dashboard.completionTokens")}</span>
 					<span className="font-medium">{data.total_completion_tokens.toLocaleString()}</span>
 				</div>
 				<div className="flex items-center justify-between gap-4 border-t border-zinc-200 pt-1 dark:border-zinc-700">
-					<span className="text-zinc-600 dark:text-zinc-400">Requests</span>
+					<span className="text-zinc-600 dark:text-zinc-400">{i18n.t("workspace.dashboard.requests")}</span>
 					<span className="font-medium">{data.total_requests.toLocaleString()}</span>
 				</div>
 			</div>
@@ -56,7 +57,7 @@ function ThroughputChartImpl({ data, chartType, startTime, endTime }: Throughput
 	}, [data]);
 
 	if (!data?.buckets || chartData.length === 0) {
-		return <div className="text-muted-foreground flex h-full items-center justify-center text-sm">No data available</div>;
+		return <div className="text-muted-foreground flex h-full items-center justify-center text-sm">{i18n.t("common.noDataAvailable")}</div>;
 	}
 
 	const commonProps = {

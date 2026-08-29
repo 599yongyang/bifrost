@@ -29,6 +29,7 @@ import { FieldSelector } from "./fieldSelector";
 import { OperatorSelector } from "./operatorSelector";
 import { QueryBuilderWrapper } from "./queryBuilderWrapper";
 import { ValueEditor } from "./valueEditor";
+import i18n from "@/lib/i18n";
 
 export interface CELFieldDefinition {
 	name: string;
@@ -193,7 +194,7 @@ export function CELRuleBuilder({
 		return (
 			<div className="flex items-center justify-center space-x-2 rounded-md border p-8">
 				<Loader2 className="h-5 w-5 animate-spin" />
-				<span className="text-muted-foreground text-sm">Loading CEL builder...</span>
+				<span className="text-muted-foreground text-sm">{i18n.t("workspace.routingRules.copy.celRuleBuilder_loading_cel_builder")}</span>
 			</div>
 		);
 	}
@@ -219,7 +220,7 @@ export function CELRuleBuilder({
 							)}
 							data-testid="cel-builder-mode-builder"
 						>
-							Builder
+							{i18n.t("workspace.routingRules.copy.celRuleBuilder_builder")}
 						</button>
 						<button
 							type="button"
@@ -261,8 +262,8 @@ export function CELRuleBuilder({
 									combinatorSelector: CombinatorSelector,
 								}}
 								translations={{
-									addRule: { label: "Add Rule" },
-									addGroup: { label: "Add Rule Group" },
+									addRule: { label: i18n.t("workspace.routingRules.copy.celRuleBuilder_add_rule") },
+									addGroup: { label: i18n.t("workspace.routingRules.copy.celRuleBuilder_add_rule_group") },
 								}}
 							/>
 						</QueryBuilderWrapper>
@@ -273,17 +274,21 @@ export function CELRuleBuilder({
 			{(mode === "cel" || !options.hideCELExpression) && (
 				<div className="space-y-2">
 					<div className="flex items-center justify-between">
-						<Label>{mode === "cel" ? "CEL Expression" : "CEL Expression Preview"}</Label>
+						<Label>
+							{mode === "cel"
+								? i18n.t("workspace.routingRules.copy.celRuleBuilder_cel_expression")
+								: i18n.t("workspace.routingRules.copy.celRuleBuilder_cel_expression_preview")}
+						</Label>
 						<Button variant="outline" size="sm" onClick={() => copy(copyValue)} disabled={!copyValue} className="gap-2" type="button">
 							{copied ? (
 								<>
 									<Check className="h-4 w-4" />
-									Copied
+									{i18n.t("workspace.routingRules.copy.celRuleBuilder_copied")}
 								</>
 							) : (
 								<>
 									<Copy className="h-4 w-4" />
-									Copy
+									{i18n.t("workspace.routingRules.copy.celRuleBuilder_copy")}
 								</>
 							)}
 						</Button>
@@ -295,7 +300,7 @@ export function CELRuleBuilder({
 								onChange={(e) => handleCelTextChange(e.target.value)}
 								className={cn("font-mono text-sm", celError && "border-destructive focus-visible:ring-destructive")}
 								rows={4}
-								placeholder='e.g. model == "claude-sonnet-4-6"'
+								placeholder={i18n.t("workspace.routingRules.copy.celRuleBuilder_e_g_model_claude_sonnet_4_6")}
 								aria-invalid={!!celError}
 								data-testid="cel-builder-cel-textarea"
 							/>
@@ -304,11 +309,18 @@ export function CELRuleBuilder({
 									{celError}
 								</p>
 							) : (
-								<p className="text-muted-foreground text-xs">Leave empty to match all requests.</p>
+								<p className="text-muted-foreground text-xs">
+									{i18n.t("workspace.routingRules.copy.celRuleBuilder_leave_empty_to_match_all_requests")}
+								</p>
 							)}
 						</>
 					) : (
-						<Textarea value={celExpression || "No rules defined yet"} readOnly className="font-mono text-sm" rows={4} />
+						<Textarea
+							value={celExpression || i18n.t("workspace.routingRules.copy.celRuleBuilder_no_rules_defined_yet")}
+							readOnly
+							className="font-mono text-sm"
+							rows={4}
+						/>
 					)}
 				</div>
 			)}
@@ -316,21 +328,20 @@ export function CELRuleBuilder({
 			<AlertDialog open={confirmSwitchToBuilder} onOpenChange={setConfirmSwitchToBuilder}>
 				<AlertDialogContent>
 					<AlertDialogHeader>
-						<AlertDialogTitle>Switch to the visual builder?</AlertDialogTitle>
+						<AlertDialogTitle>{i18n.t("workspace.routingRules.copy.celRuleBuilder_switch_to_the_visual_builder")}</AlertDialogTitle>
 						<AlertDialogDescription>
-							The visual builder can&apos;t import a hand-written CEL expression, so your current CEL will be discarded and the builder will
-							start empty. Copy it first if you want to keep it.
+							{i18n.t("workspace.routingRules.copy.celRuleBuilder_the_visual_builder_can_t_import_a_hand_written_cel_expre")}
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>
-						<AlertDialogCancel>Cancel</AlertDialogCancel>
+						<AlertDialogCancel>{i18n.t("workspace.routingRules.copy.celRuleBuilder_cancel")}</AlertDialogCancel>
 						<AlertDialogAction
 							onClick={() => {
 								setConfirmSwitchToBuilder(false);
 								applySwitchToBuilder();
 							}}
 						>
-							Discard CEL &amp; switch
+							{i18n.t("workspace.routingRules.copy.celRuleBuilder_discard_cel_switch")}
 						</AlertDialogAction>
 					</AlertDialogFooter>
 				</AlertDialogContent>

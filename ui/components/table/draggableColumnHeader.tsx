@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { Header, flexRender } from "@tanstack/react-table";
 import { ArrowLeftToLine, ArrowRightToLine, Ellipsis, EyeOff, PinOff } from "lucide-react";
 import { CSSProperties, useState } from "react";
+import i18n from "@/lib/i18n";
 
 export const TH_CLASS = "text-foreground h-10 px-4 text-left align-middle font-medium whitespace-nowrap";
 
@@ -87,7 +88,7 @@ export function DraggableColumnHeader<TData>({
 									className="ml-1 shrink-0 opacity-0 transition-opacity group-hover/col:opacity-100 focus-visible:opacity-100"
 									onClick={(e) => e.stopPropagation()}
 									onMouseDown={(e) => e.stopPropagation()}
-									aria-label="Column actions"
+									aria-label={i18n.t("supplemental.columnActions")}
 								>
 									<Ellipsis className="h-3.5 w-3.5" />
 								</Button>
@@ -95,29 +96,29 @@ export function DraggableColumnHeader<TData>({
 							<DropdownMenuContent align="start" side="bottom">
 								<DropdownMenuItem onClick={() => onHide(header.column.id)}>
 									<EyeOff className="h-4 w-4" />
-									Hide column
+									{i18n.t("supplemental.hideColumn")}
 								</DropdownMenuItem>
 								<DropdownMenuSeparator />
 								{pinned === "left" ? (
 									<DropdownMenuItem onClick={() => onPin(header.column.id, "left")}>
 										<PinOff className="h-4 w-4" />
-										Unpin
+										{i18n.t("supplemental.unpin")}
 									</DropdownMenuItem>
 								) : (
 									<DropdownMenuItem onClick={() => onPin(header.column.id, "left")}>
 										<ArrowLeftToLine className="h-4 w-4" />
-										Pin to left
+										{i18n.t("supplemental.pinLeft")}
 									</DropdownMenuItem>
 								)}
 								{pinned === "right" ? (
 									<DropdownMenuItem onClick={() => onPin(header.column.id, "right")}>
 										<PinOff className="h-4 w-4" />
-										Unpin
+										{i18n.t("supplemental.unpin")}
 									</DropdownMenuItem>
 								) : (
 									<DropdownMenuItem onClick={() => onPin(header.column.id, "right")}>
 										<ArrowRightToLine className="h-4 w-4" />
-										Pin to right
+										{i18n.t("supplemental.pinRight")}
 									</DropdownMenuItem>
 								)}
 							</DropdownMenuContent>

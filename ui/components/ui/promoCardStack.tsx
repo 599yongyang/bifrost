@@ -2,6 +2,7 @@ import { cn } from "@/lib/utils";
 import { X } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader } from "./card";
+import i18n from "@/lib/i18n";
 
 interface PromoCardItem {
 	id: string;
@@ -120,7 +121,7 @@ export function PromoCardStack({ cards, className = "", onCardsEmpty, onDismiss 
 									<div className="min-w-0 flex-1">{typeof card.title === "string" ? card.title : card.title}</div>
 									{card.dismissible !== false && isTopCard && (
 										<button
-											aria-label="Dismiss"
+											aria-label={i18n.t("supplemental.dismiss")}
 											type="button"
 											onClick={() => handleDismiss(card.id)}
 											disabled={isAnimating}
