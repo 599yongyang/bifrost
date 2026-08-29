@@ -2339,7 +2339,7 @@ func TestCollectDimensionHeaders(t *testing.T) {
 }
 
 // TestTracingMiddleware_SetsCorrelationHeaders asserts that every traced response
-// carries x-request-id and x-bifrost-trace-id so callers can pivot a request into
+// carries x-request-id and x-moon-trace-id so callers can pivot a request into
 // its logs and trace in Grafana/Tempo/Loki (BF-1041).
 func TestTracingMiddleware_SetsCorrelationHeaders(t *testing.T) {
 	SetLogger(&mockLogger{})
@@ -2356,14 +2356,25 @@ func TestTracingMiddleware_SetsCorrelationHeaders(t *testing.T) {
 		ctx.Request.Header.SetMethod("POST")
 		return ctx
 	}
+	assertMoonTraceHeader := func(t *testing.T, ctx *fasthttp.RequestCtx, want string) {
+		t.Helper()
+		got := string(ctx.Response.Header.Peek("x-moon-trace-id"))
+		if want == "" && got == "" {
+			t.Error("expected x-moon-trace-id response header to be set")
+		}
+		if want != "" && got != want {
+			t.Errorf("x-moon-trace-id = %q, want %q", got, want)
+		}
+		if got := string(ctx.Response.Header.Peek("x-bifrost-trace-id")); got != "" {
+			t.Errorf("legacy x-bifrost-trace-id response header must not be exposed, got %q", got)
+		}
+	}
 
 	t.Run("generates request id when absent", func(t *testing.T) {
 		ctx := newCtx()
 		mw(func(*fasthttp.RequestCtx) {})(ctx)
 
-		if got := string(ctx.Response.Header.Peek("x-bifrost-trace-id")); got == "" {
-			t.Error("expected x-bifrost-trace-id response header to be set")
-		}
+		assertMoonTraceHeader(t, ctx, "")
 		if got := string(ctx.Response.Header.Peek("x-request-id")); got == "" {
 			t.Error("expected x-request-id response header to be set")
 		}
@@ -2377,9 +2388,16 @@ func TestTracingMiddleware_SetsCorrelationHeaders(t *testing.T) {
 		if got := string(ctx.Response.Header.Peek("x-request-id")); got != "req-abc-123" {
 			t.Errorf("x-request-id = %q, want req-abc-123", got)
 		}
-		if got := string(ctx.Response.Header.Peek("x-bifrost-trace-id")); got == "" {
-			t.Error("expected x-bifrost-trace-id response header to be set")
-		}
+		assertMoonTraceHeader(t, ctx, "")
+	})
+
+	t.Run("preserves inherited W3C trace id", func(t *testing.T) {
+		ctx := newCtx()
+		const traceID = "0af7651916cd43dd8448eb211c80319c"
+		ctx.Request.Header.Set("traceparent", "00-"+traceID+"-b7ad6b7169203331-01")
+		mw(func(*fasthttp.RequestCtx) {})(ctx)
+
+		assertMoonTraceHeader(t, ctx, traceID)
 	})
 
 	t.Run("headers survive the error path", func(t *testing.T) {
@@ -2391,9 +2409,7 @@ func TestTracingMiddleware_SetsCorrelationHeaders(t *testing.T) {
 		if ctx.Response.StatusCode() != fasthttp.StatusBadGateway {
 			t.Fatalf("status = %d, want %d", ctx.Response.StatusCode(), fasthttp.StatusBadGateway)
 		}
-		if got := string(ctx.Response.Header.Peek("x-bifrost-trace-id")); got == "" {
-			t.Error("expected x-bifrost-trace-id to survive the error path")
-		}
+		assertMoonTraceHeader(t, ctx, "")
 		if got := string(ctx.Response.Header.Peek("x-request-id")); got == "" {
 			t.Error("expected x-request-id to survive the error path")
 		}

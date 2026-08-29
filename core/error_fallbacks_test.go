@@ -166,6 +166,24 @@ func TestResolveFallbackChainDedicatedReplacesOrdinaryAndDeduplicates(t *testing
 	assert.Equal(t, []schemas.Fallback{{Provider: schemas.Anthropic, Model: "ordinary"}}, ordinary)
 }
 
+func TestContentSafetyErrorFallbackLeavesOtherErrorsOnOrdinaryChain(t *testing.T) {
+	req := errorFallbackChatRequest()
+	req.ChatRequest.Fallbacks = []schemas.Fallback{{Provider: schemas.Anthropic, Model: "ordinary"}}
+	req.ChatRequest.ErrorFallbacks = []schemas.ErrorFallbackRule{{
+		Name:      "content-safety",
+		Scenario:  schemas.FailureCategoryContentPolicy,
+		Fallbacks: []schemas.Fallback{{Provider: schemas.Azure, Model: "safe"}},
+	}}
+
+	client := &Bifrost{}
+	selected, ordinary, rule, failure := client.resolveFallbackChain(req, testFallbackError(429, "rate_limit_error", "limited"))
+
+	require.Nil(t, rule)
+	assert.Equal(t, schemas.FailureCategoryRateLimit, failure.category)
+	assert.Equal(t, []schemas.Fallback{{Provider: schemas.Anthropic, Model: "ordinary"}}, selected)
+	assert.Equal(t, ordinary, selected)
+}
+
 func TestCaptureFailureSignalsSurvivesRawResponseDrop(t *testing.T) {
 	err := testFallbackError(400, "provider_error", "request failed")
 	err.ExtraFields.RawResponse = []byte(`{"error":{"code":"safety_violations","type":"policy_error","message":"blocked by policy"}}`)

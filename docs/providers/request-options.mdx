@@ -38,7 +38,6 @@ Bifrost provides request options that control behavior, enable features, and pas
 | `maxim.GenerationIDKey`                    | `x-bf-maxim-generation-id`                           | `string`              | Maxim generation ID                                                                                                                   |
 | `maxim.TagsKey`                            | `x-bf-maxim-*`                                       | `map[string]string`   | Maxim tags (custom tag names)                                                                                                         |
 | `BifrostContextKeyDimensions` | `x-bf-dim-*` | `map[string]string` | Unified per-request dimensions forwarded to logs, spans, Prometheus custom labels, and Maxim tags |
-| `BifrostContextKey(labelName)` | `x-bf-prom-*` | `string` | Deprecated Prometheus-only label headers for backward compatibility |
 
 ## Request Configuration Options
 
@@ -371,7 +370,7 @@ Every traced gateway request echoes the correlation IDs so you can pivot from a 
 | Response header | Description |
 | --- | --- |
 | `x-request-id` | The request ID you sent, or the UUID Bifrost generated when none was provided. |
-| `x-bifrost-trace-id` | The trace ID linking all spans for the request. Inherited from an incoming W3C `traceparent` when present, otherwise generated. |
+| `x-moon-trace-id` | The trace ID linking all spans for the request. Inherited from an incoming W3C `traceparent` when present, otherwise generated. |
 
 The same `trace_id` and `request_id` appear as fields on Bifrost's structured access logs, so the value returned to the caller can be searched directly in your log store.
 
@@ -1271,46 +1270,10 @@ Input: messages,
 </Tab>
 </Tabs>
 
-## Prometheus Options
+## Removed Prometheus-only headers
 
-**Context Key:** `BifrostContextKey(labelName)`
-**Header Pattern:** `x-bf-prom-{label-name}`
-**Type:** `string`
-**Required:** No
-
-Add custom labels to Prometheus metrics. The `x-bf-prom-` prefix is stripped and the remainder becomes the label name.
-
-This header family is deprecated. Prefer `x-bf-dim-*`, which feeds Prometheus and the other observability backends together. If both `x-bf-dim-foo` and `x-bf-prom-foo` are present, the `x-bf-dim-*` value takes precedence for Prometheus.
-
-<Tabs>
-<Tab title="Gateway (cURL)">
-```bash
-curl --location 'http://localhost:8080/v1/chat/completions' \
---header 'x-bf-prom-environment: production' \
---header 'x-bf-prom-team: engineering' \
---header 'Content-Type: application/json' \
---data '{
-    "model": "openai/gpt-4o-mini",
-    "messages": [{"role": "user", "content": "Hello!"}]
-}'
-````
-
-</Tab>
-<Tab title="Go SDK">
-```go
-ctx := context.Background()
-ctx = context.WithValue(ctx, schemas.BifrostContextKey("environment"), "production")
-ctx = context.WithValue(ctx, schemas.BifrostContextKey("team"), "engineering")
-
-response, err := client.ChatCompletionRequest(schemas.NewBifrostContext(ctx, schemas.NoDeadline), &schemas.BifrostChatRequest{
-Provider: schemas.OpenAI,
-Model: "gpt-4o-mini",
-Input: messages,
-})
-
-```
-</Tab>
-</Tabs>
+The legacy `x-bf-prom-*` header family is removed in v2. These headers are discarded and do not
+create Prometheus labels or Bifrost context values. Use the canonical [`x-bf-dim-*`](#unified-dimensions-x-bf-dim) headers instead; unified dimensions feed Prometheus, logs, OpenTelemetry, and Maxim together.
 
 ## Security Denylist
 

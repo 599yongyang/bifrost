@@ -130,6 +130,8 @@ export interface RoutingErrorFallbackSupplementFormData {
 export interface RoutingErrorFallbackFormData {
 	mode: "scenario" | "legacy";
 	originalLegacyRule?: RoutingErrorFallback;
+	/** Original content-safety contract retained for lossless round-trips through the simplified editor. */
+	originalContentSafetyRule?: RoutingErrorFallback;
 	name: string;
 	scenario: RoutingErrorFallbackCategory;
 	supplement: RoutingErrorFallbackSupplementFormData;

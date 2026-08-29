@@ -2,13 +2,72 @@ import { describe, expect, it } from "vitest";
 
 import type { RoutingErrorFallback } from "@/lib/types/routingRules";
 import {
+	mergeContentSafetyErrorFallbacks,
 	switchErrorFallbackMode,
+	toContentSafetyErrorFallbackFormData,
 	toErrorFallbackFormData,
 	toErrorFallbackPayload,
 	validateErrorFallbackForms,
 } from "@/lib/utils/errorFallbackRules";
 
 describe("routing rule error fallback form compatibility", () => {
+	it("keeps the stored content-safety matcher and supplements intact", () => {
+		const forms = toContentSafetyErrorFallbackFormData([
+			{ scenario: "timeout", fallbacks: ["azure/gpt-4o"] },
+			{
+				name: "provider safety",
+				when: { categories: ["content_policy"], status_codes: [400] },
+				supplement: { providers: ["custom"], message_contains_any: ["unsafe"] },
+				fallbacks: ["xai/grok-image"],
+			},
+		]);
+
+		expect(forms).toHaveLength(1);
+		expect(toErrorFallbackPayload(forms[0])).toEqual({
+			name: "provider safety",
+			when: { categories: ["content_policy"], status_codes: [400] },
+			supplement: { providers: ["custom"], message_contains_any: ["unsafe"] },
+			fallbacks: ["xai/grok-image"],
+		});
+	});
+
+	it("updates content-safety targets without deleting or reordering hidden rules", () => {
+		const stored: RoutingErrorFallback[] = [
+			{ scenario: "timeout", fallbacks: ["azure/gpt-4o"] },
+			{
+				scenario: "content_policy",
+				supplement: { providers: ["custom"], error_codes: ["unsafe_prompt"] },
+				fallbacks: ["xai/grok-image"],
+			},
+			{ scenario: "billing", fallbacks: ["openai/gpt-4o-mini"] },
+		];
+		const forms = toContentSafetyErrorFallbackFormData(stored);
+		forms[0].fallbacks = ["google/gemini-2.5-flash"];
+
+		expect(mergeContentSafetyErrorFallbacks(stored, forms)).toEqual([
+			{ scenario: "timeout", fallbacks: ["azure/gpt-4o"] },
+			{
+				scenario: "content_policy",
+				supplement: { providers: ["custom"], error_codes: ["unsafe_prompt"] },
+				fallbacks: ["google/gemini-2.5-flash"],
+			},
+			{ scenario: "billing", fallbacks: ["openai/gpt-4o-mini"] },
+		]);
+	});
+
+	it("disabling content-safety removes only content-safety rules", () => {
+		const stored: RoutingErrorFallback[] = [
+			{ scenario: "timeout", fallbacks: ["azure/gpt-4o"] },
+			{ scenario: "content_policy", fallbacks: ["xai/grok-image"] },
+			{ when: { categories: ["content_policy"] }, fallbacks: ["google/gemini"] },
+			{ scenario: "billing", fallbacks: ["openai/gpt-4o-mini"] },
+		];
+
+		expect(mergeContentSafetyErrorFallbacks(stored, [])).toEqual([
+			{ scenario: "timeout", fallbacks: ["azure/gpt-4o"] },
+			{ scenario: "billing", fallbacks: ["openai/gpt-4o-mini"] },
+		]);
+	});
 	it("keeps an untouched legacy when rule unchanged", () => {
 		const legacy: RoutingErrorFallback = {
 			name: "legacy safety rule",
