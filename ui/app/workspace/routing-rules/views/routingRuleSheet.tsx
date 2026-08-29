@@ -32,7 +32,7 @@ import {
 	RoutingTargetFormData,
 } from "@/lib/types/routingRules";
 import { validateRateLimitAndBudgetRules, validateRoutingRules } from "@/lib/utils/celConverterRouting";
-import { toErrorFallbackFormData, toErrorFallbackPayload, validateErrorFallbackForms } from "@/lib/utils/errorFallbackRules";
+import { toContentSafetyErrorFallbackFormData, toErrorFallbackPayload, validateErrorFallbackForms } from "@/lib/utils/errorFallbackRules";
 import { isValidRuleGroupType, normalizeRoutingRuleGroupQuery } from "@/lib/utils/routingRuleGroupQuery";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { Plus, Trash2, X } from "lucide-react";
@@ -161,7 +161,7 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 			setValue("description", editingRule.description);
 			setValue("cel_expression", editingRule.cel_expression);
 			setValue("fallbacks", editingRule.fallbacks || []);
-			setValue("error_fallbacks", (editingRule.error_fallbacks || []).map(toErrorFallbackFormData));
+			setValue("error_fallbacks", toContentSafetyErrorFallbackFormData(editingRule.error_fallbacks || []));
 			setValue("scope", editingRule.scope);
 			setValue("scope_id", editingRule.scope_id || "");
 			setValue("priority", editingRule.priority);

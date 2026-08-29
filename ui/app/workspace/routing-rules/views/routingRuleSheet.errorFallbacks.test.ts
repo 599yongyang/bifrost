@@ -3,12 +3,26 @@ import { describe, expect, it } from "vitest";
 import type { RoutingErrorFallback } from "@/lib/types/routingRules";
 import {
 	switchErrorFallbackMode,
+	toContentSafetyErrorFallbackFormData,
 	toErrorFallbackFormData,
 	toErrorFallbackPayload,
 	validateErrorFallbackForms,
 } from "@/lib/utils/errorFallbackRules";
 
 describe("routing rule error fallback form compatibility", () => {
+	it("reduces stored rules to one content-safety exception", () => {
+		const forms = toContentSafetyErrorFallbackFormData([
+			{ scenario: "timeout", fallbacks: ["azure/gpt-4o"] },
+			{ when: { categories: ["content_policy"], status_codes: [400] }, fallbacks: ["xai/grok-image"] },
+		]);
+
+		expect(forms).toHaveLength(1);
+		expect(toErrorFallbackPayload(forms[0])).toEqual({
+			name: "content-safety",
+			scenario: "content_policy",
+			fallbacks: ["xai/grok-image"],
+		});
+	});
 	it("keeps an untouched legacy when rule unchanged", () => {
 		const legacy: RoutingErrorFallback = {
 			name: "legacy safety rule",

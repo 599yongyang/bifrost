@@ -1,5 +1,26 @@
 import type { RoutingErrorFallback, RoutingErrorFallbackFormData } from "@/lib/types/routingRules";
 
+const emptySupplement = () => ({ providers: [], error_codes: [], error_types: [], status_codes: [], message_contains_any: [] });
+const emptyWhen = () => ({ categories: [], error_codes: [], error_types: [], status_codes: [], message_contains: [] });
+
+// The routing-rule UI intentionally exposes one deep interface: a dedicated
+// chain for content-policy failures. The backend retains the generalized schema
+// for wire compatibility, but operators do not need to understand it.
+export function toContentSafetyErrorFallbackFormData(rules: RoutingErrorFallback[]): RoutingErrorFallbackFormData[] {
+	const configured = rules.find((rule) => rule.scenario === "content_policy" || rule.when?.categories?.includes("content_policy"));
+	if (!configured) return [];
+	return [
+		{
+			mode: "scenario",
+			name: configured.name || "content-safety",
+			scenario: "content_policy",
+			supplement: emptySupplement(),
+			when: emptyWhen(),
+			fallbacks: configured.fallbacks || [],
+		},
+	];
+}
+
 export function toErrorFallbackFormData(rule: RoutingErrorFallback): RoutingErrorFallbackFormData {
 	const usesScenario = Boolean(rule.scenario);
 	return {
