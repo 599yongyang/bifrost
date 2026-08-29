@@ -1,4 +1,5 @@
 import NotificationCenter from "@/components/notificationCenter";
+import { LanguageSwitcher } from "@/components/languageSwitcher";
 import { ThemeToggle } from "@/components/themeToggle";
 import { deriveTitleFromPathname } from "@/components/topbar.utils";
 import {
@@ -17,11 +18,13 @@ import { useBranding } from "@/lib/hooks/useBranding";
 import { useGetCoreConfigQuery, useGetVersionQuery, useLogoutMutation } from "@/lib/store";
 import type { UserInfo } from "@enterprise/lib/store/utils/tokenManager";
 import { getUserInfo } from "@enterprise/lib/store/utils/tokenManager";
-import { BooksIcon, DiscordLogoIcon, GithubLogoIcon } from "@phosphor-icons/react";
+import { BooksIcon, GithubLogoIcon } from "@phosphor-icons/react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
-import { BugIcon, ChevronDown, LogOut, Menu, User } from "lucide-react";
+import { ChevronDown, LogOut, Menu, User } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEffect, useMemo, useState } from "react";
+import { topbarCopy, topbarLinkLabel } from "./topbarCopy";
+import { sidebarLabel } from "./sidebarCopy";
 
 // External links that used to live in the sidebar footer icon row. They now
 // render as labelled rows inside the topbar menu, which is both more legible
@@ -35,20 +38,9 @@ const externalLinks: {
 	strokeWidth?: number;
 }[] = [
 	{
-		title: "Discord Server",
-		url: "https://discord.gg/exN5KAydbU",
-		icon: DiscordLogoIcon,
-	},
-	{
 		title: "GitHub Repository",
 		url: "https://github.com/maximhq/bifrost",
 		icon: GithubLogoIcon,
-	},
-	{
-		title: "Report a bug",
-		url: "https://github.com/maximhq/bifrost/issues/new?title=[Bug Report]&labels=bug&type=bug&projects=maximhq/1",
-		icon: BugIcon,
-		strokeWidth: 1.5,
 	},
 	{
 		title: "Full Documentation",
@@ -67,7 +59,7 @@ function usePageTitle() {
 	const pathname = useLocation({ select: (location) => location.pathname });
 	const override = useTopbarTitle();
 	const derived = useMemo(() => deriveTitleFromPathname(pathname), [pathname]);
-	return override ?? derived;
+	return sidebarLabel(override ?? derived);
 }
 
 /**
@@ -84,6 +76,7 @@ function usePageTitle() {
  * against that variable.
  */
 export default function Topbar() {
+	const copy = topbarCopy();
 	const title = usePageTitle();
 	const setDescriptionSlot = useDescriptionSlotRef();
 	const setMobileFilterSlot = useMobileFilterSlotRef();
@@ -139,6 +132,7 @@ export default function Topbar() {
 			    it's a display preference, not an account action. */}
 			<span ref={setMobileFilterSlot} className="flex shrink-0 items-center md:hidden" />
 			<NotificationCenter />
+			<LanguageSwitcher />
 			<ThemeToggle />
 
 			<DropdownMenu>
@@ -147,7 +141,7 @@ export default function Topbar() {
 						<button
 							type="button"
 							data-testid="topbar-user-pill"
-							aria-label="Account menu"
+							aria-label={copy.accountMenu}
 							className="text-muted-foreground hover:bg-accent hover:text-accent-foreground data-[state=open]:bg-card data-[state=open]:text-accent-foreground md:border-border md:bg-card md:text-foreground flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors data-[state=open]:border md:h-8 md:w-auto md:max-w-[220px] md:min-w-0 md:gap-1.5 md:rounded-full md:border md:py-0 md:pr-2 md:pl-1"
 						>
 							<span className="bg-muted text-muted-foreground hidden size-6 shrink-0 items-center justify-center rounded-full md:flex">
@@ -164,7 +158,7 @@ export default function Topbar() {
 						<button
 							type="button"
 							data-testid="topbar-menu-btn"
-							aria-label="Open menu"
+							aria-label={copy.openMenu}
 							className="text-muted-foreground hover:bg-accent hover:text-accent-foreground data-[state=open]:bg-card data-[state=open]:text-accent-foreground flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors data-[state=open]:border"
 						>
 							<Menu className="size-4" strokeWidth={2} />
@@ -188,7 +182,7 @@ export default function Topbar() {
 							<DropdownMenuItem key={item.title} asChild>
 								<a href={item.url} target="_blank" rel="noopener noreferrer" className="cursor-pointer">
 									<item.icon className="size-4" size={16} weight="regular" strokeWidth={item.strokeWidth} />
-									<span className="truncate">{item.title}</span>
+									<span className="truncate">{topbarLinkLabel(item.title)}</span>
 								</a>
 							</DropdownMenuItem>
 						))}
@@ -199,7 +193,7 @@ export default function Topbar() {
 							<DropdownMenuSeparator />
 							<DropdownMenuItem onClick={handleLogout} data-testid="topbar-logout-btn" className="cursor-pointer">
 								<LogOut className="size-4" strokeWidth={2} />
-								<span>Sign out</span>
+								<span>{copy.signOut}</span>
 							</DropdownMenuItem>
 						</>
 					)}
@@ -210,7 +204,7 @@ export default function Topbar() {
 						<>
 							<DropdownMenuSeparator />
 							<DropdownMenuLabel className="text-muted-foreground flex items-center justify-between gap-2 py-1.5 text-xs font-normal">
-								<span>Version</span>
+								<span>{copy.version}</span>
 								<span className="truncate font-mono">{version}</span>
 							</DropdownMenuLabel>
 						</>

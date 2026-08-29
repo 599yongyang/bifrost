@@ -220,6 +220,16 @@ func TestGetDashboard(t *testing.T) {
 				if len(response.DimensionRankings) != len(dashboardRankingDimensions) {
 					t.Fatalf("expected %d dimension rankings, got %d", len(dashboardRankingDimensions), len(response.DimensionRankings))
 				}
+				if response.DimensionRankings[string(logstore.RankingDimensionRoutingRule)] == nil {
+					t.Fatal("expected routing rule rankings in dashboard response")
+				}
+				routingRankings := response.DimensionRankings[string(logstore.RankingDimensionRoutingRule)].Rankings
+				if len(routingRankings) != 1 || routingRankings[0].Name != "Visible routing rule" {
+					t.Fatalf("expected redacted routing rule name, got %#v", routingRankings)
+				}
+				if strings.Contains(string(body), "Historical secret name") {
+					t.Fatal("dashboard response leaked the historical routing rule name")
+				}
 				if got := mgr.lastLLMFilters.Providers; len(got) != 1 || got[0] != "openai" {
 					t.Fatalf("expected LLM providers filter, got %#v", got)
 				}
@@ -268,7 +278,7 @@ func TestGetDashboard(t *testing.T) {
 			SetLogger(&mockLogger{})
 
 			mgr := &dashboardLogManager{failStats: tt.failStats}
-			h := &LoggingHandler{logManager: mgr}
+			h := &LoggingHandler{logManager: mgr, redactedKeysManager: dashboardRedactedKeysManager{}}
 			var req fasthttp.Request
 			uri := "/api/logs/dashboard"
 			if tt.query != "" {
@@ -654,6 +664,29 @@ func (noopRedactedKeysManager) GetAllRedactedRoutingRules(context.Context, []str
 	return nil
 }
 
+type dashboardRedactedKeysManager struct{ noopRedactedKeysManager }
+
+func (dashboardRedactedKeysManager) GetAllRedactedRoutingRules(_ context.Context, ids []string) []tables.TableRoutingRule {
+	rules := make([]tables.TableRoutingRule, 0, len(ids))
+	for _, id := range ids {
+		rules = append(rules, tables.TableRoutingRule{ID: id, Name: "Visible routing rule"})
+	}
+	return rules
+}
+
+func TestRedactRoutingRuleRankingsDoesNotFallBackToHistoricalName(t *testing.T) {
+	h := &LoggingHandler{redactedKeysManager: noopRedactedKeysManager{}}
+	result := &logstore.DimensionRankingResult{Rankings: []logstore.DimensionRankingWithTrend{{
+		DimensionRankingEntry: logstore.DimensionRankingEntry{ID: "rule-hidden", Name: "Sensitive historical name"},
+	}}}
+
+	h.redactRoutingRuleRankings(context.Background(), result)
+
+	if got := result.Rankings[0].Name; got != "" {
+		t.Fatalf("expected unavailable routing rule name to be redacted, got %q", got)
+	}
+}
+
 func TestManualObservationExportEndpointStatuses(t *testing.T) {
 	secretErr := errors.New("secret raw exporter failure")
 	tests := []struct {
@@ -917,6 +950,9 @@ func (m *dashboardLogManager) GetModelRankings(ctx context.Context, filters *log
 	return &logstore.ModelRankingResult{}, nil
 }
 func (m *dashboardLogManager) GetDimensionRankings(ctx context.Context, filters *logstore.SearchFilters, dimension logstore.RankingDimension) (*logstore.DimensionRankingResult, error) {
+	if dimension == logstore.RankingDimensionRoutingRule {
+		return &logstore.DimensionRankingResult{Dimension: dimension, Rankings: []logstore.DimensionRankingWithTrend{{DimensionRankingEntry: logstore.DimensionRankingEntry{ID: "rule-1", Name: "Historical secret name", TotalRequests: 2, SuccessCount: 1, ErrorCount: 1}}}}, nil
+	}
 	return &logstore.DimensionRankingResult{Dimension: dimension}, nil
 }
 func (m *dashboardLogManager) GetDroppedRequests(ctx context.Context) int64 { return 0 }

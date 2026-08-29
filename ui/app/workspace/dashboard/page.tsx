@@ -240,6 +240,7 @@ export default function DashboardPage() {
 			costData: null,
 			modelData: null,
 			latencyData: null,
+			routingRuleData: null,
 			providerCostData: null,
 			providerTokenData: null,
 			providerLatencyData: null,

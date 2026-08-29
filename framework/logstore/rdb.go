@@ -2944,6 +2944,8 @@ func (s *RDBLogStore) GetDimensionRankings(ctx context.Context, filters SearchFi
 		%s as id,
 		%s,
 		COUNT(*) as total_requests,
+		SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success_count,
+		SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as error_count,
 		SUM(total_tokens) as total_tokens,
 		COALESCE(SUM(cost), 0) as total_cost
 	`, groupExpr, nameExpr)
@@ -2960,6 +2962,8 @@ func (s *RDBLogStore) GetDimensionRankings(ctx context.Context, filters SearchFi
 		ID            string          `gorm:"column:id"`
 		Name          string          `gorm:"column:name"`
 		TotalRequests int64           `gorm:"column:total_requests"`
+		SuccessCount  int64           `gorm:"column:success_count"`
+		ErrorCount    int64           `gorm:"column:error_count"`
 		TotalTokens   sql.NullInt64   `gorm:"column:total_tokens"`
 		TotalCost     sql.NullFloat64 `gorm:"column:total_cost"`
 	}
@@ -3092,6 +3096,8 @@ func (s *RDBLogStore) GetDimensionRankings(ctx context.Context, filters SearchFi
 			ID:            r.ID,
 			Name:          name,
 			TotalRequests: r.TotalRequests,
+			SuccessCount:  r.SuccessCount,
+			ErrorCount:    r.ErrorCount,
 			TotalTokens:   r.TotalTokens.Int64,
 			TotalCost:     r.TotalCost.Float64,
 		}

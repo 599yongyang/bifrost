@@ -19,6 +19,8 @@ export class LogsPage extends BasePage {
   readonly searchInput: Locator
   readonly dateRangePicker: Locator
   readonly liveToggle: Locator
+  readonly latencyFilterToggle: Locator
+  readonly minLatencyInput: Locator
 
   // Table elements
   readonly tableRows: Locator
@@ -59,6 +61,8 @@ export class LogsPage extends BasePage {
     this.liveToggle = page.locator('[data-testid="live-toggle"]').or(
       page.getByRole('button', { name: /Live updates/i })
     )
+    this.latencyFilterToggle = page.getByTestId('latency-filter-toggle')
+    this.minLatencyInput = page.getByTestId('latency-filter-min-seconds')
 
     // Table elements - exclude the "Listening for logs" row which is not a data row
     this.tableRows = this.logsTable.locator('tbody tr').filter({ hasNot: page.locator('text=Listening for logs') }).filter({ hasNot: page.locator('text=Live updates paused') }).filter({ hasNot: page.locator('text=Not connected') }).filter({ hasNot: page.locator('text=No results found') })
@@ -173,6 +177,14 @@ export class LogsPage extends BasePage {
    */
   async clearSearch(): Promise<void> {
     await this.searchInput.clear()
+    await waitForNetworkIdle(this.page)
+  }
+
+  /** Filter logs whose total request latency is at least the given number of seconds. */
+  async filterByMinimumLatency(seconds: number): Promise<void> {
+    await this.latencyFilterToggle.click()
+    await this.minLatencyInput.fill(String(seconds))
+    await expect.poll(() => this.page.url(), { timeout: 5000 }).toContain(`min_latency=${seconds * 1000}`)
     await waitForNetworkIdle(this.page)
   }
 

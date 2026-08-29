@@ -1,4 +1,4 @@
-import CircuitBreakerView from "@enterprise/components/circuit-breaker/circuitBreakerView";
+import { CircuitBreakerView } from "./views/circuitBreakerView";
 
 export default function CircuitBreakerPage() {
 	return (

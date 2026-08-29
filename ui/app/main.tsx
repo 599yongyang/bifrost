@@ -5,12 +5,14 @@ import { createRoot } from "react-dom/client";
 
 // Tailwind + global styles (also declares @font-face for local Geist fonts).
 import "@/app/globals.css";
+import { initializeBifrostLanguage } from "@/lib/i18n/language";
 
 import { ErrorComponent } from "./__error";
 import { NotFoundComponent } from "./__notFound";
 import { UpdatingBanner, UpdatingScreen } from "./__updating";
 import { routeTree } from "./routeTree.gen";
 
+initializeBifrostLanguage();
 installVersionSkewListeners();
 
 // Only JSON.parse structured values (objects/arrays). Plain strings and numbers
