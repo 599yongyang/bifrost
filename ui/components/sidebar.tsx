@@ -73,6 +73,8 @@ import { useWebSocket } from "@/hooks/useWebSocket";
 import { IS_ENTERPRISE } from "@/lib/constants/config";
 import { useBranding } from "@/lib/hooks/useBranding";
 import { useGetCoreConfigQuery, useGetLatestReleaseQuery, useGetVersionQuery } from "@/lib/store";
+import { isReleaseDismissed, shouldShowReleaseNotice } from "@/lib/utils/releases";
+import i18n from "@/lib/i18n";
 import PoweredByBifrost from "@enterprise/components/branding/poweredByBifrost";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
@@ -86,6 +88,7 @@ import { PromoCardStack } from "./ui/promoCardStack";
 
 // Cookie name for dismissing production setup card
 const PRODUCTION_SETUP_DISMISSED_COOKIE = "bifrost_production_setup_dismissed";
+const NEW_RELEASE_DISMISSED_COOKIE = "bifrost_new_release_dismissed";
 // Closing the "setup checklist incomplete" promo card only snoozes that card
 // for a day — separate from the widget's own hidden/snoozed cookies, so it
 // doesn't affect whether the floating widget itself reappears on next nav.
@@ -464,45 +467,6 @@ const SidebarItemView = ({
 	);
 };
 
-// Helper function to compare semantic versions
-const compareVersions = (v1: string, v2: string): number => {
-	// Remove 'v' prefix if present
-	const cleanV1 = v1.startsWith("v") ? v1.slice(1) : v1;
-	const cleanV2 = v2.startsWith("v") ? v2.slice(1) : v2;
-
-	// Split into main version and prerelease
-	const [mainV1, prereleaseV1] = cleanV1.split("-");
-	const [mainV2, prereleaseV2] = cleanV2.split("-");
-
-	// Compare main version numbers (major.minor.patch)
-	const partsV1 = mainV1.split(".").map(Number);
-	const partsV2 = mainV2.split(".").map(Number);
-
-	for (let i = 0; i < Math.max(partsV1.length, partsV2.length); i++) {
-		const num1 = partsV1[i] || 0;
-		const num2 = partsV2[i] || 0;
-
-		if (num1 > num2) return 1;
-		if (num1 < num2) return -1;
-	}
-
-	// If main versions are equal, check prerelease
-	// Version without prerelease is higher than version with prerelease
-	if (!prereleaseV1 && prereleaseV2) return 1;
-	if (prereleaseV1 && !prereleaseV2) return -1;
-
-	// Both have prereleases, compare them
-	if (prereleaseV1 && prereleaseV2) {
-		// Extract prerelease number (e.g., "prerelease1" -> 1)
-		const prereleaseNum1 = parseInt(prereleaseV1.replace(/\D/g, "")) || 0;
-		const prereleaseNum2 = parseInt(prereleaseV2.replace(/\D/g, "")) || 0;
-
-		if (prereleaseNum1 > prereleaseNum2) return 1;
-		if (prereleaseNum1 < prereleaseNum2) return -1;
-	}
-	return 0;
-};
-
 export default function AppSidebar() {
 	const alertingText = alertingCopy();
 	const copy = sidebarCopy();
@@ -523,6 +487,7 @@ export default function AppSidebar() {
 		HIDDEN_UNTIL_NAV_COOKIE,
 		REMIND_LATER_COOKIE,
 		ONBOARDING_CARD_DISMISSED_COOKIE,
+		NEW_RELEASE_DISMISSED_COOKIE,
 	]);
 	const isProductionSetupDismissed = !!cookies[PRODUCTION_SETUP_DISMISSED_COOKIE];
 	const isOnboardingCardDismissed = !!cookies[ONBOARDING_CARD_DISMISSED_COOKIE];
@@ -1158,10 +1123,13 @@ export default function AppSidebar() {
 	const showNewReleaseBanner = useMemo(() => {
 		if (IS_ENTERPRISE) return false;
 		if (latestRelease && version) {
-			return compareVersions(latestRelease.name, version) > 0;
+			return (
+				shouldShowReleaseNotice(latestRelease.name, version) &&
+				!isReleaseDismissed(latestRelease.name, cookies[NEW_RELEASE_DISMISSED_COOKIE])
+			);
 		}
 		return false;
-	}, [latestRelease, version]);
+	}, [latestRelease, version, cookies]);
 
 	useEffect(() => {
 		setMounted(true);
@@ -1380,8 +1348,8 @@ export default function AppSidebar() {
 		}
 		if (showNewReleaseBanner && latestRelease) {
 			cards.push({
-				id: "new-release",
-				title: `${latestRelease.name} is now available.`,
+				id: `new-release:${latestRelease.name}`,
+				title: i18n.t("common.newReleaseAvailable", { version: latestRelease.name }),
 				description: (
 					<div className="flex h-full flex-col gap-2">
 						<img src={newReleaseImage} alt="Bifrost" className="h-[95px] rounded-md object-cover" />
@@ -1391,7 +1359,7 @@ export default function AppSidebar() {
 							rel="noopener noreferrer"
 							className="text-primary mt-auto pb-1 font-medium underline"
 						>
-							View release notes
+							{i18n.t("common.viewReleaseNotes")}
 						</a>
 					</div>
 				),
@@ -1443,8 +1411,17 @@ export default function AppSidebar() {
 					expires: expiryDate,
 				});
 			}
+			if (cardId.startsWith("new-release:") && latestRelease?.name) {
+				const expiryDate = new Date();
+				expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+				setCookie(NEW_RELEASE_DISMISSED_COOKIE, latestRelease.name, {
+					path: "/",
+					expires: expiryDate,
+					sameSite: "lax",
+				});
+			}
 		},
-		[setCookie, cookies],
+		[setCookie, cookies, latestRelease?.name],
 	);
 
 	return (
