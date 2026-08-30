@@ -1,5 +1,14 @@
-import i18n from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+} from "@/components/ui/alertDialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -11,7 +20,6 @@ import { Textarea } from "@/components/ui/textarea";
 import {
 	getErrorMessage,
 	useCreateAlertChannelMutation,
-	useCreateAlertRuleMutation,
 	useDeleteAlertChannelMutation,
 	useDeleteAlertRuleMutation,
 	useEvaluateAlertRuleMutation,
@@ -26,30 +34,22 @@ import {
 } from "@/lib/store";
 import type { AlertChannel, AlertChannelFormType, AlertHistoryRecord, AlertRule, AlertScopeType, AlertStatus } from "@/lib/types/alerting";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
-import { BellRing, ChevronLeft, ChevronRight, Pencil, Plus, RefreshCw, Send, SlidersHorizontal, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Pencil, Plus, RefreshCw, Search, Send, Trash2 } from "lucide-react";
 import { FormEvent, ReactNode, useEffect, useState } from "react";
 import { toast } from "sonner";
-import {
-	ChannelFormValue,
-	channelRequest,
-	durationFromSeconds,
-	durationToSeconds,
-	RuleFormValue,
-	ruleRequest,
-	safeHistoryDetail,
-	type DurationUnit,
-} from "./alertingModel";
+import { ChannelFormValue, channelRequest, safeHistoryDetail } from "./alertingModel";
 import { alertingCopy } from "./copy";
+import { AlertRuleDialog } from "./AlertRuleDialog";
 
 const copy = alertingCopy();
 function Header({ title, description, action }: { title: string; description: string; action?: ReactNode }) {
 	return (
-		<div className="mb-5 flex items-center justify-between">
-			<div>
+		<div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+			<div className="min-w-0">
 				<h1 className="text-lg font-semibold">
 					{title} <Badge variant="outline">{copy.beta}</Badge>
 				</h1>
-				<p className="text-muted-foreground text-sm">{description}</p>
+				<p className="text-muted-foreground mt-1 max-w-2xl text-sm">{description}</p>
 			</div>
 			{action}
 		</div>
@@ -58,6 +58,31 @@ function Header({ title, description, action }: { title: string; description: st
 function Empty() {
 	return (
 		<div className="text-muted-foreground flex min-h-72 items-center justify-center rounded-sm border border-dashed">{copy.noItems}</div>
+	);
+}
+
+function SearchBox({
+	value,
+	onChange,
+	placeholder,
+	testId,
+}: {
+	value: string;
+	onChange: (value: string) => void;
+	placeholder: string;
+	testId: string;
+}) {
+	return (
+		<div className="relative mb-4 max-w-md">
+			<Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+			<Input
+				data-testid={testId}
+				className="pl-9"
+				value={value}
+				onChange={(event) => onChange(event.target.value)}
+				placeholder={placeholder}
+			/>
+		</div>
 	);
 }
 
@@ -185,19 +210,27 @@ function ChannelDialog({
 }
 
 export function AlertChannelsView() {
-	const canEdit = useRbac(RbacResource.AlertChannels, RbacOperation.Update);
+	const canCreate = useRbac(RbacResource.AlertChannels, RbacOperation.Create);
+	const canUpdate = useRbac(RbacResource.AlertChannels, RbacOperation.Update);
+	const canDelete = useRbac(RbacResource.AlertChannels, RbacOperation.Delete);
 	const { data, isLoading } = useGetAlertChannelsQuery();
 	const [dialog, setDialog] = useState(false);
 	const [editing, setEditing] = useState<AlertChannel | null>(null);
 	const [remove] = useDeleteAlertChannelMutation();
+	const [update] = useUpdateAlertChannelMutation();
 	const [test] = useTestAlertChannelMutation();
+	const [deleteTarget, setDeleteTarget] = useState<AlertChannel | null>(null);
+	const [search, setSearch] = useState("");
+	const visibleChannels = (data?.channels ?? []).filter((channel) =>
+		`${channel.name} ${channel.description ?? ""}`.toLowerCase().includes(search.toLowerCase()),
+	);
 	return (
-		<div>
+		<div className="max-w-7xl">
 			<Header
 				title={copy.channels}
 				description={copy.channelsDescription}
 				action={
-					canEdit ? (
+					canCreate ? (
 						<Button
 							data-testid="alert-channels-add"
 							onClick={() => {
@@ -215,431 +248,307 @@ export function AlertChannelsView() {
 			) : !data?.channels.length ? (
 				<Empty />
 			) : (
-				<Table>
-					<TableHeader>
-						<TableRow>
-							<TableHead>{copy.name}</TableHead>
-							<TableHead>{copy.type}</TableHead>
-							<TableHead>{copy.status}</TableHead>
-							<TableHead />
-						</TableRow>
-					</TableHeader>
-					<TableBody>
-						{data.channels.map((channel) => (
-							<TableRow key={channel.id} data-testid="alert-channel-row">
-								<TableCell>{channel.name}</TableCell>
-								<TableCell>{channel.type}</TableCell>
-								<TableCell>
-									<Badge variant={channel.enabled ? "default" : "secondary"}>{channel.enabled ? copy.enabled : copy.disabled}</Badge>
-								</TableCell>
-								<TableCell className="text-right">
-									{canEdit && (
-										<>
-											<Button
-												variant="ghost"
-												size="icon"
-												data-testid="alert-channel-test"
-												onClick={async () => {
+				<>
+					<SearchBox value={search} onChange={setSearch} placeholder={copy.channelsDescription} testId="alert-channel-search" />
+					<div className="overflow-x-auto rounded-md border">
+						<Table>
+							<TableHeader>
+								<TableRow>
+									<TableHead>{copy.name}</TableHead>
+									<TableHead>{copy.type}</TableHead>
+									<TableHead>{copy.status}</TableHead>
+									<TableHead />
+								</TableRow>
+							</TableHeader>
+							<TableBody>
+								{visibleChannels.map((channel) => (
+									<TableRow key={channel.id} data-testid="alert-channel-row">
+										<TableCell>
+											<p className="font-medium">{channel.name}</p>
+											<p className="text-muted-foreground max-w-72 truncate text-xs">{channel.description}</p>
+										</TableCell>
+										<TableCell>{channel.type}</TableCell>
+										<TableCell>
+											<Switch
+												aria-label={`${copy.enabled}: ${channel.name}`}
+												disabled={!canUpdate}
+												checked={channel.enabled}
+												onCheckedChange={async (enabled) => {
 													try {
-														await test(channel.id).unwrap();
-														toast.success(copy.testSent);
-													} catch (e) {
-														toast.error(getErrorMessage(e));
+														await update({
+															id: channel.id,
+															data: { enabled },
+														}).unwrap();
+													} catch (error) {
+														toast.error(getErrorMessage(error));
 													}
 												}}
-											>
-												<Send className="size-4" />
-											</Button>
-											<Button
-												variant="ghost"
-												size="icon"
-												onClick={() => {
-													setEditing(channel);
-													setDialog(true);
-												}}
-											>
-												<Pencil className="size-4" />
-											</Button>
-											<Button variant="ghost" size="icon" onClick={() => remove(channel.id)}>
-												<Trash2 className="size-4" />
-											</Button>
-										</>
-									)}
-								</TableCell>
-							</TableRow>
-						))}
-					</TableBody>
-				</Table>
+											/>
+										</TableCell>
+										<TableCell className="text-right">
+											{canUpdate || canDelete ? (
+												<>
+													{canUpdate ? (
+														<Button
+															aria-label={`${copy.test}: ${channel.name}`}
+															variant="ghost"
+															size="icon"
+															data-testid="alert-channel-test"
+															onClick={async () => {
+																try {
+																	await test(channel.id).unwrap();
+																	toast.success(copy.testSent);
+																} catch (e) {
+																	toast.error(getErrorMessage(e));
+																}
+															}}
+														>
+															<Send className="size-4" />
+														</Button>
+													) : null}
+													{canUpdate ? (
+														<Button
+															aria-label={`${copy.edit}: ${channel.name}`}
+															variant="ghost"
+															size="icon"
+															onClick={() => {
+																setEditing(channel);
+																setDialog(true);
+															}}
+														>
+															<Pencil className="size-4" />
+														</Button>
+													) : null}
+													{canDelete ? (
+														<Button
+															aria-label={`${copy.delete}: ${channel.name}`}
+															variant="ghost"
+															size="icon"
+															onClick={() => setDeleteTarget(channel)}
+														>
+															<Trash2 className="size-4" />
+														</Button>
+													) : null}
+												</>
+											) : null}
+										</TableCell>
+									</TableRow>
+								))}
+							</TableBody>
+						</Table>
+					</div>
+				</>
 			)}
 			<ChannelDialog open={dialog} onOpenChange={setDialog} channel={editing} />
+			<AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>
+							{copy.delete} {deleteTarget?.name}?
+						</AlertDialogTitle>
+						<AlertDialogDescription>{copy.channelsDescription}</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel>{copy.cancel}</AlertDialogCancel>
+						<AlertDialogAction
+							onClick={async () => {
+								if (!deleteTarget) return;
+								try {
+									await remove(deleteTarget.id).unwrap();
+									setDeleteTarget(null);
+								} catch (error) {
+									toast.error(getErrorMessage(error));
+								}
+							}}
+						>
+							{copy.delete}
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
 		</div>
 	);
 }
 
-const emptyRule: RuleFormValue = {
-	name: "",
-	description: "",
-	enabled: true,
-	scope_type: "provider",
-	scope_id: "",
-	target_type: undefined,
-	target_id: "",
-	cel_expression: "provider_error_rate > 0.1",
-	channel_ids: [],
-	cooldown_seconds: 300,
-	window_seconds: 300,
-	min_requests: 10,
-	notify_once_per_reset_cycle: false,
-};
-function RuleDialog({
-	open,
-	onOpenChange,
-	rule,
-	channels,
-	providers,
-}: {
-	open: boolean;
-	onOpenChange: (v: boolean) => void;
-	rule: AlertRule | null;
-	channels: AlertChannel[];
-	providers: string[];
-}) {
-	const [form, setForm] = useState<RuleFormValue>(emptyRule);
-	const [windowUnit, setWindowUnit] = useState<DurationUnit>("minutes");
-	const [windowValue, setWindowValue] = useState("5");
-	const [cooldownUnit, setCooldownUnit] = useState<DurationUnit>("minutes");
-	const [cooldownValue, setCooldownValue] = useState("5");
-	const [create] = useCreateAlertRuleMutation();
-	const [update] = useUpdateAlertRuleMutation();
-	useEffect(() => {
-		if (!open) return;
-		if (!rule) {
-			setForm(emptyRule);
-			setWindowValue("5");
-			setWindowUnit("minutes");
-			setCooldownValue("5");
-			setCooldownUnit("minutes");
-			return;
-		}
-		const w = durationFromSeconds(rule.window_seconds);
-		const c = durationFromSeconds(rule.cooldown_milliseconds / 1000, true);
-		setWindowValue(w.value);
-		setWindowUnit(w.unit);
-		setCooldownValue(c.value);
-		setCooldownUnit(c.unit);
-		setForm({
-			name: rule.name,
-			description: rule.description ?? "",
-			enabled: rule.enabled,
-			scope_type: rule.scope_type,
-			scope_id: rule.scope_id,
-			target_type: rule.target_type,
-			target_id: rule.target_id,
-			cel_expression: rule.cel_expression,
-			channel_ids: rule.channel_ids,
-			cooldown_seconds: rule.cooldown_milliseconds / 1000,
-			window_seconds: rule.window_seconds,
-			min_requests: rule.min_requests,
-			notify_once_per_reset_cycle: rule.notify_once_per_reset_cycle,
-			query: rule.query,
-		});
-	}, [open, rule]);
-	const submit = async (event: FormEvent) => {
-		event.preventDefault();
-		try {
-			const request = ruleRequest({
-				...form,
-				window_seconds: durationToSeconds(windowValue, windowUnit),
-				cooldown_seconds: durationToSeconds(cooldownValue, cooldownUnit, true),
-			});
-			if (rule) await update({ id: rule.id, data: request }).unwrap();
-			else await create(request).unwrap();
-			toast.success(copy.ruleSaved);
-			onOpenChange(false);
-		} catch (e) {
-			toast.error(getErrorMessage(e));
-		}
-	};
-	return (
-		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
-				<form onSubmit={submit} className="space-y-4">
-					<DialogHeader>
-						<DialogTitle>
-							{rule ? copy.edit : copy.add} {copy.rules}
-						</DialogTitle>
-						<DialogDescription>{copy.rulesDescription}</DialogDescription>
-					</DialogHeader>
-					<div className="bg-muted/30 rounded-sm border p-3 text-sm">
-						<p className="font-medium">{copy.scope}</p>
-						<p className="text-muted-foreground mt-1 text-xs">{copy.rulesDescription}</p>
-					</div>
-					<div className="grid gap-4 md:grid-cols-2">
-						<div className="text-muted-foreground col-span-full text-xs font-semibold tracking-wide uppercase">
-							{i18n.t("workspace.alerting.copy.AlertingViews_identity_and_target")}
-						</div>
-						<div>
-							<Label>{copy.name}</Label>
-							<Input data-testid="alert-rule-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-						</div>
-						<div>
-							<Label>{copy.scope}</Label>
-							<Select
-								value={form.scope_type}
-								onValueChange={(v) => setForm({ ...form, scope_type: v as AlertScopeType, target_type: undefined, target_id: "" })}
-							>
-								<SelectTrigger data-testid="alert-rule-scope">
-									<SelectValue />
-								</SelectTrigger>
-								<SelectContent>
-									{["provider", "virtual_key", "team", "customer"].map((v) => (
-										<SelectItem key={v} value={v}>
-											{copy.scopeLabels[v as AlertScopeType]}
-										</SelectItem>
-									))}
-								</SelectContent>
-							</Select>
-						</div>
-						<div>
-							<Label>{form.scope_type === "provider" ? copy.provider : copy.scopeId}</Label>
-							{form.scope_type === "provider" ? (
-								<Select value={form.scope_id} onValueChange={(scope_id) => setForm({ ...form, scope_id })}>
-									<SelectTrigger data-testid="alert-rule-scope-id">
-										<SelectValue placeholder={copy.provider} />
-									</SelectTrigger>
-									<SelectContent>
-										{providers.map((provider) => (
-											<SelectItem key={provider} value={provider}>
-												{provider}
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
-							) : (
-								<Input
-									data-testid="alert-rule-scope-id"
-									value={form.scope_id}
-									onChange={(e) => setForm({ ...form, scope_id: e.target.value })}
-								/>
-							)}
-						</div>
-						<div>
-							<Label>{form.scope_type === "provider" ? copy.modelTarget : copy.budgetTarget}</Label>
-							<Input
-								data-testid="alert-rule-target-id"
-								value={form.target_id ?? ""}
-								onChange={(e) => setForm({ ...form, target_id: e.target.value })}
-							/>
-						</div>
-						<div className="col-span-full flex items-center gap-2 border-t pt-4 text-sm font-medium">
-							<SlidersHorizontal className="size-4" /> {i18n.t("workspace.alerting.copy.AlertingViews_reliability_controls")}
-						</div>
-						<div>
-							<Label>{copy.window}</Label>
-							<div className="flex">
-								<Input
-									type="number"
-									min={1}
-									value={windowValue}
-									onChange={(e) => setWindowValue(e.target.value)}
-									data-testid="alert-rule-window-value"
-								/>
-								<Select value={windowUnit} onValueChange={(v) => setWindowUnit(v as DurationUnit)}>
-									<SelectTrigger className="w-28">
-										<SelectValue />
-									</SelectTrigger>
-									<SelectContent>
-										{["minutes", "hours", "days"].map((v) => (
-											<SelectItem key={v} value={v}>
-												{copy.units[v as DurationUnit]}
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
-							</div>
-						</div>
-						<div>
-							<Label>{copy.minimumRequests}</Label>
-							<Input
-								data-testid="alert-rule-min-requests"
-								type="number"
-								min={1}
-								value={form.min_requests}
-								onChange={(e) => setForm({ ...form, min_requests: Number(e.target.value) })}
-							/>
-						</div>
-						<div>
-							<Label>{copy.cooldown}</Label>
-							<div className="flex">
-								<Input
-									type="number"
-									min={0}
-									value={cooldownValue}
-									onChange={(e) => setCooldownValue(e.target.value)}
-									data-testid="alert-rule-cooldown-value"
-								/>
-								<Select value={cooldownUnit} onValueChange={(v) => setCooldownUnit(v as DurationUnit)}>
-									<SelectTrigger className="w-28">
-										<SelectValue />
-									</SelectTrigger>
-									<SelectContent>
-										{["minutes", "hours", "days"].map((v) => (
-											<SelectItem key={v} value={v}>
-												{copy.units[v as DurationUnit]}
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
-							</div>
-						</div>
-						<div className="flex items-center justify-between">
-							<Label>{copy.notifyOnce}</Label>
-							<Switch
-								checked={form.notify_once_per_reset_cycle}
-								onCheckedChange={(v) => setForm({ ...form, notify_once_per_reset_cycle: v })}
-							/>
-						</div>
-					</div>
-					<div className="bg-muted/20 space-y-2 rounded-sm border p-4">
-						<Label>{copy.cel}</Label>
-						<Textarea
-							className="min-h-28 font-mono text-sm"
-							data-testid="alert-rule-cel"
-							value={form.cel_expression}
-							onChange={(e) => setForm({ ...form, cel_expression: e.target.value })}
-						/>
-						<p className="text-muted-foreground text-xs">{copy.celHelp}</p>
-					</div>
-					<div className="space-y-3 rounded-sm border p-4">
-						<Label>{copy.channels}</Label>
-						<div className="grid gap-2 sm:grid-cols-2">
-							{channels.map((channel) => (
-								<label
-									key={channel.id}
-									className="hover:bg-muted/50 flex cursor-pointer items-center gap-2 rounded border p-3 transition-colors duration-150"
-								>
-									<input
-										type="checkbox"
-										checked={form.channel_ids.includes(channel.id)}
-										onChange={(e) =>
-											setForm({
-												...form,
-												channel_ids: e.target.checked
-													? [...form.channel_ids, channel.id]
-													: form.channel_ids.filter((id) => id !== channel.id),
-											})
-										}
-									/>
-									{channel.name}
-								</label>
-							))}
-						</div>
-					</div>
-					<DialogFooter className="bg-background/95 sticky bottom-0 -mx-6 border-t px-6 pb-0 backdrop-blur-sm">
-						<Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-							{copy.cancel}
-						</Button>
-						<Button type="submit" data-testid="alert-rule-save">
-							{copy.save}
-						</Button>
-					</DialogFooter>
-				</form>
-			</DialogContent>
-		</Dialog>
-	);
-}
-
 export function AlertRulesView() {
-	const canEdit = useRbac(RbacResource.AlertRules, RbacOperation.Update);
+	const canCreate = useRbac(RbacResource.AlertRules, RbacOperation.Create);
+	const canUpdate = useRbac(RbacResource.AlertRules, RbacOperation.Update);
+	const canDelete = useRbac(RbacResource.AlertRules, RbacOperation.Delete);
 	const { data } = useGetAlertRulesQuery();
 	const { data: channels } = useGetAlertChannelsQuery();
 	const { data: providers } = useGetProvidersQuery();
 	const [open, setOpen] = useState(false);
 	const [editing, setEditing] = useState<AlertRule | null>(null);
 	const [remove] = useDeleteAlertRuleMutation();
+	const [update] = useUpdateAlertRuleMutation();
 	const [evaluate] = useEvaluateAlertRuleMutation();
+	const [evaluateAll, evaluatingAll] = useEvaluateAlertsMutation();
 	const [evaluation, setEvaluation] = useState<AlertRule | null>(null);
+	const [deleteTarget, setDeleteTarget] = useState<AlertRule | null>(null);
 	const [ignoreCooldown, setIgnoreCooldown] = useState(false);
+	const [search, setSearch] = useState("");
+	const channelNames = Object.fromEntries((channels?.channels ?? []).map((channel) => [channel.id, channel.name]));
+	const visibleRules = (data?.rules ?? []).filter((rule) =>
+		`${rule.name} ${rule.description ?? ""} ${rule.cel_expression}`.toLowerCase().includes(search.toLowerCase()),
+	);
 	return (
-		<div>
+		<div className="max-w-7xl">
 			<Header
 				title={copy.rules}
 				description={copy.rulesDescription}
 				action={
-					canEdit ? (
-						<Button
-							data-testid="alert-rules-add"
-							onClick={() => {
-								setEditing(null);
-								setOpen(true);
-							}}
-						>
-							<Plus className="size-4" /> {copy.add}
-						</Button>
+					canCreate || canUpdate ? (
+						<div className="flex items-center gap-2">
+							{canUpdate ? (
+								<Button
+									variant="outline"
+									data-testid="alert-evaluate-all"
+									disabled={evaluatingAll.isLoading}
+									onClick={async () => {
+										try {
+											await evaluateAll().unwrap();
+											toast.success(copy.evaluationCompleted);
+										} catch (error) {
+											toast.error(getErrorMessage(error));
+										}
+									}}
+								>
+									<RefreshCw className={evaluatingAll.isLoading ? "size-4 animate-spin" : "size-4"} /> {copy.evaluate}
+								</Button>
+							) : null}
+							{canCreate ? (
+								<Button
+									data-testid="alert-rules-add"
+									onClick={() => {
+										setEditing(null);
+										setOpen(true);
+									}}
+								>
+									<Plus className="size-4" /> {copy.add}
+								</Button>
+							) : null}
+						</div>
 					) : undefined
 				}
 			/>
 			{!data?.rules.length ? (
 				<Empty />
 			) : (
-				<Table>
-					<TableHeader>
-						<TableRow>
-							<TableHead>{copy.name}</TableHead>
-							<TableHead>{copy.scope}</TableHead>
-							<TableHead>{copy.window}</TableHead>
-							<TableHead>{copy.channels}</TableHead>
-							<TableHead />
-						</TableRow>
-					</TableHeader>
-					<TableBody>
-						{data.rules.map((rule) => (
-							<TableRow key={rule.id} data-testid="alert-rule-row">
-								<TableCell>{rule.name}</TableCell>
-								<TableCell>
-									{copy.scopeLabels[rule.scope_type]}: {rule.scope_id}
-									{rule.target_id ? ` / ${rule.target_id}` : ""}
-								</TableCell>
-								<TableCell>
-									{rule.window_seconds}s / min {rule.min_requests}
-								</TableCell>
-								<TableCell>{rule.channel_ids.length}</TableCell>
-								<TableCell className="text-right">
-									{canEdit && (
-										<>
-											<Button
-												variant="ghost"
-												size="sm"
-												data-testid="alert-rule-evaluate"
-												onClick={() => {
-													setEvaluation(rule);
-													setIgnoreCooldown(false);
+				<>
+					<SearchBox value={search} onChange={setSearch} placeholder={copy.rulesDescription} testId="alert-rule-search" />
+					<div className="overflow-x-auto rounded-md border">
+						<Table>
+							<TableHeader>
+								<TableRow>
+									<TableHead>{copy.name}</TableHead>
+									<TableHead>{copy.scope}</TableHead>
+									<TableHead>{copy.cel}</TableHead>
+									<TableHead>{copy.channels}</TableHead>
+									<TableHead>{copy.status}</TableHead>
+									<TableHead />
+								</TableRow>
+							</TableHeader>
+							<TableBody>
+								{visibleRules.map((rule) => (
+									<TableRow key={rule.id} data-testid="alert-rule-row">
+										<TableCell>
+											<p className="font-medium">{rule.name}</p>
+											<p className="text-muted-foreground max-w-56 truncate text-xs">{rule.description}</p>
+										</TableCell>
+										<TableCell>
+											<p>{copy.scopeLabels[rule.scope_type]}</p>
+											<p className="text-muted-foreground max-w-44 truncate text-xs">
+												{rule.scope_id}
+												{rule.target_id ? ` / ${rule.target_id}` : ""}
+											</p>
+										</TableCell>
+										<TableCell>
+											<code className="text-muted-foreground line-clamp-2 max-w-72 text-xs">{rule.cel_expression}</code>
+										</TableCell>
+										<TableCell className="max-w-52 text-sm">{rule.channel_ids.map((id) => channelNames[id] ?? id).join(", ")}</TableCell>
+										<TableCell>
+											<Switch
+												aria-label={`${copy.enabled}: ${rule.name}`}
+												data-testid={`alert-rule-toggle-${rule.id}`}
+												disabled={!canUpdate}
+												checked={rule.enabled}
+												onCheckedChange={async (enabled) => {
+													try {
+														await update({
+															id: rule.id,
+															data: {
+																name: rule.name,
+																description: rule.description,
+																enabled,
+																scope_type: rule.scope_type,
+																scope_id: rule.scope_id,
+																target_type: rule.target_type,
+																target_id: rule.target_id,
+																cel_expression: rule.cel_expression,
+																channel_ids: rule.channel_ids,
+																query: rule.query,
+																cooldown_milliseconds: rule.cooldown_milliseconds,
+																window_seconds: rule.window_seconds,
+																min_requests: rule.min_requests,
+																notify_once_per_reset_cycle: rule.notify_once_per_reset_cycle,
+															},
+														}).unwrap();
+													} catch (error) {
+														toast.error(getErrorMessage(error));
+													}
 												}}
-											>
-												{copy.evaluate}
-											</Button>
-											<Button
-												variant="ghost"
-												size="icon"
-												onClick={() => {
-													setEditing(rule);
-													setOpen(true);
-												}}
-											>
-												<Pencil className="size-4" />
-											</Button>
-											<Button variant="ghost" size="icon" onClick={() => remove(rule.id)}>
-												<Trash2 className="size-4" />
-											</Button>
-										</>
-									)}
-								</TableCell>
-							</TableRow>
-						))}
-					</TableBody>
-				</Table>
+											/>
+										</TableCell>
+										<TableCell className="text-right">
+											{canUpdate || canDelete ? (
+												<>
+													{canUpdate ? (
+														<Button
+															variant="ghost"
+															size="sm"
+															data-testid="alert-rule-evaluate"
+															onClick={() => {
+																setEvaluation(rule);
+																setIgnoreCooldown(false);
+															}}
+														>
+															{copy.evaluate}
+														</Button>
+													) : null}
+													{canUpdate ? (
+														<Button
+															aria-label={`${copy.edit}: ${rule.name}`}
+															variant="ghost"
+															size="icon"
+															onClick={() => {
+																setEditing(rule);
+																setOpen(true);
+															}}
+														>
+															<Pencil className="size-4" />
+														</Button>
+													) : null}
+													{canDelete ? (
+														<Button
+															aria-label={`${copy.delete}: ${rule.name}`}
+															variant="ghost"
+															size="icon"
+															onClick={() => setDeleteTarget(rule)}
+														>
+															<Trash2 className="size-4" />
+														</Button>
+													) : null}
+												</>
+											) : null}
+										</TableCell>
+									</TableRow>
+								))}
+							</TableBody>
+						</Table>
+					</div>
+				</>
 			)}
-			<RuleDialog
+			<AlertRuleDialog
 				open={open}
 				onOpenChange={setOpen}
 				rule={editing}
@@ -680,52 +589,54 @@ export function AlertRulesView() {
 					</DialogFooter>
 				</DialogContent>
 			</Dialog>
+			<AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>
+							{copy.delete} {deleteTarget?.name}?
+						</AlertDialogTitle>
+						<AlertDialogDescription>{copy.rulesDescription}</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel>{copy.cancel}</AlertDialogCancel>
+						<AlertDialogAction
+							onClick={async () => {
+								if (!deleteTarget) return;
+								try {
+									await remove(deleteTarget.id).unwrap();
+									setDeleteTarget(null);
+								} catch (error) {
+									toast.error(getErrorMessage(error));
+								}
+							}}
+						>
+							{copy.delete}
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
 		</div>
 	);
 }
 
 export function AlertHistoryView() {
-	const canEdit = useRbac(RbacResource.AlertHistory, RbacOperation.Update);
 	const [status, setStatus] = useState<AlertStatus | "all">("all");
 	const [scope, setScope] = useState<AlertScopeType | "all">("all");
 	const [channel, setChannel] = useState<"all" | "slack" | "microsoft_teams" | "wecom" | "pagerduty" | "webhook">("all");
 	const [offset, setOffset] = useState(0);
 	const limit = 25;
-	const { data, refetch } = useGetAlertHistoryQuery({
+	const { data } = useGetAlertHistoryQuery({
 		limit,
 		offset,
 		status: status === "all" ? undefined : [status],
 		scope_type: scope === "all" ? undefined : [scope],
 		channel_type: channel === "all" ? undefined : [channel],
 	});
-	const [evaluate, evaluating] = useEvaluateAlertsMutation();
 	const [detail, setDetail] = useState<AlertHistoryRecord | null>(null);
 	return (
-		<div>
-			<Header
-				title={copy.history}
-				description={copy.historyDescription}
-				action={
-					canEdit ? (
-						<Button
-							data-testid="alert-evaluate-all"
-							disabled={evaluating.isLoading}
-							onClick={async () => {
-								try {
-									await evaluate().unwrap();
-									toast.success(copy.evaluationCompleted);
-									refetch();
-								} catch (e) {
-									toast.error(getErrorMessage(e));
-								}
-							}}
-						>
-							<RefreshCw className="size-4" /> {copy.evaluate}
-						</Button>
-					) : undefined
-				}
-			/>
-			<div className="mb-4 flex gap-2">
+		<div className="max-w-7xl">
+			<Header title={copy.history} description={copy.historyDescription} />
+			<div className="mb-4 flex flex-wrap gap-2">
 				{[
 					[status, setStatus, ["all", "sent", "failed", "skipped"]],
 					[scope, setScope, ["all", "provider", "virtual_key", "team", "customer"]],
@@ -756,34 +667,48 @@ export function AlertHistoryView() {
 			{!data?.history.length ? (
 				<Empty />
 			) : (
-				<Table>
-					<TableHeader>
-						<TableRow>
-							<TableHead>{copy.time}</TableHead>
-							<TableHead>{copy.rule}</TableHead>
-							<TableHead>{copy.scope}</TableHead>
-							<TableHead>{copy.channel}</TableHead>
-							<TableHead>{copy.status}</TableHead>
-						</TableRow>
-					</TableHeader>
-					<TableBody>
-						{data.history.map((row) => (
-							<TableRow key={row.id} className="cursor-pointer" data-testid="alert-history-row" onClick={() => setDetail(row)}>
-								<TableCell>{new Date(row.created_at).toLocaleString()}</TableCell>
-								<TableCell>{row.rule_name}</TableCell>
-								<TableCell>
-									{copy.scopeLabels[row.scope_type]}: {row.scope_id}
-								</TableCell>
-								<TableCell>{row.channel_name ?? row.channel_type ?? "-"}</TableCell>
-								<TableCell>
-									<Badge variant={row.status === "sent" ? "default" : row.status === "failed" ? "destructive" : "secondary"}>
-										{copy.statusLabels[row.status]}
-									</Badge>
-								</TableCell>
+				<div className="overflow-x-auto rounded-md border">
+					<Table>
+						<TableHeader>
+							<TableRow>
+								<TableHead>{copy.time}</TableHead>
+								<TableHead>{copy.rule}</TableHead>
+								<TableHead>{copy.scope}</TableHead>
+								<TableHead>{copy.channel}</TableHead>
+								<TableHead>{copy.status}</TableHead>
 							</TableRow>
-						))}
-					</TableBody>
-				</Table>
+						</TableHeader>
+						<TableBody>
+							{data.history.map((row) => (
+								<TableRow
+									key={row.id}
+									className="cursor-pointer"
+									data-testid="alert-history-row"
+									tabIndex={0}
+									onClick={() => setDetail(row)}
+									onKeyDown={(event) => {
+										if (event.key === "Enter" || event.key === " ") {
+											event.preventDefault();
+											setDetail(row);
+										}
+									}}
+								>
+									<TableCell>{new Date(row.created_at).toLocaleString()}</TableCell>
+									<TableCell>{row.rule_name}</TableCell>
+									<TableCell>
+										{copy.scopeLabels[row.scope_type]}: {row.scope_id}
+									</TableCell>
+									<TableCell>{row.channel_name ?? row.channel_type ?? "-"}</TableCell>
+									<TableCell>
+										<Badge variant={row.status === "sent" ? "default" : row.status === "failed" ? "destructive" : "secondary"}>
+											{copy.statusLabels[row.status]}
+										</Badge>
+									</TableCell>
+								</TableRow>
+							))}
+						</TableBody>
+					</Table>
+				</div>
 			)}
 			<div className="mt-4 flex justify-end gap-2">
 				<Button variant="outline" size="sm" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - limit))}>

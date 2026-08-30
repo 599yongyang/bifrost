@@ -27,7 +27,9 @@ export const alertingApi = baseApi.injectEndpoints({
 			transformResponse: (r: { channel: AlertChannel }) => r.channel,
 			invalidatesTags: ["AlertChannels"],
 		}),
-		updateAlertChannel: builder.mutation<AlertChannel, { id: string; data: AlertChannelRequest }>({
+		// The update handler applies patch semantics and preserves the write-only
+		// channel config when it is omitted.
+		updateAlertChannel: builder.mutation<AlertChannel, { id: string; data: Partial<AlertChannelRequest> }>({
 			query: ({ id, data }) => ({ url: `/alerting/channels/${id}`, method: "PUT", body: data }),
 			transformResponse: (r: { channel: AlertChannel }) => r.channel,
 			invalidatesTags: ["AlertChannels", "AlertRules"],

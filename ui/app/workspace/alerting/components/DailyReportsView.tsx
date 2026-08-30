@@ -1,6 +1,8 @@
 import i18n from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ComboboxSelect } from "@/components/ui/combobox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,8 +24,24 @@ import {
 	useUpdateDailyReportSettingsMutation,
 } from "@/lib/store";
 import type { DailyReportAudience, DailyReportJobStatus, DailyReportPreview, DailyReportRunDetail } from "@/lib/types/alerting";
+import { getSupportedTimezones } from "@/lib/timezones";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
-import { ArrowRight, ChevronLeft, ChevronRight, CircleAlert, Clock3, Eye, Play, RefreshCw, RotateCcw, Save, Send } from "lucide-react";
+import {
+	ArrowRight,
+	CalendarClock,
+	ChevronLeft,
+	ChevronRight,
+	CircleAlert,
+	CircleGauge,
+	Clock3,
+	Eye,
+	FileCheck2,
+	Play,
+	RotateCcw,
+	Save,
+	Send,
+	UsersRound,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { alertingCopy } from "./copy";
@@ -53,6 +71,50 @@ const defaultForm: DailyReportSettingsForm = {
 	external_channel_ids: [],
 };
 
+function ReportTimeSelect({
+	value,
+	onChange,
+	disabled,
+	testId,
+	label,
+}: {
+	value: string;
+	onChange: (value: string) => void;
+	disabled: boolean;
+	testId: string;
+	label: string;
+}) {
+	const [hour = "00", minute = "00"] = value.split(":");
+	return (
+		<div className="grid grid-cols-2 gap-2">
+			<Select value={hour} onValueChange={(nextHour) => onChange(`${nextHour}:${minute}`)} disabled={disabled}>
+				<SelectTrigger className="w-full" data-testid={`${testId}-hour`} aria-label={`${label} hour`}>
+					<SelectValue />
+				</SelectTrigger>
+				<SelectContent>
+					{Array.from({ length: 24 }, (_, index) => String(index).padStart(2, "0")).map((item) => (
+						<SelectItem key={item} value={item}>
+							{item}
+						</SelectItem>
+					))}
+				</SelectContent>
+			</Select>
+			<Select value={minute} onValueChange={(nextMinute) => onChange(`${hour}:${nextMinute}`)} disabled={disabled}>
+				<SelectTrigger className="w-full" data-testid={`${testId}-minute`} aria-label={`${label} minute`}>
+					<SelectValue />
+				</SelectTrigger>
+				<SelectContent>
+					{Array.from({ length: 60 }, (_, index) => String(index).padStart(2, "0")).map((item) => (
+						<SelectItem key={item} value={item}>
+							{item}
+						</SelectItem>
+					))}
+				</SelectContent>
+			</Select>
+		</div>
+	);
+}
+
 function restoreDailyReportJob(): DailyReportJobStatus | null {
 	if (typeof window === "undefined") return null;
 	try {
@@ -66,6 +128,8 @@ function restoreDailyReportJob(): DailyReportJobStatus | null {
 
 function AudienceChannels({
 	title,
+	description,
+	testId,
 	enabled,
 	ids,
 	channels,
@@ -74,6 +138,8 @@ function AudienceChannels({
 	onIDs,
 }: {
 	title: string;
+	description: string;
+	testId: string;
 	enabled: boolean;
 	ids: string[];
 	channels: { id: string; name: string; enabled: boolean; type: string }[];
@@ -82,28 +148,44 @@ function AudienceChannels({
 	onIDs: (ids: string[]) => void;
 }) {
 	return (
-		<div className="space-y-3 rounded-sm border p-4">
-			<div className="flex items-center justify-between">
-				<Label>{title}</Label>
-				<Switch checked={enabled} onCheckedChange={onEnabled} disabled={disabled} />
-			</div>
-			{enabled && (
-				<div className="grid gap-2 sm:grid-cols-2">
-					{channels
-						.filter((channel) => channel.enabled && channel.type !== "pagerduty")
-						.map((channel) => (
-							<label key={channel.id} className="flex items-center gap-2 rounded border p-2">
-								<input
-									type="checkbox"
-									disabled={disabled}
-									checked={ids.includes(channel.id)}
-									onChange={(event) => onIDs(event.target.checked ? [...ids, channel.id] : ids.filter((id) => id !== channel.id))}
-								/>
-								{channel.name}
-							</label>
-						))}
+		<div className="overflow-hidden rounded-md border">
+			<div className="bg-muted/15 flex items-start justify-between gap-4 border-b px-4 py-3.5">
+				<div>
+					<Label className="text-sm font-semibold">{title}</Label>
+					<p className="text-muted-foreground mt-1 text-xs leading-relaxed">{description}</p>
 				</div>
-			)}
+				<Switch data-testid={`${testId}-enabled`} checked={enabled} onCheckedChange={onEnabled} disabled={disabled} />
+			</div>
+			<div className="p-3">
+				{enabled ? (
+					<div className="grid gap-2 sm:grid-cols-2">
+						{channels
+							.filter((channel) => channel.enabled && channel.type !== "pagerduty")
+							.map((channel) => (
+								<label
+									key={channel.id}
+									className="hover:bg-muted/40 has-data-[state=checked]:border-primary/40 has-data-[state=checked]:bg-primary/5 flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2.5 transition-colors duration-150"
+								>
+									<Checkbox
+										data-testid={`${testId}-channel-${channel.id}`}
+										disabled={disabled}
+										checked={ids.includes(channel.id)}
+										onCheckedChange={(checked) => onIDs(checked ? [...ids, channel.id] : ids.filter((id) => id !== channel.id))}
+									/>
+									<span className="min-w-0">
+										<span className="block truncate text-sm font-medium">{channel.name}</span>
+										<span className="text-muted-foreground block text-xs">{channel.type}</span>
+									</span>
+								</label>
+							))}
+						{channels.filter((channel) => channel.enabled && channel.type !== "pagerduty").length === 0 ? (
+							<p className="text-muted-foreground col-span-full px-1 py-3 text-sm">{i18n.t("workspace.alerting.dailyReportsNoChannels")}</p>
+						) : null}
+					</div>
+				) : (
+					<p className="text-muted-foreground px-1 py-2 text-sm">{copy.disabled}</p>
+				)}
+			</div>
 		</div>
 	);
 }
@@ -123,16 +205,13 @@ function PreviewPanels({
 			<TabsContent value="internal" className="space-y-3">
 				<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
 					{[
-						[i18n.t("workspace.alerting.copy.DailyReportsView_user_requests"), preview.snapshot.overview.user_requests.toLocaleString()],
+						[i18n.t("workspace.alerting.dailyReportsRequests"), preview.snapshot.overview.user_requests.toLocaleString()],
 						[
-							i18n.t("workspace.alerting.copy.DailyReportsView_success_rate"),
+							i18n.t("workspace.alerting.dailyReportsUserSuccessRate"),
 							formatDailyReportPercent(preview.snapshot.overview.user_success_rate),
 						],
-						[
-							i18n.t("workspace.alerting.copy.DailyReportsView_fallback_recoveries"),
-							preview.snapshot.overview.fallback_recoveries.toLocaleString(),
-						],
-						[i18n.t("workspace.alerting.copy.DailyReportsView_slow_requests"), preview.snapshot.overview.slow_requests.toLocaleString()],
+						[i18n.t("workspace.alerting.dailyReportsFallbackRecoveries"), preview.snapshot.overview.fallback_recoveries.toLocaleString()],
+						[i18n.t("workspace.alerting.dailyReportsSlowRequests"), preview.snapshot.overview.slow_requests.toLocaleString()],
 					].map(([label, value]) => (
 						<div key={label} className="bg-muted/30 rounded-sm border p-3">
 							<p className="text-muted-foreground text-xs">{label}</p>
@@ -182,6 +261,7 @@ export function DailyReportsView() {
 		pollingInterval: shouldPollDailyReportJob(job ?? undefined) ? 1500 : 0,
 	});
 	const jobActive = shouldPollDailyReportJob(job ?? undefined);
+	const timezoneOptions = useMemo(() => getSupportedTimezones().map((timezone) => ({ value: timezone, label: timezone })), []);
 	useEffect(() => {
 		if (settingsData?.settings) setForm(settingsToForm(settingsData.settings));
 	}, [settingsData]);
@@ -252,129 +332,197 @@ export function DailyReportsView() {
 		}
 	};
 	return (
-		<div className="space-y-5" data-testid="daily-reports-view">
-			<div>
-				<h1 className="text-lg font-semibold">
-					{copy.dailyReports} <Badge variant="outline">{copy.beta}</Badge>
-				</h1>
-				<p className="text-muted-foreground text-sm">{copy.dailyReportsDescription}</p>
+		<div className="max-w-7xl space-y-5" data-testid="daily-reports-view">
+			<div className="flex flex-wrap items-start justify-between gap-3">
+				<div>
+					<div className="flex items-center gap-2">
+						<h1 className="text-lg font-semibold">{copy.dailyReports}</h1>
+						<Badge variant="outline" className="border-emerald-500/30 text-emerald-700 dark:text-emerald-400">
+							{copy.beta}
+						</Badge>
+					</div>
+					<p className="text-muted-foreground mt-1 max-w-2xl text-sm">{copy.dailyReportsDescription}</p>
+				</div>
+				<Badge variant={form.enabled ? "default" : "secondary"}>
+					{form.enabled ? i18n.t("workspace.alerting.dailyReportsRunning") : i18n.t("workspace.alerting.dailyReportsPaused")}
+				</Badge>
 			</div>
-			<Tabs defaultValue="settings">
-				<TabsList>
+			<Tabs defaultValue="settings" className="gap-4">
+				<TabsList className="w-fit">
 					<TabsTrigger value="settings">{copy.settings}</TabsTrigger>
 					<TabsTrigger value="preview">{copy.preview}</TabsTrigger>
 					<TabsTrigger value="history">{copy.reportHistory}</TabsTrigger>
 				</TabsList>
 				<TabsContent value="settings" className="space-y-4">
-					<div className="bg-muted/20 grid gap-3 rounded-sm border p-4 md:grid-cols-[1fr_auto_1fr_auto_1fr] md:items-center">
-						<div>
-							<div className="flex items-center gap-2 text-sm font-medium">
-								<Clock3 className="size-4" /> {copy.generateTime}
-							</div>
-							<p className="text-muted-foreground mt-1 text-xs">
-								{form.generate_time} · {form.timezone}
-							</p>
+					<div className="overflow-hidden rounded-md border">
+						<div className="bg-muted/15 grid gap-3 px-4 py-3.5 md:grid-cols-[1fr_auto_1fr_auto_1fr] md:items-center">
+							{[
+								{ icon: Clock3, title: copy.generateTime, value: `${form.generate_time} · ${form.timezone}` },
+								{
+									icon: FileCheck2,
+									title: i18n.t("workspace.alerting.dailyReportsFlowGenerate"),
+									value: `${copy.slowThreshold}: ${form.slow_threshold_ms} ms`,
+								},
+								{ icon: Send, title: copy.sendTime, value: `${form.send_time} · ${copy.internal}/${copy.external}` },
+							].map((step, index) => (
+								<div key={step.title} className="contents">
+									{index > 0 ? <ArrowRight className="text-muted-foreground hidden size-4 md:block" /> : null}
+									<div className="flex min-w-0 items-center gap-3">
+										<div className="bg-background flex size-8 shrink-0 items-center justify-center rounded-full border">
+											<step.icon className="text-muted-foreground size-4" />
+										</div>
+										<div className="min-w-0">
+											<p className="truncate text-sm font-medium">{step.title}</p>
+											<p className="text-muted-foreground truncate text-xs">{step.value}</p>
+										</div>
+									</div>
+								</div>
+							))}
 						</div>
-						<ArrowRight className="text-muted-foreground hidden size-4 md:block" />
-						<div>
-							<div className="flex items-center gap-2 text-sm font-medium">
-								<Save className="size-4" /> {copy.generateReport}
-							</div>
-							<p className="text-muted-foreground mt-1 text-xs">
-								{copy.slowThreshold}: {form.slow_threshold_ms} ms
-							</p>
-						</div>
-						<ArrowRight className="text-muted-foreground hidden size-4 md:block" />
-						<div>
-							<div className="flex items-center gap-2 text-sm font-medium">
-								<Send className="size-4" /> {copy.sendTime}
-							</div>
-							<p className="text-muted-foreground mt-1 text-xs">
-								{form.send_time} · {copy.internal}/{copy.external}
-							</p>
+
+						<div className="grid xl:grid-cols-[minmax(0,1.45fr)_minmax(20rem,0.75fr)]">
+							<section className="border-b p-5 xl:border-r xl:border-b-0">
+								<div className="mb-4 flex items-start gap-3">
+									<CalendarClock className="text-muted-foreground mt-0.5 size-4" />
+									<div>
+										<h2 className="text-sm font-semibold">{i18n.t("workspace.alerting.dailyReportsScheduleTitle")}</h2>
+										<p className="text-muted-foreground mt-1 text-xs">{i18n.t("workspace.alerting.dailyReportsScheduleDescription")}</p>
+									</div>
+								</div>
+								<div className="grid gap-4 sm:grid-cols-2">
+									<div className="space-y-1.5 sm:col-span-2">
+										<Label>{copy.timezone}</Label>
+										<ComboboxSelect
+											data-testid="daily-report-timezone"
+											options={timezoneOptions}
+											value={form.timezone}
+											onValueChange={(timezone) => timezone && setForm({ ...form, timezone })}
+											disabled={!permissions.canUpdate}
+										/>
+									</div>
+									<div className="space-y-1.5">
+										<Label>{copy.generateTime}</Label>
+										<ReportTimeSelect
+											testId="daily-report-generate-time"
+											label={copy.generateTime}
+											value={form.generate_time}
+											onChange={(generate_time) => setForm({ ...form, generate_time })}
+											disabled={!permissions.canUpdate}
+										/>
+									</div>
+									<div className="space-y-1.5">
+										<Label>{copy.sendTime}</Label>
+										<ReportTimeSelect
+											testId="daily-report-send-time"
+											label={copy.sendTime}
+											value={form.send_time}
+											onChange={(send_time) => setForm({ ...form, send_time })}
+											disabled={!permissions.canUpdate}
+										/>
+									</div>
+									<div className="space-y-1.5 sm:col-span-2">
+										<Label>{copy.slowThreshold}</Label>
+										<div className="relative">
+											<Input
+												className="pr-12"
+												type="number"
+												min={0}
+												value={form.slow_threshold_ms}
+												onChange={(event) => setForm({ ...form, slow_threshold_ms: Number(event.target.value) })}
+												disabled={!permissions.canUpdate}
+											/>
+											<span className="text-muted-foreground pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs">
+												ms
+											</span>
+										</div>
+										<p className="text-muted-foreground text-xs">{i18n.t("workspace.alerting.dailyReportsSlowThresholdDescription")}</p>
+									</div>
+								</div>
+							</section>
+
+							<aside className="p-5">
+								<div className="mb-5 flex items-start gap-3">
+									<CircleGauge className="text-muted-foreground mt-0.5 size-4" />
+									<div>
+										<h2 className="text-sm font-semibold">{i18n.t("workspace.alerting.dailyReportsScheduleState")}</h2>
+										<p className="text-muted-foreground mt-1 text-xs">{i18n.t("workspace.alerting.dailyReportsMasterSwitchDescription")}</p>
+									</div>
+								</div>
+								<label className="bg-muted/20 flex items-center justify-between gap-4 rounded-md border px-4 py-3">
+									<span className="text-sm font-medium">{i18n.t("workspace.alerting.dailyReportsMasterSwitch")}</span>
+									<Switch
+										data-testid="daily-report-enabled"
+										checked={form.enabled}
+										onCheckedChange={(enabled) => setForm({ ...form, enabled })}
+										disabled={!permissions.canUpdate}
+									/>
+								</label>
+								<div className="mt-4 space-y-3 text-sm">
+									<div className="flex justify-between gap-4">
+										<span className="text-muted-foreground">{copy.generateTime}</span>
+										<span className="font-medium tabular-nums">{form.generate_time}</span>
+									</div>
+									<div className="flex justify-between gap-4">
+										<span className="text-muted-foreground">{copy.sendTime}</span>
+										<span className="font-medium tabular-nums">{form.send_time}</span>
+									</div>
+									<div className="flex justify-between gap-4">
+										<span className="text-muted-foreground">{copy.channels}</span>
+										<span className="font-medium tabular-nums">{form.internal_channel_ids.length + form.external_channel_ids.length}</span>
+									</div>
+								</div>
+							</aside>
 						</div>
 					</div>
-					<div className="grid gap-4 md:grid-cols-2">
-						<label className="flex items-center justify-between rounded border p-3">
-							<span>{copy.enabled}</span>
-							<Switch
-								data-testid="daily-report-enabled"
-								checked={form.enabled}
-								onCheckedChange={(enabled) => setForm({ ...form, enabled })}
+
+					<section className="space-y-3">
+						<div className="flex items-start gap-3 px-1">
+							<UsersRound className="text-muted-foreground mt-0.5 size-4" />
+							<div>
+								<h2 className="text-sm font-semibold">{i18n.t("workspace.alerting.dailyReportsAudienceTitle")}</h2>
+								<p className="text-muted-foreground mt-1 text-xs">{i18n.t("workspace.alerting.dailyReportsAudienceDescription")}</p>
+							</div>
+						</div>
+						<div className="grid gap-3 lg:grid-cols-2">
+							<AudienceChannels
+								title={i18n.t("workspace.alerting.dailyReportsInternalAudience")}
+								description={i18n.t("workspace.alerting.dailyReportsInternalAudienceDescription")}
+								testId="daily-report-internal"
+								enabled={form.internal_enabled}
+								ids={form.internal_channel_ids}
+								channels={channels}
 								disabled={!permissions.canUpdate}
+								onEnabled={(internal_enabled) => setForm({ ...form, internal_enabled })}
+								onIDs={(internal_channel_ids) => setForm({ ...form, internal_channel_ids })}
 							/>
-						</label>
-						<div>
-							<Label>{copy.timezone}</Label>
-							<Input
-								data-testid="daily-report-timezone"
-								value={form.timezone}
-								onChange={(e) => setForm({ ...form, timezone: e.target.value })}
+							<AudienceChannels
+								title={i18n.t("workspace.alerting.dailyReportsExternalAudience")}
+								description={i18n.t("workspace.alerting.dailyReportsExternalAudienceDescription")}
+								testId="daily-report-external"
+								enabled={form.external_enabled}
+								ids={form.external_channel_ids}
+								channels={channels}
 								disabled={!permissions.canUpdate}
+								onEnabled={(external_enabled) => setForm({ ...form, external_enabled })}
+								onIDs={(external_channel_ids) => setForm({ ...form, external_channel_ids })}
 							/>
 						</div>
-						<div>
-							<Label>{copy.generateTime}</Label>
-							<Input
-								type="time"
-								value={form.generate_time}
-								onChange={(e) => setForm({ ...form, generate_time: e.target.value })}
-								disabled={!permissions.canUpdate}
-							/>
-						</div>
-						<div>
-							<Label>{copy.sendTime}</Label>
-							<Input
-								type="time"
-								value={form.send_time}
-								onChange={(e) => setForm({ ...form, send_time: e.target.value })}
-								disabled={!permissions.canUpdate}
-							/>
-						</div>
-						<div>
-							<Label>{copy.slowThreshold}</Label>
-							<Input
-								type="number"
-								min={0}
-								value={form.slow_threshold_ms}
-								onChange={(e) => setForm({ ...form, slow_threshold_ms: Number(e.target.value) })}
-								disabled={!permissions.canUpdate}
-							/>
-						</div>
-					</div>
-					<AudienceChannels
-						title={copy.internalAudience}
-						enabled={form.internal_enabled}
-						ids={form.internal_channel_ids}
-						channels={channels}
-						disabled={!permissions.canUpdate}
-						onEnabled={(internal_enabled) => setForm({ ...form, internal_enabled })}
-						onIDs={(internal_channel_ids) => setForm({ ...form, internal_channel_ids })}
-					/>
-					<AudienceChannels
-						title={copy.externalAudience}
-						enabled={form.external_enabled}
-						ids={form.external_channel_ids}
-						channels={channels}
-						disabled={!permissions.canUpdate}
-						onEnabled={(external_enabled) => setForm({ ...form, external_enabled })}
-						onIDs={(external_channel_ids) => setForm({ ...form, external_channel_ids })}
-					/>
-					{permissions.canUpdate && (
-						<div className="flex justify-end gap-2 border-t pt-4">
+					</section>
+					{permissions.canUpdate ? (
+						<div className="flex flex-wrap items-center justify-end gap-2 border-t pt-4">
 							<Button
 								variant="outline"
 								disabled={!settingsData?.settings || saving.isLoading}
 								onClick={() => settingsData?.settings && setForm(settingsToForm(settingsData.settings))}
 								data-testid="daily-report-reset-settings"
 							>
-								<RotateCcw className="size-4" /> {i18n.t("workspace.alerting.copy.DailyReportsView_reset")}
+								<RotateCcw className="size-4" /> {i18n.t("workspace.alerting.dailyReportsReset")}
 							</Button>
 							<Button data-testid="daily-report-save-settings" disabled={saving.isLoading} onClick={save} isLoading={saving.isLoading}>
 								<Save className="size-4" /> {copy.saveSettings}
 							</Button>
 						</div>
-					)}
+					) : null}
 				</TabsContent>
 				<TabsContent value="preview" className="space-y-4">
 					<div className="flex flex-wrap items-end gap-2">

@@ -67,6 +67,7 @@ interface EntityOptionMeta {
  */
 export interface EntitySelectorCommonProps {
 	disabled?: boolean;
+	"data-testid"?: string;
 	placeholder?: string;
 	className?: string;
 	/**
@@ -180,6 +181,7 @@ export function EntitySelector(props: EntitySelectorProps) {
 		searchPlaceholder,
 		LabelResolver,
 		disabled = false,
+		"data-testid": dataTestId,
 		placeholder,
 		className,
 		fallbackOption,
@@ -373,6 +375,7 @@ export function EntitySelector(props: EntitySelectorProps) {
 		</Button>
 	) : (
 		<Button
+			data-testid={dataTestId}
 			type="button"
 			variant="outline"
 			role="combobox"

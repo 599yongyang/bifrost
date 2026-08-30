@@ -77,6 +77,8 @@ export interface CELRuleBuilderProps {
 	initialMode?: CELBuilderMode;
 	/** Seed text for the editable CEL textarea when opening in CEL mode. */
 	initialCel?: string;
+	/** Optional feature-specific test id for the editable CEL textarea. */
+	celTextareaTestId?: string;
 	/** Notified when the user switches between Builder and CEL mode. */
 	onModeChange?: (mode: CELBuilderMode) => void;
 	/**
@@ -106,6 +108,7 @@ export function CELRuleBuilder({
 	allowCelMode = false,
 	initialMode = "builder",
 	initialCel = "",
+	celTextareaTestId = "cel-builder-cel-textarea",
 	onModeChange,
 	celError = null,
 	options = {
@@ -302,7 +305,7 @@ export function CELRuleBuilder({
 								rows={4}
 								placeholder={i18n.t("workspace.routingRules.copy.celRuleBuilder_e_g_model_claude_sonnet_4_6")}
 								aria-invalid={!!celError}
-								data-testid="cel-builder-cel-textarea"
+								data-testid={celTextareaTestId}
 							/>
 							{celError ? (
 								<p className="text-destructive text-xs whitespace-pre-wrap" data-testid="cel-builder-cel-error">
