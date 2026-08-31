@@ -51,7 +51,16 @@ export function toErrorFallbackFormData(rule: RoutingErrorFallback): RoutingErro
 export function toErrorFallbackPayload(rule: RoutingErrorFallbackFormData): RoutingErrorFallback {
 	const fallbacks = rule.fallbacks.map(normalizeFallbackString).filter(hasFallbackProvider);
 	if (rule.originalContentSafetyRule) {
-		return { ...structuredClone(rule.originalContentSafetyRule), fallbacks };
+		const original = structuredClone(rule.originalContentSafetyRule);
+		const supplement = structuredClone(original.supplement || {});
+		const providers = trimStrings(rule.supplement.providers);
+		const messageContainsAny = trimStrings(rule.supplement.message_contains_any);
+		if (providers.length > 0) supplement.providers = providers;
+		else delete supplement.providers;
+		if (messageContainsAny.length > 0) supplement.message_contains_any = messageContainsAny;
+		else delete supplement.message_contains_any;
+		const hasSupplement = Object.values(supplement).some((values) => Array.isArray(values) && values.length > 0);
+		return { ...original, fallbacks, supplement: hasSupplement ? supplement : undefined };
 	}
 	if (rule.mode === "legacy" && rule.originalLegacyRule && legacyFormIsUntouched(rule, rule.originalLegacyRule)) {
 		return structuredClone(rule.originalLegacyRule);

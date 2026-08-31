@@ -34,6 +34,15 @@ func TestRecognizeFailureCategories(t *testing.T) {
 		{name: "other 5xx", status: Ptr(500), want: schemas.FailureCategoryInternal},
 		{name: "unsupported", message: "operation is not supported by this model", want: schemas.FailureCategoryUnsupportedOperation},
 		{name: "content policy", code: "safety_violations", want: schemas.FailureCategoryContentPolicy},
+		{
+			name:        "content policy chinese provider message",
+			status:      Ptr(400),
+			typeValue:   "invalid_request_error",
+			code:        "bad_request",
+			message:     "非常抱歉，生成的图片可能违反了我们的内容政策。如果你认为此判断有误，请重试或修改提示语。",
+			want:        schemas.FailureCategoryContentPolicy,
+			wantPattern: "content_policy",
+		},
 		{name: "invalid image response", typeValue: "invalid_image_response", want: schemas.FailureCategoryProviderUnavailable, wantPattern: "invalid_image_response"},
 	}
 
@@ -142,6 +151,27 @@ func TestErrorFallbackSupplementAndLegacyWhen(t *testing.T) {
 	legacy.When.StatusCodes = []int{400}
 	_, ok = matchErrorFallbackRule(classifyBifrostFailure(err, schemas.OpenAI, req.RequestType), legacy)
 	assert.False(t, ok, "populated legacy fields are ANDed")
+}
+
+func TestContentPolicySupplementMatchesProviderSpecificMessageWithoutCodeChange(t *testing.T) {
+	provider := schemas.ModelProvider("custom-image-provider")
+	err := testFallbackError(400, "invalid_request_error", "vendor moderation gate 781 rejected this image")
+	err.Error.Code = Ptr("bad_request")
+	rule := schemas.ErrorFallbackRule{
+		Scenario: schemas.FailureCategoryContentPolicy,
+		Supplement: &schemas.ErrorFallbackSupplement{
+			Providers:          []schemas.ModelProvider{provider},
+			MessageContainsAny: []string{"moderation gate 781"},
+		},
+		Fallbacks: []schemas.Fallback{{Provider: schemas.OpenAI, Model: "safe"}},
+	}
+
+	match, ok := matchErrorFallbackRule(classifyBifrostFailure(err, provider, schemas.ImageGenerationRequest), rule)
+	require.True(t, ok)
+	assert.Equal(t, failureMatchedBySupplement, match.matchedBy)
+
+	_, ok = matchErrorFallbackRule(classifyBifrostFailure(err, schemas.OpenAI, schemas.ImageGenerationRequest), rule)
+	assert.False(t, ok, "provider-scoped message clues must not affect other providers")
 }
 
 func TestResolveFallbackChainDedicatedReplacesOrdinaryAndDeduplicates(t *testing.T) {

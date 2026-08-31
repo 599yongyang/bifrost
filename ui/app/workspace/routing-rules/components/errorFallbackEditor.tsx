@@ -3,6 +3,7 @@ import { ComboboxSelect } from "@/components/ui/combobox";
 import { Label } from "@/components/ui/label";
 import { ModelMultiselect } from "@/components/ui/modelMultiselect";
 import { Switch } from "@/components/ui/switch";
+import { TagInput } from "@/components/ui/tagInput";
 import { createDefaultRoutingErrorFallback, RoutingErrorFallbackFormData } from "@/lib/types/routingRules";
 import { ArrowDown, ArrowUp, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -41,6 +42,10 @@ export function ErrorFallbackEditor({ value, providerOptions, onChange }: ErrorF
 	const updateFallbacks = (fallbacks: string[]) => {
 		onChange([{ ...(rule ?? createContentSafetyRule()), fallbacks }]);
 	};
+	const updateRecognition = (patch: Partial<RoutingErrorFallbackFormData["supplement"]>) => {
+		const current = rule ?? createContentSafetyRule();
+		onChange([{ ...current, supplement: { ...current.supplement, ...patch } }]);
+	};
 
 	return (
 		<section className="space-y-4" data-testid="routing-rule-error-fallbacks-section">
@@ -67,6 +72,44 @@ export function ErrorFallbackEditor({ value, providerOptions, onChange }: ErrorF
 			{enabled && rule ? (
 				<div className="space-y-4 rounded-sm border p-4" data-testid="routing-rule-content-safety-fallback-editor">
 					<FallbackTargets fallbacks={rule.fallbacks} providerOptions={providerOptions} onChange={updateFallbacks} />
+					<div className="space-y-4 border-t pt-4" data-testid="routing-rule-content-safety-recognition-editor">
+						<div>
+							<Label>{i18n.t("workspace.routingRules.copy.errorFallbackEditor_custom_recognition_clues")}</Label>
+							<p className="text-muted-foreground mt-1 text-xs leading-relaxed">
+								{i18n.t("workspace.routingRules.copy.errorFallbackEditor_custom_recognition_clues_description")}
+							</p>
+						</div>
+						<div className="grid gap-4 lg:grid-cols-2">
+							<div className="space-y-2">
+								<Label>{i18n.t("workspace.routingRules.copy.errorFallbackEditor_match_providers")}</Label>
+								<ComboboxSelect
+									multiple
+									value={rule.supplement.providers}
+									onValueChange={(providers) => updateRecognition({ providers })}
+									options={providerOptions}
+									placeholder={i18n.t("workspace.routingRules.copy.errorFallbackEditor_all_providers")}
+									searchPlaceholder={i18n.t("workspace.routingRules.copy.errorFallbackEditor_search_providers")}
+									data-testid="routing-rule-content-safety-match-providers"
+									noPortal
+								/>
+								<p className="text-muted-foreground text-xs">
+									{i18n.t("workspace.routingRules.copy.errorFallbackEditor_match_providers_hint")}
+								</p>
+							</div>
+							<div className="space-y-2">
+								<Label>{i18n.t("workspace.routingRules.copy.errorFallbackEditor_error_message_keywords")}</Label>
+								<TagInput
+									value={rule.supplement.message_contains_any}
+									onValueChange={(message_contains_any) => updateRecognition({ message_contains_any })}
+									placeholder={i18n.t("workspace.routingRules.copy.errorFallbackEditor_error_message_keywords_placeholder")}
+									data-testid="routing-rule-content-safety-message-keywords"
+								/>
+								<p className="text-muted-foreground text-xs">
+									{i18n.t("workspace.routingRules.copy.errorFallbackEditor_error_message_keywords_hint")}
+								</p>
+							</div>
+						</div>
+					</div>
 					<div className="bg-muted/30 rounded-sm border px-3 py-2 text-xs">
 						<p className="font-medium">{i18n.t("workspace.routingRules.copy.errorFallbackEditor_failure_behavior")}</p>
 						<p className="text-muted-foreground mt-1">

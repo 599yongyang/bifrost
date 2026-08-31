@@ -436,6 +436,18 @@ const resources = {
 			errorFallbackEditor_move_target_up: "Move target up",
 			errorFallbackEditor_move_target_down: "Move target down",
 			errorFallbackEditor_remove_target: "Remove target",
+			errorFallbackEditor_custom_recognition_clues: "Custom recognition clues",
+			errorFallbackEditor_custom_recognition_clues_description:
+				"Add provider-specific message clues when an upstream uses content-safety wording that Bifrost does not recognize yet. Saving the routing rule applies them immediately.",
+			errorFallbackEditor_match_providers: "Apply custom clues to providers (optional)",
+			errorFallbackEditor_all_providers: "All providers",
+			errorFallbackEditor_search_providers: "Search providers...",
+			errorFallbackEditor_match_providers_hint:
+				"Leave empty to use only these custom clues for every provider; built-in recognition is unchanged.",
+			errorFallbackEditor_error_message_keywords: "Error message contains any",
+			errorFallbackEditor_error_message_keywords_placeholder: "Type a stable phrase and press Enter",
+			errorFallbackEditor_error_message_keywords_hint:
+				"Use stable fragments such as “content policy”, not an entire response or generic words such as “error”.",
 			celRuleBuilder_loading_cel_builder: "Loading CEL builder...",
 			celRuleBuilder_builder: "Builder",
 			celRuleBuilder_add_rule: "Add Rule",

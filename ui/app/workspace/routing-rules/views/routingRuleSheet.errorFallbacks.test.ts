@@ -60,6 +60,35 @@ describe("routing rule error fallback form compatibility", () => {
 		]);
 	});
 
+	it("updates configurable message clues while preserving hidden supplemental matchers", () => {
+		const stored: RoutingErrorFallback[] = [
+			{
+				scenario: "content_policy",
+				supplement: {
+					providers: ["custom"],
+					error_codes: ["unsafe_prompt"],
+					status_codes: [400],
+					message_contains_any: ["old wording"],
+				},
+				fallbacks: ["xai/grok-image"],
+			},
+		];
+		const forms = toContentSafetyErrorFallbackFormData(stored);
+		forms[0].supplement.providers = ["custom", "second-provider"];
+		forms[0].supplement.message_contains_any = ["内容政策", "safety system"];
+
+		expect(toErrorFallbackPayload(forms[0])).toEqual({
+			scenario: "content_policy",
+			supplement: {
+				providers: ["custom", "second-provider"],
+				error_codes: ["unsafe_prompt"],
+				status_codes: [400],
+				message_contains_any: ["内容政策", "safety system"],
+			},
+			fallbacks: ["xai/grok-image"],
+		});
+	});
+
 	it("disabling content-safety removes only content-safety rules", () => {
 		const stored: RoutingErrorFallback[] = [
 			{ scenario: "timeout", fallbacks: ["azure/gpt-4o"] },

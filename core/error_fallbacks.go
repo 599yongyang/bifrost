@@ -472,7 +472,7 @@ func detectContentPolicySignal(failure classifiedFailure) errorFallbackMatch {
 	if id, ok := firstMessagePhrase(failure.message, []safePhraseMatcher{
 		{id: "safety_system", phrases: []string{"rejected by the safety system", "被安全系统拒绝", "安全系统拒绝"}},
 		{id: "unsafe_image", phrases: []string{"generated images appear to be unsafe", "appear to be unsafe", "图片可能不安全"}},
-		{id: "content_policy", phrases: []string{"content policy", "responsible ai policy", "内容安全", "安全策略", "guardrail intervened"}},
+		{id: "content_policy", phrases: []string{"content policy", "responsible ai policy", "内容安全", "内容政策", "安全策略", "guardrail intervened"}},
 	}); ok {
 		pack := "global_multilingual"
 		matchedBy := failureMatchedByMessagePack
