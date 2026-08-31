@@ -143,6 +143,7 @@ go.work
 - Run `go mod tidy` in the **specific module directory**, not the root
 - Cross-module imports resolve via workspace locally, but need explicit `require` in `go.mod` for releases
 - The workspace requires **Go 1.27.0** (`go.work` directive)
+- **All host-side Go commands must run through `scripts/with-moon-v2-cache.sh`.** Do not set `GOCACHE` or `GOMODCACHE` to a repository path and never create `.gocache`, `.tmp-go-cache*`, `.tmp-gocache`, `.tmp-gomodcache`, or per-task cache directories. If sandbox permissions block the user-global Go cache, the wrapper is the required fix; a repository-local cache is not an acceptable workaround. The wrapper reuses the single bounded Moon v2 cache root under `/private/tmp/moon-bifrost-v2-cache` on macOS (or `${TMPDIR:-/tmp}/moon-bifrost-v2-cache` on Linux).
 
 ---
 

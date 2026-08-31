@@ -19,6 +19,18 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 workspace="$cache_root/go.work"
 cache_max_gib="${BIFROST_V2_CACHE_MAX_GIB:-8}"
 
+# Resolve the active Go 1.27 toolchain before switching GOMODCACHE. When the
+# bootstrap `go` is an older release using automatic toolchains, its downloaded
+# Go 1.27 binary lives in the user module cache. Changing GOMODCACHE first would
+# make it download the same toolchain again and fail in offline/sandboxed runs.
+bootstrap_go="${BIFROST_V2_GO:-$(command -v go)}"
+resolved_go_root="$(GOTOOLCHAIN=go1.27.0+auto "$bootstrap_go" env GOROOT)"
+resolved_go="$resolved_go_root/bin/go"
+if [[ ! -x "$resolved_go" || "$("$resolved_go" version)" != go\ version\ go1.27.* ]]; then
+  echo "Moon v2 requires an installed Go 1.27 toolchain; resolved: $resolved_go" >&2
+  exit 1
+fi
+
 if [[ ! "$cache_max_gib" =~ ^[1-9][0-9]*$ ]]; then
   echo "BIFROST_V2_CACHE_MAX_GIB must be a positive integer" >&2
   exit 2
@@ -43,7 +55,8 @@ mkdir -p "$cache_root/go-build-host" "$cache_root/go-mod"
 
 export GOCACHE="$cache_root/go-build-host"
 export GOMODCACHE="$cache_root/go-mod"
-export GOTOOLCHAIN=go1.27.0+auto
+export GOTOOLCHAIN=local
+export PATH="$resolved_go_root/bin:$PATH"
 
 workspace_needs_refresh=false
 if [[ ! -f "$workspace" ]]; then
@@ -58,13 +71,22 @@ else
 fi
 
 if [[ "$workspace_needs_refresh" == true ]]; then
-  rm -f "$workspace" "$cache_root/go.work.sum"
-  (
-    cd "$cache_root"
-    GOWORK=off go work init "${module_dirs[@]}"
-  )
+  workspace_tmp_dir="$(mktemp -d "$cache_root/.go-work.XXXXXX")"
+  if ! (
+    cd "$workspace_tmp_dir"
+    GOWORK=off "$resolved_go" work init "${module_dirs[@]}"
+  ); then
+    rm -rf "$workspace_tmp_dir"
+    exit 1
+  fi
+  mv -f "$workspace_tmp_dir/go.work" "$workspace"
+  rmdir "$workspace_tmp_dir"
 fi
 
 export GOWORK="$workspace"
 
+if [[ "$1" == "go" ]]; then
+  shift
+  exec "$resolved_go" "$@"
+fi
 exec "$@"
