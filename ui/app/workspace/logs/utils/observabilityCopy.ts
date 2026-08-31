@@ -36,5 +36,13 @@ export function observationStatusLabel(status: ObservabilityDisplayStatus) {
 
 export function observationReasonLabel(reason?: string) {
 	if (!reason) return "";
+	const detailedKey = `workspace.logs.observability.reasons.${reason}`;
+	if (i18n.exists(detailedKey)) return i18n.t(detailedKey);
 	return observabilityCopy().reasons[reason] ?? reason.replaceAll("_", " ");
+}
+
+export function observationReasonGuidance(reason?: string) {
+	if (!reason) return "";
+	const key = `workspace.logs.observability.guidance.${reason}`;
+	return i18n.exists(key) ? i18n.t(key) : "";
 }

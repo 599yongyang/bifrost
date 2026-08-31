@@ -216,7 +216,7 @@ func (p *OtelPlugin) runManualExport(job manualExportJob) {
 		p.upsertManualState(ctx, job.repo, job.logID, target, status, reason, trace.TraceID, job.attempts[target.id])
 		job.completed[target.id] = struct{}{}
 		if exportErr != nil && logger != nil {
-			logger.Error("manual Langfuse export failed log_id=%s target_id=%s reason=%s: %v", job.logID, target.id, reason, exportErr)
+			logger.Error("manual Langfuse export failed log_id=%s trace_id=%s target_id=%s reason=%s: %v", job.logID, trace.TraceID, target.id, reason, exportErr)
 		}
 	}
 }
@@ -561,7 +561,7 @@ func (p *OtelPlugin) emitManualTrace(ctx context.Context, target *otelTarget, tr
 			}()
 			if err != nil {
 				target.tripMediaBreaker()
-				return logstore.ObservationExportStatusFailed, "media_upload_failed", err
+				return logstore.ObservationExportStatusFailed, mediaUploadFailureReason(err), err
 			}
 			mediaRefs["bifrost-media://"+media.ID] = token
 		}

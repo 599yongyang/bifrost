@@ -95,6 +95,9 @@ func TestSSRFSafeDialContextBlocksNonPublicResolution(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "blocked connection to non-public address") {
 		t.Fatalf("expected blocked-connection error, got %v", err)
 	}
+	if !errors.Is(err, ErrBlockedNonPublicAddress) {
+		t.Fatalf("blocked connection error must unwrap to ErrBlockedNonPublicAddress, got %v", err)
+	}
 }
 
 func TestSSRFSafeDialContextDialsValidatedIPDirectly(t *testing.T) {

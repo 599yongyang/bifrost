@@ -3496,6 +3496,17 @@
           "description": "When true, input/output message content is dropped from the root span only; the underlying generation (llm.call) span retains the full content. This removes the duplicate input/output stored at the trace level (e.g. the Langfuse trace Input/Output goes empty) to reduce downstream storage.",
           "default": false
         },
+        "media_upload_allowed_origins": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https://(?:\\[[0-9A-Fa-f:]+\\]|[^/?#:@]+)(?::[0-9]{1,5})?/?$"
+          },
+          "description": "Exact HTTPS origins that may receive presigned Langfuse media uploads when they resolve to a non-public address, for example https://langfuse.tailnet.ts.net:10444. Entries must not contain credentials, paths, query strings, or fragments. Public upload targets remain allowed without this setting. Presigned media uploads intentionally bypass HTTP(S)_PROXY so the destination is validated and dialed directly by the SSRF guard."
+        },
         "headers": {
           "type": "object",
           "additionalProperties": {

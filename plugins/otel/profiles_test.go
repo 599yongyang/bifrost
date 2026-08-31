@@ -188,6 +188,7 @@ func TestMarshalForStorageRoundTrip(t *testing.T) {
 				"collector_url": "http://collector-b:4318/v1/traces",
 				"trace_type": "genai_extension",
 				"protocol": "http",
+				"media_upload_allowed_origins": ["https://langfuse.tailnet.ts.net:10444"],
 				"headers": {"Authorization": "env.OTEL_SECOND_TOKEN", "X-Tenant": "beta"}
 			}
 		],
@@ -249,6 +250,9 @@ func TestMarshalForStorageRoundTrip(t *testing.T) {
 	}
 	if back.Profiles[1].Headers["X-Tenant"] != "beta" {
 		t.Errorf("round-trip profile 1 literal header lost: %q", back.Profiles[1].Headers["X-Tenant"])
+	}
+	if got := back.Profiles[1].MediaUploadAllowedOrigins; len(got) != 1 || got[0] != "https://langfuse.tailnet.ts.net:10444" {
+		t.Errorf("round-trip media upload allowed origins = %v", got)
 	}
 }
 

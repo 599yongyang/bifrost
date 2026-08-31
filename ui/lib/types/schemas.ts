@@ -916,6 +916,30 @@ export const otelConfigSchema = z
 		disable_content_logging: z.boolean().default(false),
 		group_traces_by_session: z.boolean().default(false),
 		disable_root_span_content: z.boolean().default(false),
+		media_upload_allowed_origins: z
+			.array(
+				z
+					.string()
+					.trim()
+					.max(2048)
+					.refine((value) => {
+						try {
+							const origin = new URL(value);
+							return (
+								origin.protocol === "https:" &&
+								origin.username === "" &&
+								origin.password === "" &&
+								origin.pathname === "/" &&
+								origin.search === "" &&
+								origin.hash === ""
+							);
+						} catch {
+							return false;
+						}
+					}, "Must be an exact HTTPS origin without credentials, path, query, or fragment"),
+			)
+			.max(16)
+			.default([]),
 	})
 	.superRefine((data, ctx) => {
 		// A disabled profile is not sent anywhere, so skip all validation for it.

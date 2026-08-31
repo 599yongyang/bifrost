@@ -530,6 +530,9 @@ var safeManualObservationExportReasons = map[string]struct{}{
 	"media_too_large": {}, "unsupported_mime": {}, "request_type_unsupported": {}, "invalid_url": {},
 	"status_read_failed": {}, "log_not_finalized": {}, "incomplete_media": {}, "media_limit": {},
 	"circuit_open": {}, "media_circuit_open": {}, "media_upload_timeout": {}, "media_upload_failed": {},
+	"media_upload_origin_not_allowed": {}, "media_upload_ssrf_blocked": {}, "media_upload_dns_error": {},
+	"media_upload_tls_error": {}, "media_upload_connection_refused": {}, "media_upload_connection_reset": {},
+	"media_upload_network_error": {}, "media_upload_http_403": {}, "media_upload_http_5xx": {}, "media_upload_http_error": {},
 	"trace_emit_failed": {}, "trace_rebuild_failed": {}, "worker_panic": {},
 	"log_not_found": {}, "forbidden": {}, "log_read_failed": {}, "manual_export_failed": {},
 }

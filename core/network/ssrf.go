@@ -2,6 +2,7 @@ package network
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/netip"
@@ -14,6 +15,21 @@ import (
 // Kubernetes platforms (e.g. EKS), so it must not be reachable. netip's
 // IsPrivate() does not cover it.
 var cgnat = netip.MustParsePrefix("100.64.0.0/10")
+
+// ErrBlockedNonPublicAddress identifies a dial rejected by the SSRF guard.
+// Callers can classify the failure without parsing or exposing the resolved IP.
+var ErrBlockedNonPublicAddress = errors.New("blocked connection to non-public address")
+
+type blockedNonPublicAddressError struct {
+	host string
+	ip   net.IP
+}
+
+func (e *blockedNonPublicAddressError) Error() string {
+	return fmt.Sprintf("blocked connection to non-public address %s (host %s)", e.ip, e.host)
+}
+
+func (e *blockedNonPublicAddressError) Unwrap() error { return ErrBlockedNonPublicAddress }
 
 // IsPublicIP reports whether ip is safe to dial from server-side code that
 // fetches user-controlled URLs: not loopback, private, CGNAT, link-local,
@@ -117,10 +133,11 @@ func SSRFSafeDialContext(dialTimeout time.Duration) func(ctx context.Context, ne
 // (redirects, pooled-connection re-dials), preserving
 // SSRFSafeDialContext's DNS-rebinding protection.
 //
-// This is the only place allowlist behavior exists - do not add an
-// allowlist parameter to SSRFSafeDialContext itself, and do not use this
-// function at SSRF-guarded call sites other than plugin downloads (provider
-// fetch, webhooks, skills serving); those must keep blocking all private
+// This is the only place allowlist behavior exists - do not add an allowlist
+// parameter to SSRFSafeDialContext itself. Callers may use this variant only
+// for operator-declared destinations and must separately constrain the
+// user-visible target (for example an exact HTTPS origin). Provider fetches,
+// webhooks, and other user-controlled URL paths must keep blocking all private
 // targets unconditionally.
 func SSRFSafeDialContextWithAllowlist(dialTimeout time.Duration, allow *Allowlist) func(ctx context.Context, netw, addr string) (net.Conn, error) {
 	dialer := &net.Dialer{Timeout: dialTimeout}
@@ -145,7 +162,7 @@ func ssrfSafeDialContext(resolver ipLookuper, dial func(ctx context.Context, net
 		}
 		for _, ip := range ips {
 			if !IsPublicIP(ip) && !allow.Permits(host, ip) {
-				return nil, fmt.Errorf("blocked connection to non-public address %s (host %s)", ip, host)
+				return nil, &blockedNonPublicAddressError{host: host, ip: ip}
 			}
 		}
 		return dial(ctx, netw, net.JoinHostPort(ips[0].String(), port))

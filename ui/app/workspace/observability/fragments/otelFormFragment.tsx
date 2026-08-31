@@ -8,6 +8,7 @@ import { RequestHeadersTextarea } from "@/components/ui/requestHeadersTextarea";
 import { SecretVarInput } from "@/components/ui/secretVarInput";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { TagInput } from "@/components/ui/tagInput";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { otelFormSchema, type OtelFormSchema, type SecretVar } from "@/lib/types/schemas";
@@ -52,6 +53,7 @@ interface StoredOtelProfile {
 	disable_content_logging?: boolean;
 	group_traces_by_session?: boolean;
 	disable_root_span_content?: boolean;
+	media_upload_allowed_origins?: string[];
 }
 
 // StoredOtelConfig is either the canonical { profiles: [...] } wrapper or a legacy single
@@ -122,6 +124,7 @@ const emptyProfile = (): ProfileForm => ({
 	disable_content_logging: false,
 	group_traces_by_session: false,
 	disable_root_span_content: false,
+	media_upload_allowed_origins: [],
 });
 
 const defaultSelectionRules = (): StoredSelectiveExport["rules"] => [
@@ -219,6 +222,7 @@ const toProfileForm = (p?: StoredOtelProfile): ProfileForm => ({
 	disable_content_logging: p?.disable_content_logging ?? false,
 	group_traces_by_session: p?.group_traces_by_session ?? false,
 	disable_root_span_content: p?.disable_root_span_content ?? false,
+	media_upload_allowed_origins: p?.media_upload_allowed_origins ?? [],
 });
 
 // buildDefaults handles both stored shapes: the { profiles: [...] } wrapper and the legacy
@@ -1112,7 +1116,7 @@ function OtelProfileSection({ form, control, index, hasOtelAccess, canRemove, op
 	// Surface which tab holds a validation error so it's findable without expanding every section.
 	const profileErrors = form.formState.errors?.profiles?.[index];
 	const hasError = Boolean(profileErrors);
-	const tracesFields = ["traces_enabled", "collector_url", "trace_type", "export_timeout", "request_headers"] as const;
+	const tracesFields = ["traces_enabled", "collector_url", "trace_type", "export_timeout", "request_headers", "media_upload_allowed_origins"] as const;
 	const metricsFields = ["metrics_endpoint", "metrics_push_interval"] as const;
 	const hasTracesError = tracesFields.some((f) => Boolean(profileErrors?.[f]));
 	const hasMetricsError = metricsFields.some((f) => Boolean(profileErrors?.[f]));
@@ -1467,6 +1471,30 @@ function OtelProfileSection({ form, control, index, hasOtelAccess, canRemove, op
 											</FormItem>
 										)}
 									/>
+									{protocol === "http" && (
+										<FormField
+											control={control}
+											name={`${base}.media_upload_allowed_origins`}
+											render={({ field }) => (
+												<FormItem className="w-full">
+													<FormLabel>{i18n.t("workspace.observability.otelForm.mediaUploadAllowedOrigins")}</FormLabel>
+													<FormDescription>
+														{i18n.t("workspace.observability.otelForm.mediaUploadAllowedOriginsDescription")}
+													</FormDescription>
+													<FormControl>
+														<TagInput
+															value={field.value ?? []}
+															onValueChange={field.onChange}
+															placeholder="https://langfuse.tailnet.ts.net:10444"
+															disabled={!hasOtelAccess}
+															data-testid={`otel-profile-${index}-media-upload-origin-input`}
+														/>
+													</FormControl>
+													<FormMessage />
+												</FormItem>
+											)}
+										/>
+									)}
 									<FormField
 										control={control}
 										name={`${base}.disable_content_logging`}

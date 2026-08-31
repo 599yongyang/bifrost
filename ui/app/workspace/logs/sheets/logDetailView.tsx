@@ -958,6 +958,7 @@ interface LogDetailViewProps {
 	canReveal?: boolean;
 	onClose?: () => void;
 	headerAction?: ReactNode;
+	detailBanner?: ReactNode;
 	onFilterByParentRequestId?: (parentRequestId: string) => void;
 }
 
@@ -969,6 +970,7 @@ export function LogDetailView({
 	canReveal = false,
 	onClose,
 	headerAction,
+	detailBanner,
 	onFilterByParentRequestId,
 }: LogDetailViewProps) {
 	const { t } = useTranslation();
@@ -1489,6 +1491,7 @@ export function LogDetailView({
 					)}
 				</div>
 			</div>
+			{detailBanner}
 			<details className="group bg-card rounded-sm border" open={false}>
 				<summary className="hover:bg-muted/30 flex cursor-pointer items-center justify-between px-4 py-2.5 text-sm transition">
 					<span className="text-foreground font-medium">{i18n.t("supplemental.moreDetails")}</span>

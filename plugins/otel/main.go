@@ -139,6 +139,11 @@ type Profile struct {
 	// attributes are dropped from the root span only (child spans keep full content), so the
 	// trace-level Input/Output goes empty while the generation observation retains everything.
 	DisableRootSpanContent bool `json:"disable_root_span_content,omitempty"`
+
+	// MediaUploadAllowedOrigins permits presigned media uploads to exact HTTPS
+	// origins that resolve to non-public addresses (for example Tailscale or a
+	// private MinIO service). Public upload URLs remain allowed without entries.
+	MediaUploadAllowedOrigins []string `json:"media_upload_allowed_origins,omitempty"`
 }
 
 // UnmarshalJSON applies field defaults that the zero-value wouldn't capture.
@@ -261,25 +266,26 @@ func hoistSpanFilter(data []byte) *PluginSpanFilter {
 // flattened to plain strings ("env.VAR_NAME" or the literal value) for DB/config-file
 // persistence.
 type profileForStorage struct {
-	Enabled                bool              `json:"enabled"`
-	TracesEnabled          bool              `json:"traces_enabled"`
-	ServiceName            string            `json:"service_name"`
-	CollectorURL           string            `json:"collector_url"`
-	Headers                map[string]string `json:"headers,omitempty"`
-	TraceHeaders           map[string]string `json:"trace_headers,omitempty"`
-	MetricsHeaders         map[string]string `json:"metrics_headers,omitempty"`
-	TraceType              TraceType         `json:"trace_type"`
-	Protocol               Protocol          `json:"protocol"`
-	TLSCACert              string            `json:"tls_ca_cert,omitempty"`
-	Insecure               bool              `json:"insecure"`
-	ExportTimeout          int               `json:"export_timeout,omitempty"`
-	MetricsEnabled         bool              `json:"metrics_enabled"`
-	MetricsEndpoint        string            `json:"metrics_endpoint,omitempty"`
-	MetricsPushInterval    int               `json:"metrics_push_interval,omitempty"`
-	RequestHeaders         []string          `json:"request_headers,omitempty"`
-	DisableContentLogging  bool              `json:"disable_content_logging,omitempty"`
-	GroupTracesBySession   bool              `json:"group_traces_by_session,omitempty"`
-	DisableRootSpanContent bool              `json:"disable_root_span_content,omitempty"`
+	Enabled                   bool              `json:"enabled"`
+	TracesEnabled             bool              `json:"traces_enabled"`
+	ServiceName               string            `json:"service_name"`
+	CollectorURL              string            `json:"collector_url"`
+	Headers                   map[string]string `json:"headers,omitempty"`
+	TraceHeaders              map[string]string `json:"trace_headers,omitempty"`
+	MetricsHeaders            map[string]string `json:"metrics_headers,omitempty"`
+	TraceType                 TraceType         `json:"trace_type"`
+	Protocol                  Protocol          `json:"protocol"`
+	TLSCACert                 string            `json:"tls_ca_cert,omitempty"`
+	Insecure                  bool              `json:"insecure"`
+	ExportTimeout             int               `json:"export_timeout,omitempty"`
+	MetricsEnabled            bool              `json:"metrics_enabled"`
+	MetricsEndpoint           string            `json:"metrics_endpoint,omitempty"`
+	MetricsPushInterval       int               `json:"metrics_push_interval,omitempty"`
+	RequestHeaders            []string          `json:"request_headers,omitempty"`
+	DisableContentLogging     bool              `json:"disable_content_logging,omitempty"`
+	GroupTracesBySession      bool              `json:"group_traces_by_session,omitempty"`
+	DisableRootSpanContent    bool              `json:"disable_root_span_content,omitempty"`
+	MediaUploadAllowedOrigins []string          `json:"media_upload_allowed_origins,omitempty"`
 }
 
 // configForStorage is the persisted wrapper shape.
@@ -304,25 +310,26 @@ func (c *Config) MarshalForStorage() ([]byte, error) {
 			continue
 		}
 		out.Profiles = append(out.Profiles, profileForStorage{
-			Enabled:                p.Enabled,
-			TracesEnabled:          p.TracesEnabled,
-			ServiceName:            p.ServiceName,
-			CollectorURL:           schemas.SecretVarAsString(p.CollectorURL),
-			Headers:                p.Headers,
-			TraceHeaders:           p.TraceHeaders,
-			MetricsHeaders:         p.MetricsHeaders,
-			TraceType:              p.TraceType,
-			Protocol:               p.Protocol,
-			TLSCACert:              p.TLSCACert,
-			Insecure:               p.Insecure,
-			ExportTimeout:          p.ExportTimeout,
-			MetricsEnabled:         p.MetricsEnabled,
-			MetricsEndpoint:        schemas.SecretVarAsString(p.MetricsEndpoint),
-			MetricsPushInterval:    p.MetricsPushInterval,
-			RequestHeaders:         p.RequestHeaders,
-			DisableContentLogging:  p.DisableContentLogging,
-			GroupTracesBySession:   p.GroupTracesBySession,
-			DisableRootSpanContent: p.DisableRootSpanContent,
+			Enabled:                   p.Enabled,
+			TracesEnabled:             p.TracesEnabled,
+			ServiceName:               p.ServiceName,
+			CollectorURL:              schemas.SecretVarAsString(p.CollectorURL),
+			Headers:                   p.Headers,
+			TraceHeaders:              p.TraceHeaders,
+			MetricsHeaders:            p.MetricsHeaders,
+			TraceType:                 p.TraceType,
+			Protocol:                  p.Protocol,
+			TLSCACert:                 p.TLSCACert,
+			Insecure:                  p.Insecure,
+			ExportTimeout:             p.ExportTimeout,
+			MetricsEnabled:            p.MetricsEnabled,
+			MetricsEndpoint:           schemas.SecretVarAsString(p.MetricsEndpoint),
+			MetricsPushInterval:       p.MetricsPushInterval,
+			RequestHeaders:            p.RequestHeaders,
+			DisableContentLogging:     p.DisableContentLogging,
+			GroupTracesBySession:      p.GroupTracesBySession,
+			DisableRootSpanContent:    p.DisableRootSpanContent,
+			MediaUploadAllowedOrigins: slices.Clone(p.MediaUploadAllowedOrigins),
 		})
 	}
 	return sonic.Marshal(out)
@@ -714,7 +721,9 @@ func (p *OtelPlugin) buildTarget(index int, profile *Profile) (*otelTarget, erro
 		case ProtocolHTTP:
 			target.client, err = NewOtelClientHTTP(url, traceHeaders, profile.TLSCACert, profile.Insecure, exportTimeout)
 			if err == nil && !profile.DisableContentLogging {
-				target.mediaUploader, err = newLangfuseMediaClient(url, traceHeaders, exportTimeout, profile.TLSCACert, profile.Insecure)
+				target.mediaUploader, err = newLangfuseMediaClient(
+					url, traceHeaders, exportTimeout, profile.TLSCACert, profile.Insecure, profile.MediaUploadAllowedOrigins,
+				)
 				if target.mediaUploader != nil {
 					target.mediaSem = make(chan struct{}, 4)
 				}
@@ -1160,19 +1169,23 @@ func (p *OtelPlugin) Inject(ctx context.Context, trace *schemas.Trace) error {
 			if !exportTrace {
 				return
 			}
-			if t.client == nil || t.breakerOpen() {
+			if t.client == nil {
 				return
 			}
-			mediaRefs, mediaOK := uploadTraceMedia(ctx, t, trace)
+			if t.breakerOpen() {
+				p.persistExportState(ctx, trace, t, logstore.ObservationExportStatusFailed, logstore.ObservationExportSourceAutomatic, "circuit_open", decision.ruleID)
+				return
+			}
+			mediaRefs, mediaErr := uploadTraceMedia(ctx, t, trace)
 			if t.metricsExporter != nil && len(trace.MediaAttachments()) > 0 {
 				reason := "uploaded"
-				if !mediaOK {
+				if mediaErr != nil {
 					reason = "failed"
 				}
 				t.metricsExporter.RecordObservabilityEvent(ctx, "media_upload", reason)
 			}
-			if !mediaOK && selector != nil && decision.selected && isImageRequestType(selectionFactsFromTrace(trace).requestType) {
-				p.persistExportState(ctx, trace, t, logstore.ObservationExportStatusFailed, logstore.ObservationExportSourceAutomatic, "media_upload_failed", decision.ruleID)
+			if mediaErr != nil && selector != nil && decision.selected && isImageRequestType(selectionFactsFromTrace(trace).requestType) {
+				p.persistExportState(ctx, trace, t, logstore.ObservationExportStatusFailed, logstore.ObservationExportSourceAutomatic, mediaUploadFailureReason(mediaErr), decision.ruleID)
 				return
 			}
 			resourceSpan := p.convertTraceToResourceSpanWithMedia(t.serviceName, trace, t.requestHeaders, t.disableContentLogging, t.groupTracesBySession, t.disableRootSpanContent, mediaRefs)
@@ -1189,6 +1202,13 @@ func (p *OtelPlugin) Inject(ctx context.Context, trace *schemas.Trace) error {
 				return
 			}
 			t.resetBreaker()
+			if mediaErr != nil {
+				// Profiles without atomic selective export keep the historical
+				// metadata-only fallback, but the complete-record status must stay
+				// failed so the dashboard can explain and retry the missing media.
+				p.persistExportState(ctx, trace, t, logstore.ObservationExportStatusFailed, logstore.ObservationExportSourceAutomatic, mediaUploadFailureReason(mediaErr), decision.ruleID)
+				return
+			}
 			p.persistExportState(ctx, trace, t, logstore.ObservationExportStatusExported, logstore.ObservationExportSourceAutomatic, "selected", decision.ruleID)
 		}(t)
 	}

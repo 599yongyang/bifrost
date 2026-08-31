@@ -6,11 +6,10 @@ import { useGetPromptQuery } from "@/lib/store/apis/promptsApi";
 import type { LogEntry } from "@/lib/types/logs";
 import { useSheetNavigation } from "@/hooks/useSheetNavigation";
 import { Loader2 } from "lucide-react";
-import { CloudUpload } from "lucide-react";
 import { resolveObservabilityExport } from "../utils/observabilityExport";
-import { observabilityCopy } from "../utils/observabilityCopy";
 import { useEffect, useState } from "react";
 import { LogDetailView } from "./logDetailView";
+import { ObservabilityExportPanel } from "../views/observabilityExportPanel";
 import i18n from "@/lib/i18n";
 
 interface LogDetailSheetProps {
@@ -50,7 +49,8 @@ export function LogDetailSheet({
 		pollingInterval,
 	});
 
-	const shouldPoll = isError || fullLog?.status === "processing";
+	const fullExportState = fullLog ? resolveObservabilityExport(fullLog) : undefined;
+	const shouldPoll = isError || fullLog?.status === "processing" || fullExportState?.status === "pending";
 
 	const isFullDataReady = log != null && (isError || (fullLog?.id === log.id && !isLoading));
 	// Prefer full log when loaded; otherwise list row — enables prompt fetch in parallel with getLogById
@@ -76,7 +76,6 @@ export function LogDetailSheet({
 	// Show a loader only on the initial fetch, not during background polling refetches.
 	const displayLog: LogEntry = isFullDataReady && fullLog ? fullLog : log;
 	const resolvedSelectedPromptName = selectedPromptData?.prompt?.name ?? displayLog.selected_prompt_name ?? "";
-	const exportState = resolveObservabilityExport(displayLog);
 
 	return (
 		<Sheet open={open} onOpenChange={onOpenChange}>
@@ -96,16 +95,6 @@ export function LogDetailSheet({
 						onFilterByParentRequestId={onFilterByParentRequestId}
 						headerAction={
 							<>
-								{exportState.canManualExport && onManualExport ? (
-									<Button
-										variant="outline"
-										size="sm"
-										data-testid="log-detail-observability-export-btn"
-										onClick={() => onManualExport(displayLog)}
-									>
-										<CloudUpload className="size-4" /> {observabilityCopy().export}
-									</Button>
-								) : null}
 								{displayLog.parent_request_id && onViewSession ? (
 									<Button
 										variant="outline"
@@ -126,6 +115,7 @@ export function LogDetailSheet({
 								/>
 							</>
 						}
+						detailBanner={<ObservabilityExportPanel log={displayLog} onRetry={onManualExport} />}
 					/>
 				)}
 			</SheetContent>

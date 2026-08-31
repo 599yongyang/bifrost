@@ -147,6 +147,9 @@ const resources = {
 			requestHeadersDescription:
 				"以逗号分隔、需要作为 Span 属性导出的请求头。支持精确名称和通配符前缀；请避免 Authorization 等敏感请求头。",
 			requestHeadersPlaceholder: "X-Tenant-ID, X-Request-Source, x-custom-*",
+			mediaUploadAllowedOrigins: "私有媒体上传 Origin",
+			mediaUploadAllowedOriginsDescription:
+				"仅信任用于 Langfuse Media 上传的精确 HTTPS Origin，适用于 Tailscale 或内网地址；公网存储无需添加。协议、域名和端口必须完全匹配。为避免绕过 SSRF 校验，Media 上传会直接连接目标，不使用 HTTP(S)_PROXY。",
 			disableContentLoggingDescription: "从导出的 Span 中移除消息内容、工具定义以及工具参数或结果；模型、Token 和延迟等元数据仍会保留。",
 			groupTracesBySessionDescription:
 				"将共享 x-bf-session-id 的请求归入同一 Trace。携带 W3C traceparent 的请求仍保留在原分布式 Trace 中。",

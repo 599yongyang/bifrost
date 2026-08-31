@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { LogEntry } from "@/lib/types/logs";
 import { resolveObservabilityExport, summarizeManualExportResults } from "./observabilityExport";
+import { observationReasonGuidance, observationReasonLabel } from "./observabilityCopy";
+import { i18nReady } from "@/lib/i18n";
 
 const baseLog = {
 	id: "log",
@@ -87,5 +89,14 @@ describe("summarizeManualExportResults", () => {
 				],
 			}),
 		).toEqual({ queued: 1, exported: 0, pending: 1, failed: 1, unavailable: 1 });
+	});
+});
+
+describe("safe observability failure copy", () => {
+	it("explains a private media target without exposing a signed URL", async () => {
+		await i18nReady;
+		expect(observationReasonLabel("media_upload_ssrf_blocked")).toContain("private");
+		expect(observationReasonGuidance("media_upload_ssrf_blocked")).toContain("exact HTTPS origin");
+		expect(observationReasonGuidance("media_upload_ssrf_blocked")).not.toContain("X-Amz-");
 	});
 });

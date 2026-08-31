@@ -27,6 +27,7 @@ describe("buildOtelPluginConfig", () => {
 					disable_content_logging: false,
 					group_traces_by_session: false,
 					disable_root_span_content: false,
+					media_upload_allowed_origins: ["https://langfuse.tailnet.ts.net:10444"],
 				},
 			],
 			selective_export: {
@@ -58,5 +59,6 @@ describe("buildOtelPluginConfig", () => {
 		expect(payload.profiles[0].headers).toEqual({ Authorization: "env.OTEL_TOKEN" });
 		expect(payload.profiles[0].trace_headers).toEqual({ "x-trace": "trace" });
 		expect(payload.profiles[0].metrics_headers).toEqual({ "x-metrics": "metrics" });
+		expect(payload.profiles[0].media_upload_allowed_origins).toEqual(["https://langfuse.tailnet.ts.net:10444"]);
 	});
 });

@@ -724,6 +724,13 @@ func TestManualObservationExportEndpointStatuses(t *testing.T) {
 	}
 }
 
+func TestSafeManualExportResultPreservesSSRFReason(t *testing.T) {
+	result := safeManualExportResult("log-1", logstore.ObservationExportStatusFailed, "media_upload_ssrf_blocked")
+	if result.Reason != "media_upload_ssrf_blocked" || result.Status != logstore.ObservationExportStatusFailed {
+		t.Fatalf("safe result = %+v", result)
+	}
+}
+
 func TestManualObservationExportEndpointRejectsUnavailableExporter(t *testing.T) {
 	h := &LoggingHandler{logManager: &manualObservationLogManager{dashboardLogManager: &dashboardLogManager{}}}
 	ctx := newTestRequestCtx(`{"ids":["log-1"]}`)

@@ -3,6 +3,7 @@ package otel
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/maximhq/bifrost/core"
 	"github.com/maximhq/bifrost/core/schemas"
+	"github.com/maximhq/bifrost/framework/logstore"
 	collectorpb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"google.golang.org/protobuf/proto"
 )
@@ -44,6 +46,63 @@ func attachTestMedia(trace *schemas.Trace, media ...schemas.TraceMedia) {
 	trace.SetMediaStore(store, trace.InternalID)
 	for _, attachment := range media {
 		trace.AddMedia(attachment)
+	}
+}
+
+func TestLangfuseMediaPrivateUploadRequiresExactAllowedOrigin(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut || r.URL.Path != "/upload" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	blocked, err := newLangfuseMediaClient("https://collector.example/api/public/otel/v1/traces", nil, time.Second, "", true, nil)
+	if err != nil {
+		t.Fatalf("new blocked client: %v", err)
+	}
+	_, err = blocked.putMedia(context.Background(), server.URL+"/upload", "image/png", "checksum", []byte("image"))
+	if got := mediaUploadFailureReason(err); got != "media_upload_ssrf_blocked" {
+		t.Fatalf("blocked private upload reason = %q, want media_upload_ssrf_blocked (err=%v)", got, err)
+	}
+
+	allowed, err := newLangfuseMediaClient(
+		"https://collector.example/api/public/otel/v1/traces", nil, time.Second, "", true, []string{server.URL},
+	)
+	if err != nil {
+		t.Fatalf("new allowlisted client: %v", err)
+	}
+	if transport, ok := allowed.uploadClient.Transport.(*http.Transport); !ok || transport.Proxy != nil {
+		t.Fatal("presigned media uploads must bypass process-wide HTTP proxies so SSRF validation cannot be skipped")
+	}
+	status, err := allowed.putMedia(context.Background(), server.URL+"/upload", "image/png", "checksum", []byte("image"))
+	if err != nil || status != http.StatusOK {
+		t.Fatalf("allowlisted private upload = status %d, err %v", status, err)
+	}
+
+	mismatchedOrigin := strings.Replace(server.URL, "https://", "http://", 1)
+	_, err = allowed.putMedia(context.Background(), mismatchedOrigin+"/upload", "image/png", "checksum", []byte("image"))
+	if got := mediaUploadFailureReason(err); got != "media_upload_origin_not_allowed" {
+		t.Fatalf("mismatched origin reason = %q, want media_upload_origin_not_allowed (err=%v)", got, err)
+	}
+}
+
+func TestMediaUploadAllowedOriginsRejectNonOrigins(t *testing.T) {
+	invalid := []string{
+		"http://langfuse.tailnet.ts.net:10444",
+		"https://langfuse.tailnet.ts.net:10444/upload",
+		"https://langfuse.tailnet.ts.net:10444?token=secret",
+		"https://langfuse.tailnet.ts.net:10444#fragment",
+		"https://user:password@langfuse.tailnet.ts.net:10444",
+		"https://langfuse.tailnet.ts.net:99999",
+	}
+	for _, value := range invalid {
+		t.Run(value, func(t *testing.T) {
+			if _, err := newMediaUploadOriginPolicy([]string{value}); err == nil {
+				t.Fatalf("expected %q to be rejected", value)
+			}
+		})
 	}
 }
 
@@ -235,7 +294,7 @@ func TestLangfuseMediaUploadRejectsPendingExistingMedia(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := newLangfuseMediaClient(server.URL+"/api/public/otel/v1/traces", nil, time.Second, "", false)
+	client, err := newLangfuseMediaClient(server.URL+"/api/public/otel/v1/traces", nil, time.Second, "", false, nil)
 	if err != nil {
 		t.Fatalf("new media client: %v", err)
 	}
@@ -266,7 +325,7 @@ func TestLangfuseMediaUploadRequiresConfirmedStatusAfterPatch(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := newLangfuseMediaClient(server.URL+"/api/public/otel/v1/traces", nil, time.Second, "", false)
+	client, err := newLangfuseMediaClient(server.URL+"/api/public/otel/v1/traces", nil, time.Second, "", false, nil)
 	if err != nil {
 		t.Fatalf("new media client: %v", err)
 	}
@@ -323,7 +382,7 @@ func TestLangfuseMediaNetworkErrorIsClassifiedWithoutLeakingSignedURL(t *testing
 }
 
 func TestLangfuseMediaClientUsesProfileTLSSettings(t *testing.T) {
-	client, err := newLangfuseMediaClient("https://langfuse.example.test/api/public/otel/v1/traces", nil, time.Second, "", true)
+	client, err := newLangfuseMediaClient("https://langfuse.example.test/api/public/otel/v1/traces", nil, time.Second, "", true, nil)
 	if err != nil {
 		t.Fatalf("new media client: %v", err)
 	}
@@ -334,7 +393,7 @@ func TestLangfuseMediaClientUsesProfileTLSSettings(t *testing.T) {
 }
 
 func TestPresignedUploadURLBlocksNonPublicTargetsWithoutLeakingQuery(t *testing.T) {
-	client, err := newLangfuseMediaClient("https://langfuse.example.test/api/public/otel/v1/traces", nil, time.Second, "", false)
+	client, err := newLangfuseMediaClient("https://langfuse.example.test/api/public/otel/v1/traces", nil, time.Second, "", false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -433,10 +492,12 @@ func TestImageOTELConversionKeepsCanonicalUsageAndAddsLangfuseDetails(t *testing
 func TestInjectMediaFailureDegradesWithoutDroppingTrace(t *testing.T) {
 	logger = bifrost.NewDefaultLogger(schemas.LogLevelError)
 	client := &capturingTestOtelClient{}
+	repo := &manualTestRepo{states: make(map[string]logstore.ObservationExport)}
 	plugin := &OtelPlugin{
 		pluginSpanFilter: &PluginSpanFilter{},
+		exportStore:      repo,
 		targets: []*otelTarget{{
-			serviceName: "bifrost-test", client: client, mediaUploader: &failingTestMediaUploader{}, exportTimeout: time.Second,
+			id: "profile-0", serviceName: "bifrost-test", client: client, mediaUploader: &failingTestMediaUploader{}, exportTimeout: time.Second,
 		}},
 	}
 	now := time.Now()
@@ -449,7 +510,7 @@ func TestInjectMediaFailureDegradesWithoutDroppingTrace(t *testing.T) {
 		},
 	}
 	trace := &schemas.Trace{
-		TraceID: "00000000000000000000000000000005", RootSpan: root, Spans: []*schemas.Span{root, child},
+		TraceID: "00000000000000000000000000000005", RequestID: "media-failure", RootSpan: root, Spans: []*schemas.Span{root, child},
 	}
 	attachTestMedia(trace, schemas.TraceMedia{ID: "local-image", SpanID: child.SpanID, Field: "input", MIMEType: "image/png", Bytes: 16, Data: []byte("not exported raw")})
 
@@ -467,6 +528,113 @@ func TestInjectMediaFailureDegradesWithoutDroppingTrace(t *testing.T) {
 	}
 	if input == "" || strings.Contains(input, "bifrost-media://") || strings.Contains(input, "not exported raw") {
 		t.Fatalf("degraded observation input = %q, want metadata without local/raw media", input)
+	}
+	states, _ := repo.GetObservationExports(context.Background(), []string{trace.RequestID})
+	if len(states) != 1 || states[0].Status != logstore.ObservationExportStatusFailed || states[0].Reason != "media_upload_failed" {
+		t.Fatalf("degraded export state = %+v, want failed/media_upload_failed", states)
+	}
+}
+
+func TestAutomaticInjectPersistsTraceAndMediaCircuitReasons(t *testing.T) {
+	now := time.Now()
+	tests := []struct {
+		name       string
+		traceOpen  bool
+		mediaOpen  bool
+		wantReason string
+	}{
+		{name: "trace circuit", traceOpen: true, wantReason: "circuit_open"},
+		{name: "media circuit", mediaOpen: true, wantReason: "media_circuit_open"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &manualTestRepo{states: make(map[string]logstore.ObservationExport)}
+			client := &countingTestOtelClient{}
+			target := &otelTarget{
+				id: "profile-0", serviceName: "test", client: client, mediaUploader: &successfulManualUploader{},
+				exportTimeout: time.Second, mediaSem: make(chan struct{}, 1),
+			}
+			if tt.traceOpen {
+				target.breakerOpenUntil.Store(now.Add(time.Minute).UnixNano())
+			}
+			if tt.mediaOpen {
+				target.mediaBreakerOpenUntil.Store(now.Add(time.Minute).UnixNano())
+			}
+			plugin := &OtelPlugin{targets: []*otelTarget{target}, exportStore: repo, pluginSpanFilter: &PluginSpanFilter{}}
+			trace := selectionTrace("circuit", schemas.ImageEditRequest, time.Second)
+			trace.RequestID = "circuit-" + tt.name
+			attachTestMedia(trace, schemas.TraceMedia{ID: "input", SpanID: trace.RootSpan.SpanID, Field: "input", MIMEType: "image/png", Data: []byte("image")})
+			if err := plugin.Inject(context.Background(), trace); err != nil {
+				t.Fatal(err)
+			}
+			states, _ := repo.GetObservationExports(context.Background(), []string{trace.RequestID})
+			if len(states) != 1 || states[0].Status != logstore.ObservationExportStatusFailed || states[0].Reason != tt.wantReason {
+				t.Fatalf("circuit export state = %+v, want failed/%s", states, tt.wantReason)
+			}
+		})
+	}
+}
+
+func TestLangfuseMediaClassifiesHTTPFailuresAcrossStages(t *testing.T) {
+	tests := []struct {
+		stage      string
+		status     int
+		wantReason string
+	}{
+		{stage: "create", status: http.StatusForbidden, wantReason: "media_upload_http_403"},
+		{stage: "content_upload", status: http.StatusForbidden, wantReason: "media_upload_http_403"},
+		{stage: "status_update", status: http.StatusBadGateway, wantReason: "media_upload_http_5xx"},
+		{stage: "status_verify", status: http.StatusServiceUnavailable, wantReason: "media_upload_http_5xx"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.stage, func(t *testing.T) {
+			var server *httptest.Server
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				stage := ""
+				switch {
+				case r.Method == http.MethodPost && r.URL.Path == "/api/public/media":
+					stage = "create"
+				case r.Method == http.MethodPut && r.URL.Path == "/upload":
+					stage = "content_upload"
+				case r.Method == http.MethodPatch:
+					stage = "status_update"
+				case r.Method == http.MethodGet:
+					stage = "status_verify"
+				}
+				if stage == tt.stage {
+					w.WriteHeader(tt.status)
+					return
+				}
+				switch stage {
+				case "create":
+					_, _ = w.Write([]byte(`{"mediaId":"media-1","uploadUrl":"` + server.URL + `/upload"}`))
+				case "content_upload":
+					w.WriteHeader(http.StatusOK)
+				case "status_update":
+					w.WriteHeader(http.StatusNoContent)
+				case "status_verify":
+					_, _ = w.Write([]byte(`{"mediaId":"media-1","url":"https://media.example/image.png","uploadedAt":"2026-08-31T00:00:00Z"}`))
+				default:
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			defer server.Close()
+
+			client, err := newLangfuseMediaClient(server.URL+"/api/public/otel/v1/traces", nil, time.Second, "", false, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			client.uploadClient = server.Client()
+			client.uploadClient.CheckRedirect = rejectMediaUploadRedirect
+			_, err = client.Upload(context.Background(), "trace", schemas.TraceMedia{SpanID: "span", MIMEType: "image/png", Field: "input", Data: []byte("image")})
+			if got := mediaUploadFailureReason(err); got != tt.wantReason {
+				t.Fatalf("reason = %q, want %q (err=%v)", got, tt.wantReason, err)
+			}
+			var httpErr *mediaHTTPError
+			if !errors.As(err, &httpErr) || httpErr.operation != tt.stage {
+				t.Fatalf("typed HTTP error = %#v, err=%v", httpErr, err)
+			}
+		})
 	}
 }
 

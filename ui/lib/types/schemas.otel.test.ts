@@ -15,9 +15,29 @@ const profile = {
 	disable_content_logging: false,
 	group_traces_by_session: false,
 	disable_root_span_content: false,
+	media_upload_allowed_origins: [],
 };
 
 describe("otel selective export schema", () => {
+	it("accepts only exact HTTP media upload origins", () => {
+		const valid = otelFormSchema.parse({
+			enabled: true,
+			profiles: [{ ...profile, media_upload_allowed_origins: ["https://langfuse.tailnet.ts.net:10444"] }],
+		});
+		expect(valid.profiles[0].media_upload_allowed_origins).toEqual(["https://langfuse.tailnet.ts.net:10444"]);
+
+		for (const origin of [
+			"https://langfuse.tailnet.ts.net:10444/upload",
+			"https://langfuse.tailnet.ts.net:10444?token=secret",
+			"https://user:password@langfuse.tailnet.ts.net:10444",
+			"ftp://langfuse.tailnet.ts.net:10444",
+		]) {
+			expect(
+				otelFormSchema.safeParse({ enabled: true, profiles: [{ ...profile, media_upload_allowed_origins: [origin] }] }).success,
+			).toBe(false);
+		}
+	});
+
 	it("serializes the latest atomic media selection fields", () => {
 		const parsed = otelFormSchema.parse({
 			enabled: true,

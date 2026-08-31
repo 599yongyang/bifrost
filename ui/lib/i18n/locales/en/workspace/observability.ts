@@ -151,6 +151,9 @@ const resources = {
 			requestHeadersDescription:
 				"Comma-separated request headers to emit as span attributes. Exact names and wildcard prefixes are supported; avoid sensitive headers such as Authorization.",
 			requestHeadersPlaceholder: "X-Tenant-ID, X-Request-Source, x-custom-*",
+			mediaUploadAllowedOrigins: "Private media upload origins",
+			mediaUploadAllowedOriginsDescription:
+				"Trust exact HTTPS origins for Langfuse media uploads that resolve to Tailscale or private addresses. Public storage needs no entry. Scheme, host, and port must match exactly. Media uploads connect directly and do not use HTTP(S)_PROXY so SSRF validation cannot be bypassed.",
 			disableContentLoggingDescription:
 				"Drop message content, tool definitions, and tool arguments or results from exported spans. Model, token, and latency metadata remains available.",
 			groupTracesBySessionDescription:
