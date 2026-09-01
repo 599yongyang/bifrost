@@ -332,6 +332,10 @@ func (h *ProviderHandler) addProvider(ctx *fasthttp.RequestCtx) {
 		CustomProviderConfig:     payload.CustomProviderConfig,
 		OpenAIConfig:             payload.OpenAIConfig,
 	}
+	if payload.Provider == schemas.APIMart && config.ConcurrencyAndBufferSize == nil {
+		defaults := schemas.DefaultAPIMartConcurrencyAndBufferSize
+		config.ConcurrencyAndBufferSize = &defaults
+	}
 	// Validate custom provider configuration before persisting
 	if err := lib.ValidateCustomProvider(config, payload.Provider); err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, fmt.Sprintf("Invalid custom provider config: %v", err))
@@ -1370,7 +1374,11 @@ func (h *ProviderHandler) getProviderResponseFromConfig(provider schemas.ModelPr
 		config.NetworkConfig = &schemas.DefaultNetworkConfig
 	}
 	if config.ConcurrencyAndBufferSize == nil {
-		config.ConcurrencyAndBufferSize = &schemas.DefaultConcurrencyAndBufferSize
+		if provider == schemas.APIMart {
+			config.ConcurrencyAndBufferSize = &schemas.DefaultAPIMartConcurrencyAndBufferSize
+		} else {
+			config.ConcurrencyAndBufferSize = &schemas.DefaultConcurrencyAndBufferSize
+		}
 	}
 
 	return ProviderResponse{

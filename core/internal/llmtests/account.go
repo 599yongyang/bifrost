@@ -188,6 +188,7 @@ func (account *ComprehensiveTestAccount) GetConfiguredProviders() ([]schemas.Mod
 		schemas.Nebius,
 		schemas.XAI,
 		schemas.Replicate,
+		schemas.APIMart,
 		schemas.VLLM,
 		schemas.Runway,
 		schemas.Runware,
@@ -541,6 +542,13 @@ func (account *ComprehensiveTestAccount) GetKeysForProvider(ctx context.Context,
 		}, nil
 	case schemas.Replicate:
 		return replicateProviderTestKeys(), nil
+	case schemas.APIMart:
+		return []schemas.Key{{
+			Value:          *schemas.NewSecretVar("env.APIMART_API_KEY"),
+			Models:         []string{"gpt-image-2"},
+			Weight:         1.0,
+			UseForBatchAPI: bifrost.Ptr(false),
+		}}, nil
 	case schemas.Runway:
 		return []schemas.Key{
 			{
@@ -976,6 +984,16 @@ func (account *ComprehensiveTestAccount) GetConfigForProvider(providerKey schema
 				Concurrency: Concurrency,
 				BufferSize:  10,
 			},
+		}, nil
+	case schemas.APIMart:
+		return &schemas.ProviderConfig{
+			NetworkConfig: schemas.NetworkConfig{
+				DefaultRequestTimeoutInSeconds: 300,
+				MaxRetries:                     0,
+				RetryBackoffInitial:            1 * time.Second,
+				RetryBackoffMax:                12 * time.Second,
+			},
+			ConcurrencyAndBufferSize: schemas.DefaultAPIMartConcurrencyAndBufferSize,
 		}, nil
 	case schemas.Runway:
 		return &schemas.ProviderConfig{

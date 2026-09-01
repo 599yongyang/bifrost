@@ -6,9 +6,43 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"net/url"
 	"strings"
 	"time"
 )
+
+// ValidatePublicURL resolves an HTTP(S) URL and rejects it if any current DNS
+// answer is non-public. It is intended for URLs forwarded to third-party
+// providers, where Bifrost does not dial the destination itself but must avoid
+// passing obvious private-network targets upstream.
+func ValidatePublicURL(ctx context.Context, rawURL string) error {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("unsupported URL scheme %q", parsed.Scheme)
+	}
+	if parsed.Hostname() == "" {
+		return fmt.Errorf("URL must include a host")
+	}
+
+	lookupCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	ips, err := net.DefaultResolver.LookupIP(lookupCtx, "ip", parsed.Hostname())
+	if err != nil {
+		return fmt.Errorf("DNS lookup failed for %s: %w", parsed.Hostname(), err)
+	}
+	if len(ips) == 0 {
+		return fmt.Errorf("DNS lookup for %s returned no addresses", parsed.Hostname())
+	}
+	for _, ip := range ips {
+		if !IsPublicIP(ip) {
+			return &blockedNonPublicAddressError{host: parsed.Hostname(), ip: ip}
+		}
+	}
+	return nil
+}
 
 // cgnat is the RFC 6598 Carrier-Grade NAT shared address space (100.64.0.0/10).
 // It is reserved for provider-internal networks and is used for pod IPs on some

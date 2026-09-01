@@ -7395,6 +7395,57 @@
                       ]
                     }
                   }
+                },
+                {
+                  "name": "apimart/gpt-image-2 synchronous URL response",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"model\": \"apimart/gpt-image-2\",\n  \"prompt\": \"A simple red apple on a white background\",\n  \"n\": 1,\n  \"size\": \"1024x1024\",\n  \"response_format\": \"url\"\n}"
+                    },
+                    "url": {
+                      "raw": "{{baseUrl}}/v1/images/generations",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "v1",
+                        "images",
+                        "generations"
+                      ]
+                    }
+                  },
+                  "event": [
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "pm.test('APIMart returns a synchronous URL-only image response', function () {",
+                          "  pm.response.to.have.status(200);",
+                          "  var body = pm.response.json();",
+                          "  pm.expect(body.data).to.be.an('array').that.is.not.empty;",
+                          "  body.data.forEach(function (image) {",
+                          "    pm.expect(image.url).to.be.a('string').and.not.empty;",
+                          "    pm.expect(image).not.to.have.property('b64_json');",
+                          "    pm.expect(image.url.toLowerCase()).not.to.match(/[?&](sig|signature|x-amz-signature|x-amz-credential|x-goog-signature|token|access_token|sas|policy|key-pair-id)=/);",
+                          "  });",
+                          "  var serialized = JSON.stringify(body).toLowerCase();",
+                          "  pm.expect(serialized).not.to.include('task_id');",
+                          "  pm.expect(serialized).not.to.include('submitted');",
+                          "  pm.expect(serialized).not.to.include('processing');",
+                          "});"
+                        ]
+                      }
+                    }
+                  ]
                 }
               ]
             },

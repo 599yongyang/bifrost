@@ -7334,6 +7334,7 @@ func (c *Config) autoDetectProviders(ctx context.Context) {
 		schemas.OpenAI:    {"OPENAI_API_KEY", "OPENAI_KEY"},
 		schemas.Anthropic: {"ANTHROPIC_API_KEY", "ANTHROPIC_KEY"},
 		schemas.Mistral:   {"MISTRAL_API_KEY", "MISTRAL_KEY"},
+		schemas.APIMart:   {"APIMART_API_KEY"},
 	}
 
 	detectedCount := 0
@@ -7344,6 +7345,10 @@ func (c *Config) autoDetectProviders(ctx context.Context) {
 				// Generate a unique ID for the auto-detected key
 				keyID := uuid.NewString()
 				// Create default provider configuration
+				performanceDefaults := schemas.DefaultConcurrencyAndBufferSize
+				if provider == schemas.APIMart {
+					performanceDefaults = schemas.DefaultAPIMartConcurrencyAndBufferSize
+				}
 				providerConfig := configstore.ProviderConfig{
 					Keys: []schemas.Key{
 						{
@@ -7354,7 +7359,7 @@ func (c *Config) autoDetectProviders(ctx context.Context) {
 							Weight: 1.0,
 						},
 					},
-					ConcurrencyAndBufferSize: &schemas.DefaultConcurrencyAndBufferSize,
+					ConcurrencyAndBufferSize: &performanceDefaults,
 				}
 				// Add to providers map
 				c.Providers[provider] = providerConfig

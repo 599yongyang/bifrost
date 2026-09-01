@@ -323,6 +323,10 @@ func (h *ProviderHandler) refreshProviderModels(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusBadRequest, fmt.Sprintf("Invalid provider: %v", err))
 		return
 	}
+	if provider == schemas.APIMart {
+		SendError(ctx, fasthttp.StatusBadRequest, "APIMart does not expose model discovery; configure allowed models manually")
+		return
+	}
 
 	if _, err := h.inMemoryStore.GetProviderConfigRaw(provider); err != nil {
 		if errors.Is(err, lib.ErrNotFound) {
@@ -360,6 +364,10 @@ func (h *ProviderHandler) refreshProviderKeyModels(ctx *fasthttp.RequestCtx) {
 	provider, err := getProviderFromCtx(ctx)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, fmt.Sprintf("Invalid provider: %v", err))
+		return
+	}
+	if provider == schemas.APIMart {
+		SendError(ctx, fasthttp.StatusBadRequest, "APIMart does not expose model discovery; configure allowed models manually")
 		return
 	}
 

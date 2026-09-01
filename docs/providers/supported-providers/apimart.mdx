@@ -1,0 +1,66 @@
+---
+title: "APIMart"
+description: "Use APIMart's asynchronous GPT-Image-2 tasks through synchronous OpenAI Images endpoints"
+icon: "images"
+---
+
+## Overview
+
+Bifrost exposes APIMart as a synchronous OpenAI Images provider. It submits an APIMart image task, polls the task until it reaches a terminal state, and returns the completed images without exposing the APIMart task ID.
+
+| Operation | Supported | Bifrost endpoint |
+|-----------|-----------|------------------|
+| Text-to-image | ✅ | `POST /v1/images/generations` |
+| Image-to-image | ✅ | `POST /v1/images/generations` with `input_images` |
+| Image edit | ✅ | `POST /v1/images/edits` |
+| Masked edit | ❌ | - |
+| Image variation | ❌ | - |
+| Streaming images | ❌ | - |
+
+This integration accepts concrete `WIDTHxHEIGHT` pixel sizes and forwards them unchanged. Moon deployments keep their allowed-size policy in the Moon plugin, which remains the single source of truth; direct Go SDK callers rely on APIMart's upstream validation. Aspect-ratio values, `auto`, and APIMart's `resolution` field are not forwarded.
+
+### Response formats
+
+- `response_format: "url"` returns APIMart's image URL only when it contains no credential-bearing query parameters. Signed/tokenized result URLs are rejected and handed to Bifrost fallback rather than exposed to the caller; use `b64_json` when APIMart returns signed URLs.
+- `response_format: "b64_json"` securely downloads each completed image and returns raw Base64.
+- When omitted, the GPT-Image/OpenAI-compatible default is `b64_json`.
+
+Result downloads block private, loopback, link-local, and CGNAT destinations, validate image content types, limit redirects and byte sizes, and retry only the download. A failed download never resubmits the already billed image task.
+
+Result-image downloads intentionally bypass provider forward proxies and use a pinned-IP direct connection. Submission and task polling still honor `proxy_config`; forwarding result URLs through a proxy would let the proxy re-resolve the hostname and defeat Bifrost's DNS-rebinding protection.
+
+`send_back_raw_response` exposes a sanitized view of the final APIMart task response: task IDs and status are omitted from client-visible raw data, while signed URL queries are always redacted. Storage-only raw capture may retain task IDs/status for diagnosis and is stripped before the client response.
+
+## Configuration
+
+```json
+{
+  "providers": {
+    "apimart": {
+      "keys": [
+        {
+          "name": "apimart-key-1",
+          "value": "env.APIMART_API_KEY",
+          "models": ["gpt-image-2"],
+          "weight": 1.0
+        }
+      ],
+      "concurrency_and_buffer_size": {
+        "concurrency": 32,
+        "buffer_size": 128
+      },
+      "network_config": {
+        "default_request_timeout_in_seconds": 300,
+        "max_retries": 0
+      }
+    }
+  }
+}
+```
+
+The default base URL is `https://api.apimart.ai`. APIMart does not expose a model-list endpoint through this integration, so configure model allowlists manually. The provider does not map APIMart task cost fields into Bifrost cost because their accounting units are not treated as equivalent.
+
+## Reference
+
+- [APIMart GPT-Image-2 generation](https://docs.apimart.ai/cn/api-reference/images/gpt-image-2/generation)
+- [APIMart task status](https://docs.apimart.ai/cn/api-reference/tasks/status)

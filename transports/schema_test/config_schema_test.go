@@ -750,6 +750,22 @@ func TestSchemaProviderRawRequest(t *testing.T) {
 	})
 }
 
+func TestSchemaAcceptsAPIMartProvider(t *testing.T) {
+	compiled := compileSchema(t)
+	config := `{
+		"providers": {
+			"apimart": {
+				"keys": [{"name": "apimart", "value": "env.APIMART_API_KEY", "weight": 1, "models": ["gpt-image-2"]}],
+				"concurrency_and_buffer_size": {"concurrency": 32, "buffer_size": 128},
+				"network_config": {"default_request_timeout_in_seconds": 300, "max_retries": 0}
+			}
+		}
+	}`
+	if err := validateConfig(t, compiled, config); err != nil {
+		t.Fatalf("APIMart provider config should be valid: %v", err)
+	}
+}
+
 func TestSchemaGovernanceProviders(t *testing.T) {
 	schema := loadSchema(t)
 

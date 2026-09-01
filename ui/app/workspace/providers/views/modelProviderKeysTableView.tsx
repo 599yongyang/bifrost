@@ -91,6 +91,7 @@ function ProviderKeyActionsMenu({
 
 export default function ModelProviderKeysTableView({ provider, className, headerActions, isKeyless }: Props) {
 	const providerName = provider.name?.toLowerCase() ?? "";
+	const supportsModelRefresh = providerName !== "apimart";
 	const isVLLM = providerName === "vllm";
 	const isOllamaOrSGL = providerName === "ollama" || providerName === "sgl";
 	const entityLabel = isVLLM
@@ -223,7 +224,7 @@ export default function ModelProviderKeysTableView({ provider, className, header
 					</div>
 					<div className="flex min-w-0 flex-wrap items-center gap-2">
 						{headerActions}
-						{hasUpdateProviderAccess ? (
+						{hasUpdateProviderAccess && supportsModelRefresh ? (
 							<Tooltip>
 								<TooltipTrigger asChild>
 									<Button
@@ -436,7 +437,7 @@ export default function ModelProviderKeysTableView({ provider, className, header
 										</TableCell>
 										<TableCell className="text-right">
 											<div className="flex items-center justify-end space-x-2">
-												{hasUpdateProviderAccess ? (
+												{hasUpdateProviderAccess && supportsModelRefresh ? (
 													<Tooltip>
 														<TooltipTrigger asChild>
 															{/* A disabled button receives no hover or focus events, so the

@@ -89,6 +89,8 @@ func (baseAccount *BaseAccount) GetConfigForProvider(providerKey schemas.ModelPr
 	}
 	if config.ConcurrencyAndBufferSize != nil {
 		providerConfig.ConcurrencyAndBufferSize = *config.ConcurrencyAndBufferSize
+	} else if providerKey == schemas.APIMart {
+		providerConfig.ConcurrencyAndBufferSize = schemas.DefaultAPIMartConcurrencyAndBufferSize
 	} else {
 		providerConfig.ConcurrencyAndBufferSize = schemas.DefaultConcurrencyAndBufferSize
 	}

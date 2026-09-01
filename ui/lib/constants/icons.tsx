@@ -689,6 +689,9 @@ export const ProviderIcons = {
 			</svg>
 		);
 	},
+	apimart: ({ size = "md", className = "" }: IconProps) => {
+		return <Network size={resolveSize(size)} className={className} aria-label="APIMart" />;
+	},
 	vllm: ({ size = "md", className = "" }: IconProps) => {
 		const resolvedSize = resolveSize(size);
 		return (

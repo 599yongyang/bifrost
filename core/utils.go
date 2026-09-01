@@ -87,6 +87,7 @@ var rateLimitPatterns = []string{
 // dynamicallyConfigurableProviders is the list of providers that can be dynamically configured.
 // Excluding providers that require extra configuration (e.g. Ollama, SGL, vLLM).
 var dynamicallyConfigurableProviders = []schemas.ModelProvider{
+	schemas.APIMart,
 	schemas.Anthropic,
 	schemas.Azure,
 	schemas.Bedrock,

@@ -11,6 +11,7 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/google/uuid"
+	providerUtils "github.com/maximhq/bifrost/core/providers/utils"
 	"github.com/maximhq/bifrost/core/schemas"
 	"github.com/maximhq/bifrost/framework/batchaccounting"
 	"github.com/maximhq/bifrost/framework/logstore"
@@ -711,7 +712,7 @@ func (p *LoggerPlugin) applyNonStreamingOutputToEntry(entry *logstore.Log, resul
 			entry.TranscriptionOutputParsed = result.TranscriptionResponse
 		}
 		if result.ImageGenerationResponse != nil {
-			entry.ImageGenerationOutputParsed = result.ImageGenerationResponse
+			entry.ImageGenerationOutputParsed = sanitizeImageGenerationOutputForLogging(result.ImageGenerationResponse, extraFields.Provider)
 		}
 		if result.VideoGenerationResponse != nil {
 			// Generation, remix and retrieve all return BifrostVideoGenerationResponse;
@@ -741,6 +742,20 @@ func (p *LoggerPlugin) applyNonStreamingOutputToEntry(entry *logstore.Log, resul
 			params.StatusCode = result.PassthroughResponse.StatusCode
 		}
 	}
+}
+
+func sanitizeImageGenerationOutputForLogging(response *schemas.BifrostImageGenerationResponse, provider schemas.ModelProvider) *schemas.BifrostImageGenerationResponse {
+	if response == nil || provider != schemas.APIMart {
+		return response
+	}
+	cloned := *response
+	cloned.Data = append([]schemas.ImageData(nil), response.Data...)
+	for i := range cloned.Data {
+		if cloned.Data[i].URL != "" {
+			cloned.Data[i].URL = providerUtils.RedactURLForError(cloned.Data[i].URL)
+		}
+	}
+	return &cloned
 }
 
 func (p *LoggerPlugin) applyRealtimeOutputToEntry(entry *logstore.Log, result *schemas.BifrostResponse, shouldStoreRaw bool, contentLoggingEnabled bool) {

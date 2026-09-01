@@ -373,6 +373,20 @@ func TestRefreshProviderKeyModels_DelegatesToModelsManager(t *testing.T) {
 	}
 }
 
+func TestRefreshAPIMartModelsRequiresManualConfiguration(t *testing.T) {
+	mgr := &mockModelsManager{}
+	h := &ProviderHandler{modelsManager: mgr}
+	ctx := newTestRequestCtx("")
+	ctx.SetUserValue("provider", "apimart")
+	h.refreshProviderModels(ctx)
+	if ctx.Response.StatusCode() != fasthttp.StatusBadRequest {
+		t.Fatalf("status got %d, want 400; body=%s", ctx.Response.StatusCode(), ctx.Response.Body())
+	}
+	if len(mgr.refreshProviderCalls) != 0 {
+		t.Fatalf("APIMart must not invoke model discovery: %v", mgr.refreshProviderCalls)
+	}
+}
+
 // A refresh already running for the provider must surface as 409 rather than
 // stacking another (enabled keys x 2) burst of upstream calls, so the UI can
 // tell the user to wait instead of silently doubling the load.

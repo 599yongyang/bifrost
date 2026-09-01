@@ -60,6 +60,7 @@ export const ModelPlaceholders = {
 	nebius: "e.g. openai/gpt-oss-120b, google/gemma-2-9b-it-fast, Qwen/Qwen2.5-VL-72B-Instruct",
 	xai: "e.g. grok-4-0709, grok-3-mini, grok-3, grok-2-vision-1212",
 	replicate: "e.g. meta/llama3-1-8b-instruct, black-forest-labs/flux-dev",
+	apimart: "e.g. gpt-image-2",
 	vllm: "e.g. Qwen/Qwen3-0.6B, Qwen/Qwen3-1.5B",
 	runway: "e.g. gen4_turbo_image_to_video, gen3a_turbo_image_to_video",
 	runware: "e.g. runware:100@1, runware:101@1",
@@ -93,6 +94,7 @@ export const isKeyRequiredByProvider: Record<ProviderName, boolean> = {
 	nebius: true,
 	xai: true,
 	replicate: true,
+	apimart: true,
 	runway: true,
 	runware: true,
 	vllm: false,
@@ -121,6 +123,14 @@ export const DefaultPerformanceConfig = {
 	concurrency: 1000,
 	buffer_size: 5000,
 } satisfies ConcurrencyAndBufferSize;
+
+export const DefaultAPIMartPerformanceConfig = {
+	concurrency: 32,
+	buffer_size: 128,
+} satisfies ConcurrencyAndBufferSize;
+
+export const getDefaultPerformanceConfig = (provider: string): ConcurrencyAndBufferSize =>
+	provider === "apimart" ? DefaultAPIMartPerformanceConfig : DefaultPerformanceConfig;
 
 export const MCP_STATUS_COLORS: Record<string, string> = {
 	healthy: "bg-green-100 text-green-800",

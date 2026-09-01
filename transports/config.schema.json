@@ -430,6 +430,9 @@
         "replicate": {
           "$ref": "#/$defs/provider_with_replicate_config"
         },
+        "apimart": {
+          "$ref": "#/$defs/provider"
+        },
         "elevenlabs": {
           "$ref": "#/$defs/provider"
         },

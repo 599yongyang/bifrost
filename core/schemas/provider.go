@@ -17,6 +17,8 @@ const (
 	DefaultMaxConnDurationInSeconds   = 300 // 5 minutes — forces connection recycling to prevent stale connections from NAT/LB silent drops
 	DefaultBufferSize                 = 5000
 	DefaultConcurrency                = 1000
+	DefaultAPIMartBufferSize          = 128
+	DefaultAPIMartConcurrency         = 32
 	DefaultStreamBufferSize           = 256
 	DefaultStreamIdleTimeoutInSeconds = 120 // Idle timeout per stream chunk — if no data for this many seconds, bifrost closes the connection
 	DefaultKeepAliveTimeoutInSeconds  = 30  // Idle keep-alive for pooled connections — how long an idle connection is kept for reuse before being closed
@@ -254,6 +256,11 @@ type ConcurrencyAndBufferSize struct {
 var DefaultConcurrencyAndBufferSize = ConcurrencyAndBufferSize{
 	Concurrency: DefaultConcurrency,
 	BufferSize:  DefaultBufferSize,
+}
+
+var DefaultAPIMartConcurrencyAndBufferSize = ConcurrencyAndBufferSize{
+	Concurrency: DefaultAPIMartConcurrency,
+	BufferSize:  DefaultAPIMartBufferSize,
 }
 
 // ProxyType defines the type of proxy to use for connections.

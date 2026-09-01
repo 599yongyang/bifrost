@@ -24,6 +24,7 @@ import (
 	"github.com/maximhq/bifrost/core/mcp/codemode/starlark"
 	"github.com/maximhq/bifrost/core/mcp/credstore"
 	"github.com/maximhq/bifrost/core/providers/anthropic"
+	"github.com/maximhq/bifrost/core/providers/apimart"
 	"github.com/maximhq/bifrost/core/providers/azure"
 	"github.com/maximhq/bifrost/core/providers/bedrock"
 	"github.com/maximhq/bifrost/core/providers/bedrockmantle"
@@ -4594,6 +4595,8 @@ func (bifrost *Bifrost) createBaseProvider(providerKey schemas.ModelProvider, co
 		return xai.NewXAIProvider(config, bifrost.logger)
 	case schemas.Replicate:
 		return replicate.NewReplicateProvider(config, bifrost.logger)
+	case schemas.APIMart:
+		return apimart.NewAPIMartProvider(config, bifrost.logger)
 	case schemas.VLLM:
 		return vllm.NewVLLMProvider(config, bifrost.logger)
 	case schemas.Runway:
@@ -4613,6 +4616,14 @@ func (bifrost *Bifrost) createBaseProvider(providerKey schemas.ModelProvider, co
 // It initializes the request queue and starts worker goroutines for processing requests.
 // Note: This function assumes the caller has already acquired the appropriate mutex for the provider.
 func (bifrost *Bifrost) prepareProvider(providerKey schemas.ModelProvider, config *schemas.ProviderConfig) error {
+	if providerKey == schemas.APIMart {
+		if config.ConcurrencyAndBufferSize.Concurrency == 0 {
+			config.ConcurrencyAndBufferSize.Concurrency = schemas.DefaultAPIMartConcurrency
+		}
+		if config.ConcurrencyAndBufferSize.BufferSize == 0 {
+			config.ConcurrencyAndBufferSize.BufferSize = schemas.DefaultAPIMartBufferSize
+		}
+	}
 	// Create ProviderQueue with lifecycle management
 	pq := &ProviderQueue{
 		queue:      make(chan *ChannelMessage, config.ConcurrencyAndBufferSize.BufferSize),
@@ -5073,6 +5084,9 @@ func (bifrost *Bifrost) getProviderByKey(providerKey schemas.ModelProvider) sche
 			config = &schemas.ProviderConfig{
 				NetworkConfig:            schemas.DefaultNetworkConfig,
 				ConcurrencyAndBufferSize: schemas.DefaultConcurrencyAndBufferSize,
+			}
+			if providerKey == schemas.APIMart {
+				config.ConcurrencyAndBufferSize = schemas.DefaultAPIMartConcurrencyAndBufferSize
 			}
 		} else {
 			return nil

@@ -25,6 +25,7 @@ export const PROVIDER_KEYWORDS = {
   passthrough: ["_passthrough", "passthrough"],
   openrouter: ["openrouter"],
   replicate: ["replicate", "/replicate", "flux", "black-forest-labs"],
+  apimart: ["apimart", "/apimart"],
 };
 
 // filter-collection asks "does this item match provider P?" once per fork, so an
@@ -36,6 +37,7 @@ export const MATCH_ORDER = [
   "passthrough",
   "openrouter",
   "replicate",
+  "apimart",
   "vertex",
   "azure",
   "bedrock_mantle",

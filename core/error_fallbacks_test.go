@@ -34,6 +34,7 @@ func TestRecognizeFailureCategories(t *testing.T) {
 		{name: "other 5xx", status: Ptr(500), want: schemas.FailureCategoryInternal},
 		{name: "unsupported", message: "operation is not supported by this model", want: schemas.FailureCategoryUnsupportedOperation},
 		{name: "content policy", code: "safety_violations", want: schemas.FailureCategoryContentPolicy},
+		{name: "APIMart content moderation", status: Ptr(400), typeValue: "content_policy", code: "content_moderation", want: schemas.FailureCategoryContentPolicy, wantPattern: "content_policy"},
 		{
 			name:        "content policy chinese provider message",
 			status:      Ptr(400),

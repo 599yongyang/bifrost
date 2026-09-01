@@ -21,6 +21,20 @@ func errorWithRawPayloads() *schemas.BifrostError {
 	}
 }
 
+func TestSanitizeAPIMartImageURLForLogging(t *testing.T) {
+	original := &schemas.BifrostImageGenerationResponse{Data: []schemas.ImageData{{URL: "https://cdn.example/image.png?sig=secret&expires=1"}}}
+	sanitized := sanitizeImageGenerationOutputForLogging(original, schemas.APIMart)
+	if sanitized == original {
+		t.Fatal("expected a logging-only copy")
+	}
+	if got := sanitized.Data[0].URL; got != "https://cdn.example/image.png" {
+		t.Fatalf("logged URL = %q", got)
+	}
+	if !strings.Contains(original.Data[0].URL, "sig=secret") {
+		t.Fatal("client response was mutated while sanitizing logs")
+	}
+}
+
 // Regression test: logstore's SerializeFields serializes ErrorDetailsParsed
 // into ErrorDetails on write. If the parsed field holds the unsanitized error,
 // raw request/response payloads reach the store even when content logging is

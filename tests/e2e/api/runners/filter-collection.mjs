@@ -18,6 +18,7 @@ import { readReport } from "./lib/read-report.mjs";
 import { buildHaystack } from "./lib/haystack.mjs";
 import { walkRequests, buildProducerIndex, chainedDependencies } from "./lib/chained-vars.mjs";
 import { retryableNames } from "./lib/rate-limit-retry.mjs";
+import { PROVIDER_KEYWORDS as SHARED_PROVIDER_KEYWORDS } from "./lib/provider-attribution.mjs";
 import {
   DEFAULT_TARGET_SECONDS,
   MIN_COVERAGE,
@@ -140,17 +141,9 @@ if (!PLAN && !PROVIDER && !FEATURE_PARTS.length && !FEATURE_ANY_PARTS.length && 
 }
 
 const PROVIDER_KEYWORDS = {
-  openai: ["openai", "/openai", "gpt-", "o3", "o1"],
-  anthropic: ["anthropic", "claude-"],
-  bedrock: ["bedrock", "/bedrock"],
-  bedrock_mantle: ["bedrock_mantle", "bedrock-mantle"],
-  gemini: ["gemini", "/genai", "googlesearch"],
-  vertex: ["vertex", "/genai/v1beta/models/{{vertexModel}}"],
-  azure: ["azure", "deployments"],
+  ...SHARED_PROVIDER_KEYWORDS,
   passthrough: ["_passthrough"],
-  openrouter: ["openrouter"],
   xai: ["xai", "grok"],
-  replicate: ["replicate", "/replicate", "flux", "black-forest-labs"],
   runware: ["runware", "runware/"],
 };
 
@@ -279,6 +272,11 @@ const itemMatchesProvider = (item, ancestorNames, provider = PROVIDER) => {
   const isOpenRouter = haystack.includes("openrouter");
   if (provider === "openrouter") return isOpenRouter;
   if (isOpenRouter) return false;
+  // APIMart rows use gpt-image model names, which would otherwise also land in
+  // the OpenAI fork through the broad "gpt-" keyword.
+  const isAPIMart = haystack.includes("apimart");
+  if (provider === "apimart") return isAPIMart;
+  if (isAPIMart) return false;
   // Bedrock Mantle rows (model "bedrock_mantle/...") contain the substring "bedrock", so they'd
   // otherwise be claimed by the bedrock partition too. Route them exclusively to bedrock_mantle.
   const isMantle = haystack.includes("bedrock_mantle") || haystack.includes("bedrock-mantle");

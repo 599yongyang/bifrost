@@ -79,4 +79,13 @@ test("a Vertex heading that also mentions Gemini stays with vertex", () => {
   );
 });
 
+test("an APIMart image row is not attributed to OpenAI by its gpt-image model", () => {
+  const apimartMatch = makeMatchProvider((p) => ["apimart", "openai"].includes(p));
+  const row = {
+    name: "apimart/gpt-image-2 synchronous URL response",
+    request: { url: { raw: "{{baseUrl}}/v1/images/generations" } },
+  };
+  assert.strictEqual(providerOfItem(row, ["Image generation"], apimartMatch), "apimart");
+});
+
 console.log(`\n${passed} passed`);

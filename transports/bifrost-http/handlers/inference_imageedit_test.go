@@ -5,6 +5,7 @@ import (
 	"mime/multipart"
 	"testing"
 
+	"github.com/maximhq/bifrost/core/providers/apimart"
 	schemas "github.com/maximhq/bifrost/core/schemas"
 	"github.com/valyala/fasthttp"
 )
@@ -201,6 +202,24 @@ func TestPrepareImageEditRequest_MultipartUpload(t *testing.T) {
 	}
 	if string(req.Params.Mask) != "mask-bytes" {
 		t.Fatalf("mask = %q", req.Params.Mask)
+	}
+}
+
+func TestPrepareImageEditRequest_APIMartMultipartConversion(t *testing.T) {
+	png := []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52}
+	_, request, err := prepareImageEditRequest(multipartImageEditCtx(t,
+		map[string]string{"model": "apimart/gpt-image-2", "prompt": "watercolor", "size": "1024x1024"},
+		map[string][]byte{"image": png},
+	), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	converted, err := apimart.ToAPIMartImageEditRequest(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request.Provider != schemas.APIMart || len(converted.ImageURLs) != 1 || !bytes.HasPrefix([]byte(converted.ImageURLs[0]), []byte("data:image/png;base64,")) {
+		t.Fatalf("unexpected APIMart edit conversion: provider=%s images=%#v", request.Provider, converted.ImageURLs)
 	}
 }
 

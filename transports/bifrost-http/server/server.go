@@ -951,6 +951,9 @@ func (s *BifrostHTTPServer) OnKeyAdded(ctx context.Context, provider schemas.Mod
 		return fmt.Errorf("failed to read provider keys for %s: %w", provider, err)
 	}
 	s.Config.ModelCatalog.SetKeyConfigForProvider(provider, keys)
+	if provider == schemas.APIMart {
+		return nil
+	}
 	// Keyless providers: empty keyID sentinel.
 	keyID := key.ID
 	if isKeylessProvider(provider, s.Config) {
@@ -978,6 +981,9 @@ func (s *BifrostHTTPServer) OnKeyUpdated(ctx context.Context, provider schemas.M
 		return fmt.Errorf("failed to read provider keys for %s: %w", provider, err)
 	}
 	s.Config.ModelCatalog.SetKeyConfigForProvider(provider, keys)
+	if provider == schemas.APIMart {
+		return nil
+	}
 	keyID := key.ID
 	if isKeylessProvider(provider, s.Config) {
 		keyID = ""
@@ -1614,6 +1620,10 @@ func (s *BifrostHTTPServer) RefreshLiveModelsForAllKeys(ctx context.Context, pro
 // Callers are responsible for invalidating stale entries first when keys
 // have been removed from the provider's set.
 func (s *BifrostHTTPServer) RefreshLiveModelsForProvider(ctx context.Context, provider schemas.ModelProvider, keys []schemas.Key) {
+	if provider == schemas.APIMart {
+		logger.Debug("model discovery skipped for APIMart; configure allowed models manually")
+		return
+	}
 	if len(keys) == 0 {
 		// Empty key slice + non-keyless provider would write under the "" sentinel
 		// reserved for keyless providers — colliding with the keyless namespace and

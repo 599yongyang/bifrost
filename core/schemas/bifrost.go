@@ -67,6 +67,7 @@ const (
 	Nebius        ModelProvider = "nebius"
 	XAI           ModelProvider = "xai"
 	Replicate     ModelProvider = "replicate"
+	APIMart       ModelProvider = "apimart"
 	VLLM          ModelProvider = "vllm"
 	Runway        ModelProvider = "runway"
 	Runware       ModelProvider = "runware"
@@ -112,6 +113,7 @@ var StandardProviders = []ModelProvider{
 	Nebius,
 	XAI,
 	Replicate,
+	APIMart,
 	VLLM,
 	Runway,
 	Runware,

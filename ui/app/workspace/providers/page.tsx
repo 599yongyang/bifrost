@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { TruncatedLabel } from "@/components/ui/truncatedLabel";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { DefaultNetworkConfig, DefaultPerformanceConfig } from "@/lib/constants/config";
+import { DefaultNetworkConfig, getDefaultPerformanceConfig } from "@/lib/constants/config";
 import { ProviderIconType, RenderProviderIcon } from "@/lib/constants/icons";
 import { ProviderLabels, ProviderNames } from "@/lib/constants/logs";
 import {
@@ -85,7 +85,7 @@ export default function Providers() {
 						setSelectedProvider({
 							name: provider as ModelProviderName,
 
-							concurrency_and_buffer_size: DefaultPerformanceConfig,
+							concurrency_and_buffer_size: getDefaultPerformanceConfig(provider),
 							network_config: DefaultNetworkConfig,
 							custom_provider_config: undefined,
 							proxy_config: undefined,

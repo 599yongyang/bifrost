@@ -1,10 +1,16 @@
 package utils
 
 import (
+	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/maximhq/bifrost/core/schemas"
 )
 
 // TestRedactURLForError pins that nothing a caller could authenticate with survives into
@@ -139,5 +145,111 @@ func TestFetchAndEncodeURL_ErrorsAreRedacted(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestFetchImageAndEncodeURLValidatesContentTypeAndSize(t *testing.T) {
+	tests := []struct {
+		name        string
+		contentType string
+		body        string
+		limit       int64
+		wantError   string
+	}{
+		{name: "png", contentType: "image/png", body: "png", limit: 10},
+		{name: "non image", contentType: "text/html", body: "html", limit: 10, wantError: "unsupported Content-Type"},
+		{name: "too large", contentType: "image/png", body: "12345", limit: 4, wantError: "exceeds 4-byte limit"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", tt.contentType)
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer server.Close()
+			encoded, size, err := fetchImageAndEncodeURL(context.Background(), server.URL, tt.limit, server.Client())
+			if tt.wantError != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantError) {
+					t.Fatalf("error=%v, want %q", err, tt.wantError)
+				}
+				return
+			}
+			if err != nil || encoded == "" || size != int64(len(tt.body)) {
+				t.Fatalf("encoded=%q size=%d err=%v", encoded, size, err)
+			}
+		})
+	}
+}
+
+func TestFetchImageAndEncodeURLWithClientBlocksSSRFAndRedactsSignedQuery(t *testing.T) {
+	client, clientErr := NewImageDownloadClient(schemas.DefaultNetworkConfig)
+	if clientErr != nil {
+		t.Fatal(clientErr)
+	}
+	_, _, err := FetchImageAndEncodeURLWithClient(context.Background(), "http://127.0.0.1/image.png?sig=secret", 1024, client)
+	if err == nil {
+		t.Fatal("expected loopback URL to be blocked")
+	}
+	if strings.Contains(err.Error(), "sig=secret") {
+		t.Fatalf("signed query leaked: %s", err)
+	}
+}
+
+func TestFetchImageAndEncodeURLLimitsRedirects(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, r.URL.String(), http.StatusFound)
+	}))
+	defer server.Close()
+	_, _, err := fetchImageAndEncodeURL(context.Background(), server.URL, 1024, newSSRFSafeFetchClientForTest(server.Client()))
+	if err == nil || !strings.Contains(err.Error(), "stopped after 5 redirects") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestNewImageDownloadClientUsesProviderNetworkConfigWithoutProxy(t *testing.T) {
+	client, err := NewImageDownloadClient(schemas.NetworkConfig{
+		InsecureSkipVerify:        true,
+		KeepAliveTimeoutInSeconds: 17,
+		MaxConnsPerHost:           7,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport type = %T", client.Transport)
+	}
+	if transport.Proxy != nil || transport.TLSClientConfig == nil || !transport.TLSClientConfig.InsecureSkipVerify {
+		t.Fatalf("result downloader must stay direct while applying TLS config: %#v", transport)
+	}
+	if transport.MaxIdleConnsPerHost != 7 || transport.IdleConnTimeout != 17*time.Second {
+		t.Fatalf("network pooling config not applied: max=%d idle=%s", transport.MaxIdleConnsPerHost, transport.IdleConnTimeout)
+	}
+}
+
+func TestNewImageDownloadClientBlocksPrivateRedirectTarget(t *testing.T) {
+	client, err := NewImageDownloadClient(schemas.DefaultNetworkConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/private.png", nil)
+	if err := client.CheckRedirect(req, []*http.Request{{}}); err == nil || !strings.Contains(err.Error(), "non-public") {
+		t.Fatalf("private redirect was not blocked: %v", err)
+	}
+}
+
+func newSSRFSafeFetchClientForTest(base *http.Client) *http.Client {
+	return &http.Client{
+		Transport: base.Transport,
+		Timeout:   time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+				return errors.New("unsupported redirect scheme")
+			}
+			if len(via) >= 5 {
+				return errors.New("stopped after 5 redirects")
+			}
+			return nil
+		},
 	}
 }

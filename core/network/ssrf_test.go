@@ -9,6 +9,19 @@ import (
 	"time"
 )
 
+func TestValidatePublicURLRejectsPrivateAndCGNATLiterals(t *testing.T) {
+	for _, rawURL := range []string{
+		"http://127.0.0.1/image.png",
+		"http://10.0.0.1/image.png",
+		"http://169.254.169.254/latest/meta-data",
+		"http://100.64.0.1/image.png",
+	} {
+		if err := ValidatePublicURL(context.Background(), rawURL); err == nil {
+			t.Errorf("expected %s to be rejected", rawURL)
+		}
+	}
+}
+
 // TestIsPublicIP guards the SSRF denylist used for dial-time validation. It
 // locks in both the long-standing blocks (loopback / RFC 1918 / link-local /
 // ULA) and the hardened cases: CGNAT, IPv6-transition-wrapped internal IPv4
