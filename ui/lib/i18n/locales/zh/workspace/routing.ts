@@ -417,7 +417,7 @@ const resources = {
 			routingRuleInfoSheet_no_error_aware_fallbacks_configured: "未配置错误专用备用链",
 			errorFallbackEditor_use_a_dedicated_fallback_for_content_safety_blocks: "内容安全拦截使用专用备用链",
 			errorFallbackEditor_when_the_provider_blocks_a_request_or_response_for_conte:
-				"仅当供应商因内容安全拦截请求或响应时使用这条专用链。限流、超时、网络异常及其他错误仍继续使用上方的普通 Fallback。",
+				"内容安全错误永远不会进入普通 Fallback。启用后只尝试这里配置的安全备用模型；未启用时立即返回原始安全错误。限流、超时、网络异常及其他错误仍继续使用上方的普通 Fallback。",
 			errorFallbackEditor_enable_content_safety_fallback: "启用内容安全备用链",
 			errorFallbackEditor_failure_behavior: "失败后的行为",
 			errorFallbackEditor_if_every_content_safety_fallback_fails_bifrost_returns_t:

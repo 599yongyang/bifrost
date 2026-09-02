@@ -98,6 +98,9 @@ type BifrostContext struct {
 	pluginScope   *string                        // Non-nil when this is a scoped plugin context
 	pluginLogs    atomic.Pointer[pluginLogStore] // Shared log store; lazily initialized on root, shared by scoped contexts
 	valueDelegate *BifrostContext                // For scoped contexts: delegate Value/SetValue to this root context
+	// Plugin scopes share the request's cancellation state; attempt scopes share
+	// values but keep an independently cancellable Done/Err lifecycle.
+	delegateCancellation bool
 }
 
 // NewBifrostContext creates a new BifrostContext with the given parent context and deadline.
@@ -318,7 +321,7 @@ func (bc *BifrostContext) Done() <-chan struct{} {
 // For scoped contexts, delegates to the root context.
 // Returns nil if the context has not been cancelled.
 func (bc *BifrostContext) Err() error {
-	if bc.valueDelegate != nil {
+	if bc.valueDelegate != nil && bc.delegateCancellation {
 		return bc.valueDelegate.Err()
 	}
 	bc.errMu.RLock()
@@ -777,13 +780,33 @@ func (bc *BifrostContext) WithPluginScope(name *string) *BifrostContext {
 	}
 
 	scoped := &BifrostContext{
-		parent:        bc.parent,
-		done:          bc.done,
-		pluginScope:   name,
-		valueDelegate: bc,
+		parent:               bc.parent,
+		done:                 bc.done,
+		pluginScope:          name,
+		valueDelegate:        bc,
+		delegateCancellation: true,
 	}
 	scoped.pluginLogs.Store(bc.pluginLogs.Load())
 	return scoped
+}
+
+// WithCancelScope creates an independently cancellable context that delegates
+// all values to the request root. It is intended for a single provider attempt:
+// cancelling a failed stream must stop that upstream goroutine without erasing
+// routing, tracing, plugin-log, or retry state shared by the overall request.
+func (bc *BifrostContext) WithCancelScope() (*BifrostContext, context.CancelFunc) {
+	root := bc.Root()
+	scoped := &BifrostContext{
+		parent:        root,
+		createdAt:     root.createdAt,
+		done:          make(chan struct{}),
+		valueDelegate: root,
+	}
+	scoped.pluginLogs.Store(root.pluginLogs.Load())
+	// Publish every delegated field before the watcher starts; mutating
+	// valueDelegate after NewBifrostContext launches it would race Deadline().
+	go scoped.watchCancellation()
+	return scoped, func() { scoped.Cancel() }
 }
 
 // ReleasePluginScope marks a scoped context as released. Safe no-op if called

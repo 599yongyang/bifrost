@@ -638,6 +638,13 @@ func (config *ProviderConfig) CheckAndSetDefaults() {
 type PostHookRunner func(ctx *BifrostContext, result *BifrostResponse, err *BifrostError) (*BifrostResponse, *BifrostError)
 
 // Provider defines the interface for AI model providers.
+//
+// Streaming contract: every streaming method MUST observe ctx.Done(), stop all
+// upstream reads/writes, close its returned chunk channel, and invoke
+// postHookSpanFinalizer promptly. Go cannot forcibly terminate a provider
+// goroutine that violates this contract; Bifrost fails the request closed after
+// its drain grace period but cannot reclaim resources still owned by broken
+// provider code.
 type Provider interface {
 	// GetProviderKey returns the provider's identifier
 	GetProviderKey() ModelProvider

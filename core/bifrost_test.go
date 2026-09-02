@@ -3253,3 +3253,183 @@ func TestExecuteRequestWithRetries_EmptyStreamReturnsClosedChannel(t *testing.T)
 		t.Errorf("Expected range over empty stream to yield 0 chunks, got %d", count)
 	}
 }
+
+func TestExecuteRequestWithRetries_PreflightLimitCancelsOnlyCurrentAttempt(t *testing.T) {
+	config := createTestConfig(0, time.Millisecond, time.Millisecond)
+	ctx := schemas.NewBifrostContext(context.Background(), schemas.NoDeadline)
+	ctx.SetValue(schemas.BifrostContextKeyTracer, &schemas.NoOpTracer{})
+	producerDone := make(chan struct{})
+	const metadataLimit = 32 // mirrors provider-utils preflight protection
+	var currentAttemptCtx *schemas.BifrostContext
+
+	handler := func(_ schemas.Key) (chan *schemas.BifrostStreamChunk, *schemas.BifrostError) {
+		attemptCtx := currentAttemptCtx
+		if attemptCtx == nil {
+			t.Fatal("stream attempt context was not installed")
+		}
+		stream := make(chan *schemas.BifrostStreamChunk)
+		go func() {
+			defer close(producerDone)
+			defer close(stream)
+			for i := 0; i < metadataLimit; i++ {
+				stream <- &schemas.BifrostStreamChunk{BifrostChatResponse: &schemas.BifrostChatResponse{ID: "metadata"}}
+			}
+			<-attemptCtx.Done()
+		}()
+		return stream, nil
+	}
+
+	_, bifrostErr := executeRequestWithRetries(
+		ctx,
+		config,
+		handler,
+		nil,
+		schemas.ChatCompletionStreamRequest,
+		schemas.OpenAI,
+		"gpt-4",
+		nil,
+		NewDefaultLogger(schemas.LogLevelError),
+		func(attemptCtx *schemas.BifrostContext) { currentAttemptCtx = attemptCtx },
+	)
+
+	if bifrostErr == nil || bifrostErr.Type == nil || *bifrostErr.Type != "stream_preflight_limit_exceeded" {
+		t.Fatalf("error = %#v, want stream_preflight_limit_exceeded", bifrostErr)
+	}
+	select {
+	case <-producerDone:
+	case <-time.After(time.Second):
+		t.Fatal("upstream producer did not stop after attempt cancellation")
+	}
+	select {
+	case <-ctx.Done():
+		t.Fatal("attempt cancellation propagated to the request root")
+	default:
+	}
+}
+
+func TestExecuteRequestWithRetries_PreflightAllowsSlowCooperativeDrain(t *testing.T) {
+	config := createTestConfig(0, time.Millisecond, time.Millisecond)
+	ctx := schemas.NewBifrostContext(context.Background(), schemas.NoDeadline)
+	ctx.SetValue(schemas.BifrostContextKeyTracer, &schemas.NoOpTracer{})
+	const metadataLimit = 32
+	var currentAttemptCtx *schemas.BifrostContext
+
+	handler := func(_ schemas.Key) (chan *schemas.BifrostStreamChunk, *schemas.BifrostError) {
+		attemptCtx := currentAttemptCtx
+		if attemptCtx == nil {
+			t.Fatal("stream attempt context was not installed")
+		}
+		stream := make(chan *schemas.BifrostStreamChunk)
+		go func() {
+			defer close(stream)
+			for i := 0; i < metadataLimit; i++ {
+				stream <- &schemas.BifrostStreamChunk{BifrostChatResponse: &schemas.BifrostChatResponse{ID: "metadata"}}
+			}
+			<-attemptCtx.Done()
+			time.Sleep(300 * time.Millisecond)
+		}()
+		return stream, nil
+	}
+
+	_, bifrostErr := executeRequestWithRetries(
+		ctx,
+		config,
+		handler,
+		nil,
+		schemas.ChatCompletionStreamRequest,
+		schemas.OpenAI,
+		"gpt-4",
+		nil,
+		NewDefaultLogger(schemas.LogLevelError),
+		func(attemptCtx *schemas.BifrostContext) { currentAttemptCtx = attemptCtx },
+	)
+
+	if bifrostErr == nil || bifrostErr.Type == nil || *bifrostErr.Type != "stream_preflight_limit_exceeded" {
+		t.Fatalf("error = %#v, want original stream_preflight_limit_exceeded after cooperative drain", bifrostErr)
+	}
+}
+
+func TestExecuteRequestWithRetries_PreflightDrainTimeoutFailsClosed(t *testing.T) {
+	config := createTestConfig(0, time.Millisecond, time.Millisecond)
+	ctx := schemas.NewBifrostContext(context.Background(), schemas.NoDeadline)
+	ctx.SetValue(schemas.BifrostContextKeyTracer, &schemas.NoOpTracer{})
+	const metadataLimit = 32
+	var currentAttemptCtx *schemas.BifrostContext
+	releaseProvider := make(chan struct{})
+
+	handler := func(_ schemas.Key) (chan *schemas.BifrostStreamChunk, *schemas.BifrostError) {
+		if currentAttemptCtx == nil {
+			t.Fatal("stream attempt context was not installed")
+		}
+		stream := make(chan *schemas.BifrostStreamChunk)
+		go func() {
+			defer close(stream)
+			for i := 0; i < metadataLimit; i++ {
+				stream <- &schemas.BifrostStreamChunk{BifrostChatResponse: &schemas.BifrostChatResponse{ID: "metadata"}}
+			}
+			// Deliberately ignore currentAttemptCtx.Done() to emulate a broken
+			// custom provider that never closes its stream after cancellation.
+			<-releaseProvider
+		}()
+		return stream, nil
+	}
+
+	type executeResult struct {
+		err *schemas.BifrostError
+	}
+	resultCh := make(chan executeResult, 1)
+	go func() {
+		_, bifrostErr := executeRequestWithRetries(
+			ctx,
+			config,
+			handler,
+			nil,
+			schemas.ChatCompletionStreamRequest,
+			schemas.OpenAI,
+			"gpt-4",
+			nil,
+			NewDefaultLogger(schemas.LogLevelError),
+			func(attemptCtx *schemas.BifrostContext) { currentAttemptCtx = attemptCtx },
+		)
+		resultCh <- executeResult{err: bifrostErr}
+	}()
+
+	select {
+	case result := <-resultCh:
+		close(releaseProvider)
+		if result.err == nil || result.err.Type == nil || *result.err.Type != "stream_drain_timeout" {
+			t.Fatalf("error = %#v, want stream_drain_timeout", result.err)
+		}
+		if result.err.AllowFallbacks == nil || *result.err.AllowFallbacks {
+			t.Fatal("stream drain timeout must fail closed")
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("stream drain timeout must not cancel a potentially shared request root")
+		default:
+		}
+	case <-time.After(time.Second):
+		close(releaseProvider)
+		<-resultCh
+		t.Fatal("request remained blocked waiting for a non-cooperative provider stream")
+	}
+}
+
+func TestRunPostLLMHooksCannotRecoverStreamDrainTimeout(t *testing.T) {
+	plugin := &imageRecoveryPlugin{response: &schemas.BifrostResponse{ChatResponse: &schemas.BifrostChatResponse{ID: "recovered"}}}
+	pipeline := &PluginPipeline{
+		logger:     NewDefaultLogger(schemas.LogLevelError),
+		tracer:     &schemas.NoOpTracer{},
+		llmPlugins: []schemas.LLMPlugin{plugin},
+	}
+	ctx := schemas.NewBifrostContext(context.Background(), schemas.NoDeadline)
+
+	response, bifrostErr := pipeline.RunPostLLMHooks(ctx, nil, newStreamDrainTimeoutError(), 1)
+
+	if response != nil {
+		t.Fatal("stream drain timeout must not be recovered into a response")
+	}
+	if bifrostErr == nil || !isStreamDrainTimeoutError(bifrostErr) {
+		t.Fatalf("error = %#v, want stream_drain_timeout", bifrostErr)
+	}
+}

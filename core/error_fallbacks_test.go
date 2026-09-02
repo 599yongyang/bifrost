@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	providerUtils "github.com/maximhq/bifrost/core/providers/utils"
 	"github.com/maximhq/bifrost/core/schemas"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -43,6 +45,15 @@ func TestRecognizeFailureCategories(t *testing.T) {
 			message:     "非常抱歉，生成的图片可能违反了我们的内容政策。如果你认为此判断有误，请重试或修改提示语。",
 			want:        schemas.FailureCategoryContentPolicy,
 			wantPattern: "content_policy",
+		},
+		{
+			name:        "content policy chinese nudity protection message",
+			status:      Ptr(400),
+			typeValue:   "invalid_request_error",
+			code:        "bad_request",
+			message:     "非常抱歉，该提示可能违反了关于裸露、色情或情色内容的防护限制。如果你认为此判断有误，请重试或修改提示语。",
+			want:        schemas.FailureCategoryContentPolicy,
+			wantPattern: "sexual_content_protection",
 		},
 		{name: "invalid image response", typeValue: "invalid_image_response", want: schemas.FailureCategoryProviderUnavailable, wantPattern: "invalid_image_response"},
 	}
@@ -215,6 +226,36 @@ func TestContentSafetyErrorFallbackLeavesOtherErrorsOnOrdinaryChain(t *testing.T
 	assert.Equal(t, ordinary, selected)
 }
 
+func TestContentSafetyWithoutDedicatedRuleBlocksOrdinaryFallbacks(t *testing.T) {
+	req := errorFallbackChatRequest()
+	req.ChatRequest.Fallbacks = []schemas.Fallback{{Provider: schemas.Anthropic, Model: "ordinary"}}
+
+	selected, ordinary, rule, failure := (&Bifrost{}).resolveFallbackChain(req, testFallbackError(400, "content_filter", "blocked by content policy"))
+
+	require.Nil(t, rule)
+	assert.Equal(t, schemas.FailureCategoryContentPolicy, failure.category)
+	assert.Empty(t, selected)
+	assert.Equal(t, []schemas.Fallback{{Provider: schemas.Anthropic, Model: "ordinary"}}, ordinary)
+}
+
+func TestContentSafetyWithDedicatedRuleUsesOnlyDedicatedFallbacks(t *testing.T) {
+	req := errorFallbackChatRequest()
+	req.ChatRequest.Fallbacks = []schemas.Fallback{{Provider: schemas.Anthropic, Model: "ordinary"}}
+	req.ChatRequest.ErrorFallbacks = []schemas.ErrorFallbackRule{{
+		Name:      "content-safety",
+		Scenario:  schemas.FailureCategoryContentPolicy,
+		Fallbacks: []schemas.Fallback{{Provider: schemas.Azure, Model: "safe"}},
+	}}
+
+	selected, ordinary, rule, failure := (&Bifrost{}).resolveFallbackChain(req, testFallbackError(400, "content_filter", "blocked by content policy"))
+
+	require.NotNil(t, rule)
+	assert.Equal(t, "content-safety", rule.Name)
+	assert.Equal(t, schemas.FailureCategoryContentPolicy, failure.category)
+	assert.Equal(t, []schemas.Fallback{{Provider: schemas.Azure, Model: "safe"}}, selected)
+	assert.Equal(t, []schemas.Fallback{{Provider: schemas.Anthropic, Model: "ordinary"}}, ordinary)
+}
+
 func TestCaptureFailureSignalsSurvivesRawResponseDrop(t *testing.T) {
 	err := testFallbackError(400, "provider_error", "request failed")
 	err.ExtraFields.RawResponse = []byte(`{"error":{"code":"safety_violations","type":"policy_error","message":"blocked by policy"}}`)
@@ -237,6 +278,34 @@ func TestSuccessfulContentPolicyResponseBecomesFallbackEligibleError(t *testing.
 	assert.True(t, *err.AllowFallbacks)
 }
 
+func TestSuccessfulContentPolicyResponseBecomesErrorWithoutDedicatedFallback(t *testing.T) {
+	req := errorFallbackChatRequest()
+	response := &schemas.BifrostResponse{ChatResponse: &schemas.BifrostChatResponse{Choices: []schemas.BifrostResponseChoice{{FinishReason: Ptr("content_filter")}}}}
+
+	err := successfulContentPolicyError(req, response)
+	require.NotNil(t, err)
+	require.NotNil(t, err.Type)
+	assert.Equal(t, "content_filter", *err.Type)
+}
+
+func TestSuccessfulContentPolicyResponseRecognizesGuardrailFinishReason(t *testing.T) {
+	req := errorFallbackChatRequest()
+	response := &schemas.BifrostResponse{ChatResponse: &schemas.BifrostChatResponse{Choices: []schemas.BifrostResponseChoice{{FinishReason: Ptr("guardrail_intervened")}}}}
+
+	err := successfulContentPolicyError(req, response)
+	require.NotNil(t, err)
+	assert.Equal(t, schemas.FailureCategoryContentPolicy, RecognizeFailure(FailureSignal{Error: err}).Category)
+}
+
+func TestTextStreamWhitespaceCountsAsVisibleOutput(t *testing.T) {
+	whitespace := "\n"
+	chunk := &schemas.BifrostStreamChunk{BifrostTextCompletionResponse: &schemas.BifrostTextCompletionResponse{
+		Choices: []schemas.BifrostResponseChoice{{TextCompletionResponseChoice: &schemas.TextCompletionResponseChoice{Text: &whitespace}}},
+	}}
+
+	assert.True(t, streamChunkHasVisibleOutput(chunk))
+}
+
 func TestStreamFallbackSelectionBoundary(t *testing.T) {
 	// handleStreamRequest can select a dedicated chain for an error returned by
 	// tryStreamRequest before a channel escapes. Once a non-nil channel is returned,
@@ -255,6 +324,27 @@ func TestRecordErrorFallbackDecisionClearsStaleState(t *testing.T) {
 	recordErrorFallbackDecision(ctx, nil, classifiedFailure{})
 	_, ok := ctx.Value(schemas.BifrostContextKeyErrorFallbackRuleName).(string)
 	assert.False(t, ok)
+}
+
+func TestContentPolicyHaltClearsPreviousDedicatedRuleMetadata(t *testing.T) {
+	req := errorFallbackChatRequest()
+	req.ChatRequest.ErrorFallbacks = []schemas.ErrorFallbackRule{{
+		Name:      "rate-limit",
+		Scenario:  schemas.FailureCategoryRateLimit,
+		Fallbacks: []schemas.Fallback{{Provider: schemas.XAI, Model: "rate-fallback"}},
+	}}
+	rateFailure := classifiedFailure{category: schemas.FailureCategoryRateLimit}
+	ctx := schemas.NewBifrostContext(context.Background(), schemas.NoDeadline)
+	recordErrorFallbackDecision(ctx, &req.ChatRequest.ErrorFallbacks[0], rateFailure)
+	state := newFallbackChainState(schemas.OpenAI, "gpt-4o-mini", req.ChatRequest.ErrorFallbacks[0].Fallbacks, &req.ChatRequest.ErrorFallbacks[0], rateFailure, testFallbackError(429, "rate_limit_error", "limited"))
+	fallbackErr := testFallbackError(400, "content_filter", "blocked by content policy")
+	decision := state.decideFailure(req, req, fallbackErr, 0, true)
+
+	client := &Bifrost{logger: NewDefaultLogger(schemas.LogLevelError)}
+	halted := client.applyFallbackFailureDecision(ctx, &schemas.NoOpTracer{}, nil, schemas.Fallback{Provider: schemas.XAI, Model: "rate-fallback"}, fallbackErr, decision)
+	require.True(t, halted)
+	assert.Empty(t, GetStringFromContext(ctx, schemas.BifrostContextKeyErrorFallbackRuleName))
+	assert.Equal(t, string(schemas.FailureCategoryContentPolicy), GetStringFromContext(ctx, schemas.BifrostContextKeyErrorFallbackCategory))
 }
 
 func TestShouldContinueWithFallbacksIsNilSafe(t *testing.T) {
@@ -405,6 +495,602 @@ func TestHandleRequestFallbackFailureActivatesDedicatedChainAndDropsRemainingOrd
 	assert.Zero(t, skippedOrdinaryHits.Load())
 	assert.Equal(t, int32(1), dedicatedHits.Load())
 	assert.Equal(t, "fallback-rate-limit", GetStringFromContext(ctx, schemas.BifrostContextKeyErrorFallbackRuleName))
+}
+
+func TestHandleRequestContentPolicyWithoutDedicatedRuleSkipsOrdinaryFallback(t *testing.T) {
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"error":{"message":"blocked by content policy","type":"content_filter","code":"content_filter"}}`)
+	}))
+	defer primary.Close()
+	var ordinaryHits atomic.Int32
+	ordinary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		ordinaryHits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"ordinary","choices":[{"message":{"role":"assistant","content":"ordinary"},"finish_reason":"stop"}]}`)
+	}))
+	defer ordinary.Close()
+
+	account := NewMockAccount()
+	configureFallbackTestProvider(account, schemas.OpenAI, primary.URL)
+	configureFallbackTestProvider(account, schemas.XAI, ordinary.URL)
+	client := newStreamTestClient(t, account)
+	ctx := schemas.NewBifrostContext(context.Background(), time.Now().Add(30*time.Second))
+	response, bifrostErr := client.ChatCompletionRequest(ctx, &schemas.BifrostChatRequest{
+		Provider:  schemas.OpenAI,
+		Model:     "gpt-4o-mini",
+		Input:     []schemas.ChatMessage{{Role: schemas.ChatMessageRoleUser, Content: &schemas.ChatMessageContent{ContentStr: Ptr("hi")}}},
+		Fallbacks: []schemas.Fallback{{Provider: schemas.XAI, Model: "ordinary-model"}},
+	})
+
+	require.Nil(t, response)
+	require.NotNil(t, bifrostErr)
+	assert.Zero(t, ordinaryHits.Load())
+	assert.Equal(t, schemas.FailureCategoryContentPolicy, RecognizeFailure(FailureSignal{Error: bifrostErr}).Category)
+}
+
+func TestHandleRequestContentPolicyDuringOrdinaryChainStopsRemainingFallbacks(t *testing.T) {
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprint(w, `{"error":{"message":"temporary internal failure","type":"server_error"}}`)
+	}))
+	defer primary.Close()
+	firstOrdinary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"error":{"message":"generated image blocked by content policy","type":"content_filter","code":"content_filter"}}`)
+	}))
+	defer firstOrdinary.Close()
+	var skippedOrdinaryHits atomic.Int32
+	skippedOrdinary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		skippedOrdinaryHits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"skipped","choices":[{"message":{"role":"assistant","content":"skipped"},"finish_reason":"stop"}]}`)
+	}))
+	defer skippedOrdinary.Close()
+
+	account := NewMockAccount()
+	configureFallbackTestProvider(account, schemas.OpenAI, primary.URL)
+	configureFallbackTestProvider(account, schemas.XAI, firstOrdinary.URL)
+	configureFallbackTestProvider(account, schemas.Cerebras, skippedOrdinary.URL)
+	client := newStreamTestClient(t, account)
+	ctx := schemas.NewBifrostContext(context.Background(), time.Now().Add(30*time.Second))
+	response, bifrostErr := client.ChatCompletionRequest(ctx, &schemas.BifrostChatRequest{
+		Provider: schemas.OpenAI,
+		Model:    "gpt-4o-mini",
+		Input:    []schemas.ChatMessage{{Role: schemas.ChatMessageRoleUser, Content: &schemas.ChatMessageContent{ContentStr: Ptr("hi")}}},
+		Fallbacks: []schemas.Fallback{
+			{Provider: schemas.XAI, Model: "ordinary-one"},
+			{Provider: schemas.Cerebras, Model: "ordinary-two"},
+		},
+	})
+
+	require.Nil(t, response)
+	require.NotNil(t, bifrostErr)
+	assert.Zero(t, skippedOrdinaryHits.Load())
+	assert.Equal(t, schemas.FailureCategoryContentPolicy, RecognizeFailure(FailureSignal{Error: bifrostErr}).Category)
+}
+
+func TestHandleRequestContentPolicyDuringOrdinaryChainReturnsSafetyErrorAfterDedicatedChainExhausts(t *testing.T) {
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprint(w, `{"error":{"message":"temporary internal failure","type":"server_error"}}`)
+	}))
+	defer primary.Close()
+	contentBlocked := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"error":{"message":"generated image blocked by content policy","type":"content_filter","code":"content_filter"}}`)
+	}))
+	defer contentBlocked.Close()
+	dedicatedFailure := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprint(w, `{"error":{"message":"safety fallback unavailable","type":"server_error"}}`)
+	}))
+	defer dedicatedFailure.Close()
+
+	account := NewMockAccount()
+	configureFallbackTestProvider(account, schemas.OpenAI, primary.URL)
+	configureFallbackTestProvider(account, schemas.XAI, contentBlocked.URL)
+	configureFallbackTestProvider(account, schemas.Groq, dedicatedFailure.URL)
+	client := newStreamTestClient(t, account)
+	ctx := schemas.NewBifrostContext(context.Background(), time.Now().Add(30*time.Second))
+	response, bifrostErr := client.ChatCompletionRequest(ctx, &schemas.BifrostChatRequest{
+		Provider:  schemas.OpenAI,
+		Model:     "gpt-4o-mini",
+		Input:     []schemas.ChatMessage{{Role: schemas.ChatMessageRoleUser, Content: &schemas.ChatMessageContent{ContentStr: Ptr("hi")}}},
+		Fallbacks: []schemas.Fallback{{Provider: schemas.XAI, Model: "ordinary-one"}},
+		ErrorFallbacks: []schemas.ErrorFallbackRule{{
+			Name: "content-safety", Scenario: schemas.FailureCategoryContentPolicy,
+			Fallbacks: []schemas.Fallback{{Provider: schemas.Groq, Model: "safe-model"}},
+		}},
+	})
+
+	require.Nil(t, response)
+	require.NotNil(t, bifrostErr)
+	assert.Equal(t, schemas.FailureCategoryContentPolicy, RecognizeFailure(FailureSignal{Error: bifrostErr}).Category)
+	assert.Contains(t, bifrostErr.GetErrorString(), "content policy")
+}
+
+func TestHandleRequestContentPolicyOverridesActiveNonSafetyDedicatedChain(t *testing.T) {
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		fmt.Fprint(w, `{"error":{"message":"rate limited","type":"rate_limit_error"}}`)
+	}))
+	defer primary.Close()
+	contentBlocked := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"error":{"message":"blocked by content policy","type":"content_filter","code":"content_filter"}}`)
+	}))
+	defer contentBlocked.Close()
+	var staleDedicatedHits atomic.Int32
+	staleDedicated := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		staleDedicatedHits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"stale","choices":[{"message":{"role":"assistant","content":"stale"},"finish_reason":"stop"}]}`)
+	}))
+	defer staleDedicated.Close()
+	var safetyHits atomic.Int32
+	safety := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		safetyHits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"safe","choices":[{"message":{"role":"assistant","content":"safe"},"finish_reason":"stop"}]}`)
+	}))
+	defer safety.Close()
+
+	account := NewMockAccount()
+	configureFallbackTestProvider(account, schemas.OpenAI, primary.URL)
+	configureFallbackTestProvider(account, schemas.XAI, contentBlocked.URL)
+	configureFallbackTestProvider(account, schemas.Cerebras, staleDedicated.URL)
+	configureFallbackTestProvider(account, schemas.Groq, safety.URL)
+	client := newStreamTestClient(t, account)
+	ctx := schemas.NewBifrostContext(context.Background(), time.Now().Add(30*time.Second))
+	response, bifrostErr := client.ChatCompletionRequest(ctx, &schemas.BifrostChatRequest{
+		Provider: schemas.OpenAI,
+		Model:    "gpt-4o-mini",
+		Input:    []schemas.ChatMessage{{Role: schemas.ChatMessageRoleUser, Content: &schemas.ChatMessageContent{ContentStr: Ptr("hi")}}},
+		ErrorFallbacks: []schemas.ErrorFallbackRule{
+			{Name: "rate-limit", Scenario: schemas.FailureCategoryRateLimit, Fallbacks: []schemas.Fallback{{Provider: schemas.XAI, Model: "rate-one"}, {Provider: schemas.Cerebras, Model: "rate-two"}}},
+			{Name: "content-safety", Scenario: schemas.FailureCategoryContentPolicy, Fallbacks: []schemas.Fallback{{Provider: schemas.Groq, Model: "safe"}}},
+		},
+	})
+
+	require.Nil(t, bifrostErr)
+	require.NotNil(t, response)
+	assert.Zero(t, staleDedicatedHits.Load())
+	assert.Equal(t, int32(1), safetyHits.Load())
+	assert.Equal(t, "content-safety", GetStringFromContext(ctx, schemas.BifrostContextKeyErrorFallbackRuleName))
+}
+
+type disableFallbacksOnErrorPlugin struct {
+	messageContains string
+}
+
+func (*disableFallbacksOnErrorPlugin) GetName() string { return "disable-fallbacks-on-error" }
+func (*disableFallbacksOnErrorPlugin) Cleanup() error  { return nil }
+func (*disableFallbacksOnErrorPlugin) PreRequestHook(_ *schemas.BifrostContext, _ *schemas.BifrostRequest) error {
+	return nil
+}
+func (*disableFallbacksOnErrorPlugin) PreLLMHook(_ *schemas.BifrostContext, req *schemas.BifrostRequest) (*schemas.BifrostRequest, *schemas.LLMPluginShortCircuit, error) {
+	return req, nil, nil
+}
+func (plugin *disableFallbacksOnErrorPlugin) PostLLMHook(_ *schemas.BifrostContext, response *schemas.BifrostResponse, bifrostErr *schemas.BifrostError) (*schemas.BifrostResponse, *schemas.BifrostError, error) {
+	shouldDisable := bifrostErr != nil && ((plugin.messageContains == "" && RecognizeFailure(FailureSignal{Error: bifrostErr}).Category == schemas.FailureCategoryContentPolicy) ||
+		(plugin.messageContains != "" && strings.Contains(bifrostErr.GetErrorString(), plugin.messageContains)))
+	if shouldDisable {
+		bifrostErr.AllowFallbacks = Ptr(false)
+	}
+	return response, bifrostErr, nil
+}
+
+func TestHandleRequestContentSafetyRespectsAllowFallbacksFalse(t *testing.T) {
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"error":{"message":"blocked by content policy","type":"content_filter","code":"content_filter"}}`)
+	}))
+	defer primary.Close()
+	var safetyHits atomic.Int32
+	safety := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		safetyHits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"safe","choices":[{"message":{"role":"assistant","content":"safe"},"finish_reason":"stop"}]}`)
+	}))
+	defer safety.Close()
+
+	account := NewMockAccount()
+	configureFallbackTestProvider(account, schemas.OpenAI, primary.URL)
+	configureFallbackTestProvider(account, schemas.Groq, safety.URL)
+	client, err := Init(context.Background(), schemas.BifrostConfig{
+		Account:    account,
+		Logger:     NewDefaultLogger(schemas.LogLevelError),
+		LLMPlugins: []schemas.LLMPlugin{&disableFallbacksOnErrorPlugin{}},
+	})
+	require.NoError(t, err)
+	t.Cleanup(client.Shutdown)
+	ctx := schemas.NewBifrostContext(context.Background(), time.Now().Add(30*time.Second))
+	response, bifrostErr := client.ChatCompletionRequest(ctx, &schemas.BifrostChatRequest{
+		Provider: schemas.OpenAI,
+		Model:    "gpt-4o-mini",
+		Input:    []schemas.ChatMessage{{Role: schemas.ChatMessageRoleUser, Content: &schemas.ChatMessageContent{ContentStr: Ptr("hi")}}},
+		ErrorFallbacks: []schemas.ErrorFallbackRule{{
+			Name: "content-safety", Scenario: schemas.FailureCategoryContentPolicy,
+			Fallbacks: []schemas.Fallback{{Provider: schemas.Groq, Model: "safe"}},
+		}},
+	})
+
+	require.Nil(t, response)
+	require.NotNil(t, bifrostErr)
+	assert.Zero(t, safetyHits.Load())
+}
+
+func TestHandleRequestContentSafetySkipsSameProviderRetries(t *testing.T) {
+	var primaryHits atomic.Int32
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		primaryHits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprint(w, `{"error":{"message":"blocked by content policy","type":"content_filter","code":"content_filter"}}`)
+	}))
+	defer primary.Close()
+	var safetyHits atomic.Int32
+	safety := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		safetyHits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"safe","choices":[{"message":{"role":"assistant","content":"safe"},"finish_reason":"stop"}]}`)
+	}))
+	defer safety.Close()
+
+	account := NewMockAccount()
+	configureFallbackTestProvider(account, schemas.OpenAI, primary.URL)
+	configureFallbackTestProvider(account, schemas.Groq, safety.URL)
+	account.configs[schemas.OpenAI].NetworkConfig.MaxRetries = 3
+	client := newStreamTestClient(t, account)
+	ctx := schemas.NewBifrostContext(context.Background(), time.Now().Add(30*time.Second))
+	response, bifrostErr := client.ChatCompletionRequest(ctx, &schemas.BifrostChatRequest{
+		Provider: schemas.OpenAI,
+		Model:    "gpt-4o-mini",
+		Input:    []schemas.ChatMessage{{Role: schemas.ChatMessageRoleUser, Content: &schemas.ChatMessageContent{ContentStr: Ptr("hi")}}},
+		ErrorFallbacks: []schemas.ErrorFallbackRule{{
+			Name: "content-safety", Scenario: schemas.FailureCategoryContentPolicy,
+			Fallbacks: []schemas.Fallback{{Provider: schemas.Groq, Model: "safe"}},
+		}},
+	})
+
+	require.Nil(t, bifrostErr)
+	require.NotNil(t, response)
+	assert.Equal(t, int32(1), primaryHits.Load())
+	assert.Equal(t, int32(1), safetyHits.Load())
+}
+
+func TestHandleRequestContentSafetyDuringOrdinaryChainRespectsAllowFallbacksFalse(t *testing.T) {
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprint(w, `{"error":{"message":"temporary internal failure","type":"server_error"}}`)
+	}))
+	defer primary.Close()
+	contentBlocked := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"error":{"message":"blocked by content policy","type":"content_filter","code":"content_filter"}}`)
+	}))
+	defer contentBlocked.Close()
+	var safetyHits atomic.Int32
+	safety := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		safetyHits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"safe","choices":[{"message":{"role":"assistant","content":"safe"},"finish_reason":"stop"}]}`)
+	}))
+	defer safety.Close()
+
+	account := NewMockAccount()
+	configureFallbackTestProvider(account, schemas.OpenAI, primary.URL)
+	configureFallbackTestProvider(account, schemas.XAI, contentBlocked.URL)
+	configureFallbackTestProvider(account, schemas.Groq, safety.URL)
+	client, err := Init(context.Background(), schemas.BifrostConfig{
+		Account:    account,
+		Logger:     NewDefaultLogger(schemas.LogLevelError),
+		LLMPlugins: []schemas.LLMPlugin{&disableFallbacksOnErrorPlugin{}},
+	})
+	require.NoError(t, err)
+	t.Cleanup(client.Shutdown)
+	ctx := schemas.NewBifrostContext(context.Background(), time.Now().Add(30*time.Second))
+	response, bifrostErr := client.ChatCompletionRequest(ctx, &schemas.BifrostChatRequest{
+		Provider:  schemas.OpenAI,
+		Model:     "gpt-4o-mini",
+		Input:     []schemas.ChatMessage{{Role: schemas.ChatMessageRoleUser, Content: &schemas.ChatMessageContent{ContentStr: Ptr("hi")}}},
+		Fallbacks: []schemas.Fallback{{Provider: schemas.XAI, Model: "ordinary"}},
+		ErrorFallbacks: []schemas.ErrorFallbackRule{{
+			Name: "content-safety", Scenario: schemas.FailureCategoryContentPolicy,
+			Fallbacks: []schemas.Fallback{{Provider: schemas.Groq, Model: "safe"}},
+		}},
+	})
+
+	require.Nil(t, response)
+	require.NotNil(t, bifrostErr)
+	assert.Zero(t, safetyHits.Load())
+}
+
+func TestHandleRequestContentSafetyChainStopsOnFallbackVeto(t *testing.T) {
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"error":{"message":"blocked by content policy","type":"content_filter","code":"content_filter"}}`)
+	}))
+	defer primary.Close()
+	firstSafety := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprint(w, `{"error":{"message":"safety target unavailable","type":"server_error"}}`)
+	}))
+	defer firstSafety.Close()
+	var skippedSafetyHits atomic.Int32
+	skippedSafety := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		skippedSafetyHits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"safe","choices":[{"message":{"role":"assistant","content":"safe"},"finish_reason":"stop"}]}`)
+	}))
+	defer skippedSafety.Close()
+
+	account := NewMockAccount()
+	configureFallbackTestProvider(account, schemas.OpenAI, primary.URL)
+	configureFallbackTestProvider(account, schemas.XAI, firstSafety.URL)
+	configureFallbackTestProvider(account, schemas.Groq, skippedSafety.URL)
+	client, err := Init(context.Background(), schemas.BifrostConfig{
+		Account:    account,
+		Logger:     NewDefaultLogger(schemas.LogLevelError),
+		LLMPlugins: []schemas.LLMPlugin{&disableFallbacksOnErrorPlugin{messageContains: "safety target unavailable"}},
+	})
+	require.NoError(t, err)
+	t.Cleanup(client.Shutdown)
+	ctx := schemas.NewBifrostContext(context.Background(), time.Now().Add(30*time.Second))
+	response, bifrostErr := client.ChatCompletionRequest(ctx, &schemas.BifrostChatRequest{
+		Provider: schemas.OpenAI,
+		Model:    "gpt-4o-mini",
+		Input:    []schemas.ChatMessage{{Role: schemas.ChatMessageRoleUser, Content: &schemas.ChatMessageContent{ContentStr: Ptr("hi")}}},
+		ErrorFallbacks: []schemas.ErrorFallbackRule{{
+			Name: "content-safety", Scenario: schemas.FailureCategoryContentPolicy,
+			Fallbacks: []schemas.Fallback{{Provider: schemas.XAI, Model: "safe-one"}, {Provider: schemas.Groq, Model: "safe-two"}},
+		}},
+	})
+
+	require.Nil(t, response)
+	require.NotNil(t, bifrostErr)
+	assert.Contains(t, bifrostErr.GetErrorString(), "safety target unavailable")
+	assert.Zero(t, skippedSafetyHits.Load())
+}
+
+func TestHandleStreamRequestContentPolicyWithoutDedicatedRuleSkipsOrdinaryFallback(t *testing.T) {
+	primary := httptest.NewServer(sseHandler(`{"error":{"message":"blocked by content policy","type":"content_filter","code":"content_filter"}}`))
+	defer primary.Close()
+	var ordinaryHits atomic.Int32
+	ordinary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ordinaryHits.Add(1)
+		sseHandler(`{"id":"ordinary","choices":[{"index":0,"delta":{"content":"ordinary"},"finish_reason":"stop"}]}`)(w, r)
+	}))
+	defer ordinary.Close()
+
+	account := NewMockAccount()
+	configureFallbackTestProvider(account, schemas.OpenAI, primary.URL)
+	configureFallbackTestProvider(account, schemas.XAI, ordinary.URL)
+	client := newStreamTestClient(t, account)
+	ctx := schemas.NewBifrostContext(context.Background(), time.Now().Add(30*time.Second))
+	stream, bifrostErr := client.ChatCompletionStreamRequest(ctx, &schemas.BifrostChatRequest{
+		Provider:  schemas.OpenAI,
+		Model:     "gpt-4o-mini",
+		Input:     []schemas.ChatMessage{{Role: schemas.ChatMessageRoleUser, Content: &schemas.ChatMessageContent{ContentStr: Ptr("hi")}}},
+		Fallbacks: []schemas.Fallback{{Provider: schemas.XAI, Model: "ordinary-model"}},
+	})
+
+	require.Nil(t, stream)
+	require.NotNil(t, bifrostErr)
+	assert.Zero(t, ordinaryHits.Load())
+	assert.Equal(t, schemas.FailureCategoryContentPolicy, RecognizeFailure(FailureSignal{Error: bifrostErr}).Category)
+}
+
+func TestHandleStreamRequestContentPolicyDuringOrdinaryChainReturnsSafetyErrorAfterDedicatedChainExhausts(t *testing.T) {
+	primary := httptest.NewServer(sseHandler(`{"error":{"message":"temporary internal failure","type":"server_error"}}`))
+	defer primary.Close()
+	contentBlocked := httptest.NewServer(sseHandler(`{"error":{"message":"blocked by content policy","type":"content_filter","code":"content_filter"}}`))
+	defer contentBlocked.Close()
+	dedicatedFailure := httptest.NewServer(sseHandler(`{"error":{"message":"safety fallback unavailable","type":"server_error"}}`))
+	defer dedicatedFailure.Close()
+
+	account := NewMockAccount()
+	configureFallbackTestProvider(account, schemas.OpenAI, primary.URL)
+	configureFallbackTestProvider(account, schemas.XAI, contentBlocked.URL)
+	configureFallbackTestProvider(account, schemas.Cerebras, dedicatedFailure.URL)
+	client := newStreamTestClient(t, account)
+	ctx := schemas.NewBifrostContext(context.Background(), time.Now().Add(30*time.Second))
+	stream, bifrostErr := client.ChatCompletionStreamRequest(ctx, &schemas.BifrostChatRequest{
+		Provider:  schemas.OpenAI,
+		Model:     "gpt-4o-mini",
+		Input:     []schemas.ChatMessage{{Role: schemas.ChatMessageRoleUser, Content: &schemas.ChatMessageContent{ContentStr: Ptr("hi")}}},
+		Fallbacks: []schemas.Fallback{{Provider: schemas.XAI, Model: "ordinary-one"}},
+		ErrorFallbacks: []schemas.ErrorFallbackRule{{
+			Name: "content-safety", Scenario: schemas.FailureCategoryContentPolicy,
+			Fallbacks: []schemas.Fallback{{Provider: schemas.Cerebras, Model: "safe-model"}},
+		}},
+	})
+
+	require.Nil(t, stream)
+	require.NotNil(t, bifrostErr)
+	assert.Equal(t, schemas.FailureCategoryContentPolicy, RecognizeFailure(FailureSignal{Error: bifrostErr}).Category)
+	assert.Contains(t, bifrostErr.GetErrorString(), "content policy")
+}
+
+func TestHandleStreamRequestContentPolicyOverridesActiveNonSafetyDedicatedChain(t *testing.T) {
+	primary := httptest.NewServer(sseHandler(`{"error":{"message":"rate limited","type":"rate_limit_error"}}`))
+	defer primary.Close()
+	contentBlocked := httptest.NewServer(sseHandler(`{"error":{"message":"blocked by content policy","type":"content_filter","code":"content_filter"}}`))
+	defer contentBlocked.Close()
+	var staleDedicatedHits atomic.Int32
+	staleDedicated := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		staleDedicatedHits.Add(1)
+		sseHandler(`{"id":"stale","choices":[{"index":0,"delta":{"content":"stale"},"finish_reason":"stop"}]}`)(w, r)
+	}))
+	defer staleDedicated.Close()
+	var safetyHits atomic.Int32
+	safety := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		safetyHits.Add(1)
+		anthropicMessagesHandler()(w, r)
+	}))
+	defer safety.Close()
+
+	account := NewMockAccount()
+	configureFallbackTestProvider(account, schemas.OpenAI, primary.URL)
+	configureFallbackTestProvider(account, schemas.XAI, contentBlocked.URL)
+	configureFallbackTestProvider(account, schemas.Cerebras, staleDedicated.URL)
+	configureFallbackTestProvider(account, schemas.Anthropic, safety.URL)
+	client := newStreamTestClient(t, account)
+	ctx := schemas.NewBifrostContext(context.Background(), time.Now().Add(30*time.Second))
+	stream, bifrostErr := client.ChatCompletionStreamRequest(ctx, &schemas.BifrostChatRequest{
+		Provider: schemas.OpenAI,
+		Model:    "gpt-4o-mini",
+		Input:    []schemas.ChatMessage{{Role: schemas.ChatMessageRoleUser, Content: &schemas.ChatMessageContent{ContentStr: Ptr("hi")}}},
+		ErrorFallbacks: []schemas.ErrorFallbackRule{
+			{Name: "rate-limit", Scenario: schemas.FailureCategoryRateLimit, Fallbacks: []schemas.Fallback{{Provider: schemas.XAI, Model: "rate-one"}, {Provider: schemas.Cerebras, Model: "rate-two"}}},
+			{Name: "content-safety", Scenario: schemas.FailureCategoryContentPolicy, Fallbacks: []schemas.Fallback{{Provider: schemas.Anthropic, Model: "safe"}}},
+		},
+	})
+
+	require.Nil(t, bifrostErr)
+	content, streamErrors := drainChatStream(stream)
+	assert.Equal(t, "hello", content)
+	assert.Empty(t, streamErrors)
+	assert.Zero(t, staleDedicatedHits.Load())
+	assert.Equal(t, int32(1), safetyHits.Load())
+	assert.Equal(t, "content-safety", GetStringFromContext(ctx, schemas.BifrostContextKeyErrorFallbackRuleName))
+}
+
+func TestHandleStreamRequestContentPolicyTerminalChunkWithoutDedicatedRuleReturnsError(t *testing.T) {
+	primary := httptest.NewServer(sseHandler(
+		`{"id":"blocked","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}`,
+		`{"id":"blocked","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"content_filter"}]}`,
+	))
+	defer primary.Close()
+	var ordinaryHits atomic.Int32
+	ordinary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ordinaryHits.Add(1)
+		anthropicMessagesHandler()(w, r)
+	}))
+	defer ordinary.Close()
+
+	account := NewMockAccount()
+	configureFallbackTestProvider(account, schemas.OpenAI, primary.URL)
+	configureFallbackTestProvider(account, schemas.Anthropic, ordinary.URL)
+	client := newStreamTestClient(t, account)
+	ctx := schemas.NewBifrostContext(context.Background(), time.Now().Add(30*time.Second))
+	stream, bifrostErr := client.ChatCompletionStreamRequest(ctx, &schemas.BifrostChatRequest{
+		Provider:  schemas.OpenAI,
+		Model:     "gpt-4o-mini",
+		Input:     []schemas.ChatMessage{{Role: schemas.ChatMessageRoleUser, Content: &schemas.ChatMessageContent{ContentStr: Ptr("hi")}}},
+		Fallbacks: []schemas.Fallback{{Provider: schemas.Anthropic, Model: "ordinary-model"}},
+	})
+
+	if bifrostErr == nil {
+		_, _ = drainChatStream(stream)
+		t.Fatal("expected terminal content_filter chunk to become a synchronous content-policy error")
+	}
+	require.Nil(t, stream)
+	assert.Zero(t, ordinaryHits.Load())
+	assert.Equal(t, schemas.FailureCategoryContentPolicy, RecognizeFailure(FailureSignal{Error: bifrostErr}).Category)
+}
+
+func TestHandleStreamRequestEarlyCustomSafetyErrorUsesDedicatedFallback(t *testing.T) {
+	primary := httptest.NewServer(sseHandler(
+		`{"id":"blocked","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}`,
+		`{"error":{"message":"moon-safety-block: prompt rejected","type":"provider_error"}}`,
+	))
+	defer primary.Close()
+	var ordinaryHits atomic.Int32
+	ordinary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ordinaryHits.Add(1)
+		anthropicMessagesHandler()(w, r)
+	}))
+	defer ordinary.Close()
+	var dedicatedHits atomic.Int32
+	dedicated := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		dedicatedHits.Add(1)
+		anthropicMessagesHandler()(w, r)
+	}))
+	defer dedicated.Close()
+
+	account := NewMockAccount()
+	configureFallbackTestProvider(account, schemas.OpenAI, primary.URL)
+	configureFallbackTestProvider(account, schemas.XAI, ordinary.URL)
+	configureFallbackTestProvider(account, schemas.Anthropic, dedicated.URL)
+	client := newStreamTestClient(t, account)
+	ctx := schemas.NewBifrostContext(context.Background(), time.Now().Add(30*time.Second))
+	stream, bifrostErr := client.ChatCompletionStreamRequest(ctx, &schemas.BifrostChatRequest{
+		Provider:  schemas.OpenAI,
+		Model:     "gpt-4o-mini",
+		Input:     []schemas.ChatMessage{{Role: schemas.ChatMessageRoleUser, Content: &schemas.ChatMessageContent{ContentStr: Ptr("hi")}}},
+		Fallbacks: []schemas.Fallback{{Provider: schemas.XAI, Model: "ordinary-model"}},
+		ErrorFallbacks: []schemas.ErrorFallbackRule{{
+			Name:     "content-safety",
+			Scenario: schemas.FailureCategoryContentPolicy,
+			Supplement: &schemas.ErrorFallbackSupplement{
+				MessageContainsAny: []string{"moon-safety-block"},
+			},
+			Fallbacks: []schemas.Fallback{{Provider: schemas.Anthropic, Model: "safe-model"}},
+		}},
+	})
+
+	require.Nil(t, bifrostErr)
+	content, streamErrors := drainChatStream(stream)
+	assert.Equal(t, "hello", content)
+	assert.Empty(t, streamErrors)
+	assert.Zero(t, ordinaryHits.Load())
+	assert.Equal(t, int32(1), dedicatedHits.Load())
+}
+
+func TestInitialResponsesStreamContentPolicyBeforeOutputReturnsError(t *testing.T) {
+	stream := make(chan *schemas.BifrostStreamChunk, 3)
+	stream <- &schemas.BifrostStreamChunk{BifrostResponsesStreamResponse: &schemas.BifrostResponsesStreamResponse{Type: schemas.ResponsesStreamResponseTypeCreated}}
+	stream <- &schemas.BifrostStreamChunk{BifrostResponsesStreamResponse: &schemas.BifrostResponsesStreamResponse{Type: schemas.ResponsesStreamResponseTypeInProgress}}
+	stream <- &schemas.BifrostStreamChunk{BifrostResponsesStreamResponse: &schemas.BifrostResponsesStreamResponse{
+		Type: schemas.ResponsesStreamResponseTypeIncomplete,
+		Response: &schemas.BifrostResponsesResponse{
+			IncompleteDetails: &schemas.ResponsesResponseIncompleteDetails{Reason: schemas.ResponsesResponseIncompleteReasonContentFilter},
+		},
+	}}
+	close(stream)
+
+	req := errorFallbackChatRequest()
+	checked, done, bifrostErr := providerUtils.CheckFirstStreamChunkForError(context.Background(), schemas.ResponsesStreamRequest, stream, func(chunk *schemas.BifrostStreamChunk) (*schemas.BifrostError, bool) {
+		return initialStreamError(req, chunk), streamChunkHasVisibleOutput(chunk)
+	})
+	<-done
+	require.Nil(t, checked)
+	require.NotNil(t, bifrostErr)
+	assert.Equal(t, schemas.FailureCategoryContentPolicy, RecognizeFailure(FailureSignal{Error: bifrostErr}).Category)
+}
+
+func TestInitialImageStreamPreservesNestedContentPolicyError(t *testing.T) {
+	safetyErr := testFallbackError(400, "content_filter", "generated image blocked by content policy")
+	stream := make(chan *schemas.BifrostStreamChunk, 1)
+	stream <- &schemas.BifrostStreamChunk{BifrostImageGenerationStreamResponse: &schemas.BifrostImageGenerationStreamResponse{
+		Type:  schemas.ImageGenerationEventTypeCompleted,
+		Error: safetyErr,
+	}}
+	close(stream)
+
+	req := errorFallbackChatRequest()
+	checked, done, bifrostErr := providerUtils.CheckFirstStreamChunkForError(context.Background(), schemas.ImageGenerationStreamRequest, stream, func(chunk *schemas.BifrostStreamChunk) (*schemas.BifrostError, bool) {
+		return initialStreamError(req, chunk), streamChunkHasVisibleOutput(chunk)
+	})
+	<-done
+	require.Nil(t, checked)
+	require.Same(t, safetyErr, bifrostErr)
+	assert.Equal(t, schemas.FailureCategoryContentPolicy, RecognizeFailure(FailureSignal{Error: bifrostErr}).Category)
 }
 
 func configureFallbackTestProvider(account *MockAccount, provider schemas.ModelProvider, baseURL string) {

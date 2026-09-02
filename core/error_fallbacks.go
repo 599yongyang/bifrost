@@ -177,6 +177,47 @@ func firstMatchingErrorFallbackRule(req *schemas.BifrostRequest, err *schemas.Bi
 	return nil, failure
 }
 
+// firstMatchingContentPolicyFallbackRule gives content-safety policy priority
+// over broad legacy/status rules. A supplemental clue on a content-policy rule
+// promotes an otherwise unknown provider error into the content-policy category.
+func firstMatchingContentPolicyFallbackRule(req *schemas.BifrostRequest, err *schemas.BifrostError, rules []schemas.ErrorFallbackRule) (*schemas.ErrorFallbackRule, classifiedFailure) {
+	if err == nil {
+		return nil, classifiedFailure{}
+	}
+	if req == nil {
+		failure := classifyBifrostFailure(err, err.ExtraFields.Provider, err.ExtraFields.RequestType)
+		if failure.category == schemas.FailureCategoryContentPolicy {
+			return nil, failure
+		}
+		return nil, classifiedFailure{}
+	}
+	populateErrorFallbackExtraFields(err, req)
+	provider, _, _ := req.GetRequestFields()
+	failure := classifyBifrostFailure(err, provider, req.RequestType)
+	for i := range rules {
+		if !errorFallbackRuleHandlesContentPolicy(rules[i]) {
+			continue
+		}
+		match, ok := matchErrorFallbackRule(failure, rules[i])
+		if ok {
+			failure.category = schemas.FailureCategoryContentPolicy
+			failure.match = match
+			return &rules[i], failure
+		}
+	}
+	if failure.category == schemas.FailureCategoryContentPolicy {
+		return nil, failure
+	}
+	return nil, classifiedFailure{}
+}
+
+func errorFallbackRuleHandlesContentPolicy(rule schemas.ErrorFallbackRule) bool {
+	if rule.Scenario == schemas.FailureCategoryContentPolicy {
+		return true
+	}
+	return containsFailureCategory(rule.When.Categories, schemas.FailureCategoryContentPolicy)
+}
+
 func matchErrorFallbackRule(failure classifiedFailure, rule schemas.ErrorFallbackRule) (errorFallbackMatch, bool) {
 	if usesScenarioMatcher(rule) && conditionHasMatchers(rule.When) {
 		return errorFallbackMatch{}, false
@@ -247,11 +288,102 @@ func (bifrost *Bifrost) resolveFallbackChain(req *schemas.BifrostRequest, primar
 	provider, model, ordinary := req.GetRequestFields()
 	attempted := attemptedFallbackTargets(provider, model)
 	ordinary = sanitizeFallbackChain(ordinary, attempted)
+	contentRule, contentFailure := firstMatchingContentPolicyFallbackRule(req, primaryErr, req.GetErrorFallbacks())
+	if contentRule != nil {
+		return sanitizeFallbackChain(contentRule.Fallbacks, attempted), ordinary, contentRule, contentFailure
+	}
+	if isContentPolicyFailure(contentFailure) {
+		return nil, ordinary, nil, contentFailure
+	}
 	rule, failure := firstMatchingErrorFallbackRule(req, primaryErr, req.GetErrorFallbacks())
 	if rule != nil {
 		return sanitizeFallbackChain(rule.Fallbacks, attempted), ordinary, rule, failure
 	}
 	return ordinary, ordinary, nil, failure
+}
+
+func isContentPolicyFailure(failure classifiedFailure) bool {
+	return failure.category == schemas.FailureCategoryContentPolicy
+}
+
+type fallbackFailureAction uint8
+
+const (
+	fallbackFailureContinue fallbackFailureAction = iota
+	fallbackFailureHalt
+	fallbackFailureHaltContentPolicy
+	fallbackFailureReplaceDedicated
+	fallbackFailureReplaceContentSafety
+)
+
+type fallbackFailureDecision struct {
+	action           fallbackFailureAction
+	rule             *schemas.ErrorFallbackRule
+	failure          classifiedFailure
+	replacementCount int
+	remainingCount   int
+}
+
+// fallbackChainState is the shared decision module for synchronous and
+// streaming fallback orchestration. Callers execute providers and own spans;
+// this module alone owns active-chain transitions and the authoritative error.
+type fallbackChainState struct {
+	targets                     []schemas.Fallback
+	attempted                   map[string]struct{}
+	dedicatedChainActivated     bool
+	contentSafetyChainActivated bool
+	authoritativeErr            *schemas.BifrostError
+}
+
+func newFallbackChainState(provider schemas.ModelProvider, model string, targets []schemas.Fallback, matchedRule *schemas.ErrorFallbackRule, matchedFailure classifiedFailure, primaryErr *schemas.BifrostError) *fallbackChainState {
+	dedicated := matchedRule != nil
+	return &fallbackChainState{
+		targets:                     targets,
+		attempted:                   attemptedFallbackTargets(provider, model),
+		dedicatedChainActivated:     dedicated,
+		contentSafetyChainActivated: dedicated && isContentPolicyFailure(matchedFailure),
+		authoritativeErr:            primaryErr,
+	}
+}
+
+func (state *fallbackChainState) markAttempted(fallback schemas.Fallback) {
+	markFallbackTargetAttempted(state.attempted, fallback)
+}
+
+func (state *fallbackChainState) decideFailure(req, fallbackReq *schemas.BifrostRequest, fallbackErr *schemas.BifrostError, index int, allowContinuation bool) fallbackFailureDecision {
+	remaining := len(state.targets) - (index + 1)
+	if !allowContinuation {
+		return fallbackFailureDecision{action: fallbackFailureHalt, remainingCount: remaining}
+	}
+
+	contentRule, contentFailure := firstMatchingContentPolicyFallbackRule(fallbackReq, fallbackErr, req.GetErrorFallbacks())
+	contentPolicyDetected := contentRule != nil || isContentPolicyFailure(contentFailure)
+	if contentPolicyDetected {
+		if state.contentSafetyChainActivated {
+			return fallbackFailureDecision{action: fallbackFailureContinue, failure: contentFailure, remainingCount: remaining}
+		}
+		if contentRule == nil {
+			return fallbackFailureDecision{action: fallbackFailureHaltContentPolicy, failure: contentFailure, remainingCount: remaining}
+		}
+		state.dedicatedChainActivated = true
+		state.contentSafetyChainActivated = true
+		state.authoritativeErr = fallbackErr
+		replacement := sanitizeFallbackChain(contentRule.Fallbacks, state.attempted)
+		state.targets = append(state.targets[:index+1], replacement...)
+		return fallbackFailureDecision{action: fallbackFailureReplaceContentSafety, rule: contentRule, failure: contentFailure, replacementCount: len(replacement), remainingCount: remaining}
+	}
+
+	if !state.dedicatedChainActivated {
+		rule, failure := firstMatchingErrorFallbackRule(fallbackReq, fallbackErr, req.GetErrorFallbacks())
+		if rule != nil {
+			state.dedicatedChainActivated = true
+			replacement := sanitizeFallbackChain(rule.Fallbacks, state.attempted)
+			state.targets = append(state.targets[:index+1], replacement...)
+			return fallbackFailureDecision{action: fallbackFailureReplaceDedicated, rule: rule, failure: failure, replacementCount: len(replacement), remainingCount: remaining}
+		}
+	}
+
+	return fallbackFailureDecision{action: fallbackFailureContinue, remainingCount: remaining}
 }
 
 func attemptedFallbackTargets(provider schemas.ModelProvider, model string) map[string]struct{} {
@@ -315,6 +447,19 @@ func recordErrorFallbackDecision(ctx *schemas.BifrostContext, rule *schemas.Erro
 		return
 	}
 	ctx.SetValue(schemas.BifrostContextKeyErrorFallbackRuleName, errorFallbackRuleLabel(rule))
+	recordErrorFallbackFailureMetadata(ctx, failure)
+}
+
+func recordTerminalContentPolicyDecision(ctx *schemas.BifrostContext, failure classifiedFailure) {
+	if ctx == nil {
+		return
+	}
+	clearErrorFallbackDecision(ctx)
+	failure.category = schemas.FailureCategoryContentPolicy
+	recordErrorFallbackFailureMetadata(ctx, failure)
+}
+
+func recordErrorFallbackFailureMetadata(ctx *schemas.BifrostContext, failure classifiedFailure) {
 	ctx.SetValue(schemas.BifrostContextKeyErrorFallbackCategory, string(failure.category))
 	if failure.match.matchedBy != "" {
 		ctx.SetValue(schemas.BifrostContextKeyErrorFallbackMatchedBy, failure.match.matchedBy)
@@ -366,16 +511,115 @@ func setErrorFallbackSpanAttributes(tracer schemas.Tracer, handle schemas.SpanHa
 }
 
 func successfulContentPolicyError(req *schemas.BifrostRequest, response *schemas.BifrostResponse) *schemas.BifrostError {
-	if req == nil || response == nil || len(req.GetErrorFallbacks()) == 0 || RecognizeFailure(FailureSignal{Response: response}).Category != schemas.FailureCategoryContentPolicy {
+	if req == nil || response == nil || RecognizeFailure(FailureSignal{Response: response}).Category != schemas.FailureCategoryContentPolicy {
 		return nil
 	}
+	return newContentPolicyError(req, "upstream provider blocked the response due to content policy")
+}
+
+func newContentPolicyError(req *schemas.BifrostRequest, message string) *schemas.BifrostError {
 	allowFallbacks, statusCode, errorType := true, http.StatusBadRequest, "content_filter"
-	err := &schemas.BifrostError{StatusCode: &statusCode, Type: &errorType, AllowFallbacks: &allowFallbacks, Error: &schemas.ErrorField{Type: &errorType, Code: &errorType, Message: "upstream provider blocked the response due to content policy"}}
+	err := &schemas.BifrostError{StatusCode: &statusCode, Type: &errorType, AllowFallbacks: &allowFallbacks, Error: &schemas.ErrorField{Type: &errorType, Code: &errorType, Message: message}}
 	populateErrorFallbackExtraFields(err, req)
-	if rule, _ := firstMatchingErrorFallbackRule(req, err, req.GetErrorFallbacks()); rule == nil {
+	return err
+}
+
+func initialStreamError(req *schemas.BifrostRequest, chunk *schemas.BifrostStreamChunk) *schemas.BifrostError {
+	if chunk == nil {
 		return nil
 	}
-	return err
+	if chunk.BifrostError != nil && chunk.BifrostError.Error != nil &&
+		(chunk.BifrostError.Error.Message != "" || chunk.BifrostError.Error.Code != nil || chunk.BifrostError.Error.Type != nil) {
+		return chunk.BifrostError
+	}
+	if streamChoicesAreContentPolicyBlocks(chatStreamChoices(chunk.BifrostChatResponse)) ||
+		streamChoicesAreContentPolicyBlocks(textStreamChoices(chunk.BifrostTextCompletionResponse)) {
+		return newContentPolicyError(req, "upstream provider terminated the stream due to content policy")
+	}
+	if response := chunk.BifrostResponsesStreamResponse; response != nil &&
+		response.Type == schemas.ResponsesStreamResponseTypeIncomplete && response.Response != nil &&
+		response.Response.IncompleteDetails != nil &&
+		strings.EqualFold(strings.TrimSpace(response.Response.IncompleteDetails.Reason), schemas.ResponsesResponseIncompleteReasonContentFilter) {
+		return newContentPolicyError(req, "upstream provider terminated the stream due to content policy")
+	}
+	if image := chunk.BifrostImageGenerationStreamResponse; image != nil && image.Error != nil {
+		return image.Error
+	}
+	return nil
+}
+
+func chatStreamChoices(response *schemas.BifrostChatResponse) []schemas.BifrostResponseChoice {
+	if response == nil {
+		return nil
+	}
+	return response.Choices
+}
+
+func textStreamChoices(response *schemas.BifrostTextCompletionResponse) []schemas.BifrostResponseChoice {
+	if response == nil {
+		return nil
+	}
+	return response.Choices
+}
+
+func streamChoicesAreContentPolicyBlocks(choices []schemas.BifrostResponseChoice) bool {
+	if len(choices) == 0 {
+		return false
+	}
+	for _, choice := range choices {
+		if choice.FinishReason == nil || !isContentPolicyFinishReason(*choice.FinishReason) {
+			return false
+		}
+	}
+	return true
+}
+
+func streamChunkHasVisibleOutput(chunk *schemas.BifrostStreamChunk) bool {
+	if chunk == nil || chunk.BifrostError != nil {
+		return false
+	}
+	for _, choice := range chatStreamChoices(chunk.BifrostChatResponse) {
+		if delta := choice.ChatStreamResponseChoice; delta != nil && chatStreamDeltaHasVisibleOutput(delta.Delta) {
+			return true
+		}
+	}
+	for _, choice := range textStreamChoices(chunk.BifrostTextCompletionResponse) {
+		if choice.TextCompletionResponseChoice != nil && choice.Text != nil && *choice.Text != "" {
+			return true
+		}
+	}
+	if response := chunk.BifrostResponsesStreamResponse; response != nil {
+		switch response.Type {
+		case schemas.ResponsesStreamResponseTypePing,
+			schemas.ResponsesStreamResponseTypeQueued,
+			schemas.ResponsesStreamResponseTypeCreated,
+			schemas.ResponsesStreamResponseTypeInProgress,
+			schemas.ResponsesStreamResponseTypeCompleted,
+			schemas.ResponsesStreamResponseTypeFailed,
+			schemas.ResponsesStreamResponseTypeIncomplete:
+			return false
+		default:
+			return true
+		}
+	}
+	if image := chunk.BifrostImageGenerationStreamResponse; image != nil {
+		return strings.TrimSpace(image.URL) != "" || strings.TrimSpace(image.B64JSON) != ""
+	}
+	return chunk.BifrostSpeechStreamResponse != nil ||
+		chunk.BifrostTranscriptionStreamResponse != nil ||
+		chunk.BifrostPassthroughResponse != nil
+}
+
+func chatStreamDeltaHasVisibleOutput(delta *schemas.ChatStreamResponseChoiceDelta) bool {
+	if delta == nil {
+		return false
+	}
+	return (delta.Content != nil && *delta.Content != "") ||
+		(delta.Refusal != nil && *delta.Refusal != "") ||
+		(delta.Reasoning != nil && *delta.Reasoning != "") ||
+		delta.Audio != nil || len(delta.ReasoningDetails) > 0 ||
+		len(delta.Annotations) > 0 || len(delta.ToolCalls) > 0 ||
+		len(delta.ExtraContent) > 0
 }
 
 func responseIsEmptyContentPolicyBlock(response *schemas.BifrostResponse) bool {
@@ -406,7 +650,7 @@ func choicesAreEmptyContentPolicyBlocks(choices []schemas.BifrostResponseChoice)
 		return false
 	}
 	for _, choice := range choices {
-		if choice.FinishReason == nil || !strings.EqualFold(strings.TrimSpace(*choice.FinishReason), "content_filter") {
+		if choice.FinishReason == nil || !isContentPolicyFinishReason(*choice.FinishReason) {
 			return false
 		}
 		if choice.TextCompletionResponseChoice != nil && choice.Text != nil && strings.TrimSpace(*choice.Text) != "" {
@@ -473,6 +717,7 @@ func detectContentPolicySignal(failure classifiedFailure) errorFallbackMatch {
 		{id: "safety_system", phrases: []string{"rejected by the safety system", "被安全系统拒绝", "安全系统拒绝"}},
 		{id: "unsafe_image", phrases: []string{"generated images appear to be unsafe", "appear to be unsafe", "图片可能不安全"}},
 		{id: "content_policy", phrases: []string{"content policy", "responsible ai policy", "内容安全", "内容政策", "安全策略", "guardrail intervened"}},
+		{id: "sexual_content_protection", phrases: []string{"裸露、色情或情色内容", "裸露、色情或情色", "色情或情色内容"}},
 	}); ok {
 		pack := "global_multilingual"
 		matchedBy := failureMatchedByMessagePack

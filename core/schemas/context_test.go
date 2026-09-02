@@ -2,6 +2,7 @@ package schemas
 
 import (
 	"context"
+	"errors"
 	"runtime"
 	"testing"
 	"time"
@@ -516,4 +517,35 @@ func TestReservedKey_NonComparableKeyDoesNotPanic(t *testing.T) {
 
 	// userValues is still nil here; the guard must not panic before that check.
 	ctx.ClearValue([]string{"slice", "key"})
+}
+
+func TestCancelScopeSharesValuesButNotCancellation(t *testing.T) {
+	root, cancelRoot := NewBifrostContextWithCancel(context.Background())
+	defer cancelRoot()
+	root.SetValue(BifrostContextKeyRequestID, "request-1")
+
+	attempt, cancelAttempt := root.WithCancelScope()
+	attempt.SetValue(BifrostContextKeyFallbackIndex, 2)
+
+	if got, _ := attempt.Value(BifrostContextKeyRequestID).(string); got != "request-1" {
+		t.Fatalf("attempt request ID = %q, want request-1", got)
+	}
+	if got, _ := root.Value(BifrostContextKeyFallbackIndex).(int); got != 2 {
+		t.Fatalf("root fallback index = %d, want 2", got)
+	}
+
+	cancelAttempt()
+	select {
+	case <-attempt.Done():
+	case <-time.After(time.Second):
+		t.Fatal("attempt context did not cancel")
+	}
+	if !errors.Is(attempt.Err(), context.Canceled) {
+		t.Fatalf("attempt Err() = %v, want context.Canceled", attempt.Err())
+	}
+	select {
+	case <-root.Done():
+		t.Fatal("cancelling attempt cancelled the request root")
+	default:
+	}
 }

@@ -5123,6 +5123,27 @@ func (bifrost *Bifrost) getProviderByKey(providerKey schemas.ModelProvider) sche
 
 // CORE INTERNAL LOGIC
 
+// streamDrainGracePeriod is an internal shutdown-safety budget, not a network
+// timeout: after an attempt is cancelled, cooperative providers must close their
+// chunk channel within this window so retry/fallback can proceed without overlap.
+const streamDrainGracePeriod = 500 * time.Millisecond
+
+func newStreamDrainTimeoutError() *schemas.BifrostError {
+	statusCode := fasthttp.StatusBadGateway
+	errorType := "stream_drain_timeout"
+	allowFallbacks := false
+	return &schemas.BifrostError{
+		IsBifrostError: true,
+		StatusCode:     &statusCode,
+		Type:           &errorType,
+		AllowFallbacks: &allowFallbacks,
+		Error: &schemas.ErrorField{
+			Type:    &errorType,
+			Message: "upstream provider did not stop after stream attempt cancellation",
+		},
+	}
+}
+
 // shouldTryFallbacks handles the primary error and selected fallback chain.
 func (bifrost *Bifrost) shouldTryFallbacks(selectedFallbacks []schemas.Fallback, primaryErr *schemas.BifrostError) bool {
 	// If no primary error, we succeeded
@@ -5279,6 +5300,40 @@ func (bifrost *Bifrost) shouldContinueWithFallbacks(fallback schemas.Fallback, f
 	return true
 }
 
+// applyFallbackFailureDecision is the side-effect adapter for fallbackChainState.
+// It keeps span and routing-log behavior identical across synchronous and
+// streaming callers while the state module owns the transition itself.
+func (bifrost *Bifrost) applyFallbackFailureDecision(
+	ctx *schemas.BifrostContext,
+	tracer schemas.Tracer,
+	handle schemas.SpanHandle,
+	fallback schemas.Fallback,
+	fallbackErr *schemas.BifrostError,
+	decision fallbackFailureDecision,
+) bool {
+	switch decision.action {
+	case fallbackFailureHalt:
+		tracer.EndSpan(handle, schemas.SpanStatusError, "fallback failed")
+		ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelError, fmt.Sprintf("Fallback %s/%s failed (%s); halting further fallbacks", fallback.Provider, fallback.Model, routingErrorSummary(fallbackErr)))
+		return true
+	case fallbackFailureHaltContentPolicy:
+		recordTerminalContentPolicyDecision(ctx, decision.failure)
+		setErrorFallbackSpanAttributes(tracer, handle, ctx)
+		tracer.EndSpan(handle, schemas.SpanStatusError, "content-policy failure without dedicated fallback")
+		ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelWarn, fmt.Sprintf("Fallback %s/%s failed with content-policy enforcement (%s); no dedicated content-safety fallback is configured, halting %d remaining fallback(s)", fallback.Provider, fallback.Model, routingErrorSummary(fallbackErr), decision.remainingCount))
+		return true
+	case fallbackFailureReplaceContentSafety:
+		recordErrorFallbackDecision(ctx, decision.rule, decision.failure)
+		setErrorFallbackSpanAttributes(tracer, handle, ctx)
+		ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Fallback %s/%s failed (%s); content safety overrides the active chain with rule %q and %d dedicated fallback(s)", fallback.Provider, fallback.Model, routingErrorSummary(fallbackErr), errorFallbackRuleLabel(decision.rule), decision.replacementCount))
+	case fallbackFailureReplaceDedicated:
+		recordErrorFallbackDecision(ctx, decision.rule, decision.failure)
+		setErrorFallbackSpanAttributes(tracer, handle, ctx)
+		ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Fallback %s/%s failed (%s); matched error_fallbacks rule %q (category=%s), replacing the remaining ordinary chain with %d dedicated fallback(s)", fallback.Provider, fallback.Model, routingErrorSummary(fallbackErr), errorFallbackRuleLabel(decision.rule), decision.failure.category, decision.replacementCount))
+	}
+	return false
+}
+
 // populateLatencyExtraFields stamps upstream and overhead onto resp's ExtraFields,
 // deriving overhead from the request-start time on ctx. No-ops when unmeasured, so
 // absent stays distinct from zero. Call before RunPostLLMHooks so logging sees it.
@@ -5379,6 +5434,9 @@ func (bifrost *Bifrost) handleRequest(ctx *schemas.BifrostContext, req *schemas.
 	if !shouldTryFallbacks {
 		if matchedRule != nil && len(selectedFallbacks) == 0 {
 			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelWarn, fmt.Sprintf("Primary %s/%s matched error_fallbacks rule %q (category=%s), but its dedicated chain is empty", provider, model, errorFallbackRuleLabel(matchedRule), matchedFailure.category))
+		} else if isContentPolicyFailure(matchedFailure) {
+			schemas.AppendToContextList(ctx, schemas.BifrostContextKeyRoutingEnginesUsed, schemas.RoutingEngineCore)
+			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelWarn, fmt.Sprintf("Primary %s/%s failed with content-policy enforcement (%s); no dedicated content-safety fallback is configured, suppressing %d ordinary fallback(s)", provider, model, routingErrorSummary(primaryErr), len(ordinaryFallbacks)))
 		}
 		return primaryResult, primaryErr
 	}
@@ -5397,16 +5455,15 @@ func (bifrost *Bifrost) handleRequest(ctx *schemas.BifrostContext, req *schemas.
 	// the error that triggered it (primary error for the first iteration, the
 	// prior fallback's error for subsequent iterations).
 	lastErr := primaryErr
-	attemptedTargets := attemptedFallbackTargets(provider, model)
-	dedicatedChainActivated := matchedRule != nil
+	chain := newFallbackChainState(provider, model, selectedFallbacks, matchedRule, matchedFailure, primaryErr)
 
 	// Try fallbacks in order
-	for i := 0; i < len(selectedFallbacks); i++ {
-		fallback := selectedFallbacks[i]
-		markFallbackTargetAttempted(attemptedTargets, fallback)
+	for i := 0; i < len(chain.targets); i++ {
+		fallback := chain.targets[i]
+		chain.markAttempted(fallback)
 		ctx.SetValue(schemas.BifrostContextKeyFallbackIndex, i+1)
 		bifrost.logger.Debug("trying fallback provider %s with model %s", fallback.Provider, fallback.Model)
-		ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Trying fallback %d/%d: %s/%s (previous attempt failed: %s)", i+1, len(selectedFallbacks), fallback.Provider, fallback.Model, routingErrorSummary(lastErr)))
+		ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Trying fallback %d/%d: %s/%s (previous attempt failed: %s)", i+1, len(chain.targets), fallback.Provider, fallback.Model, routingErrorSummary(lastErr)))
 		ctx.SetValue(schemas.BifrostContextKeyFallbackRequestID, uuid.New().String())
 		clearCtxForFallback(ctx)
 
@@ -5438,7 +5495,7 @@ func (bifrost *Bifrost) handleRequest(ctx *schemas.BifrostContext, req *schemas.
 		fallbackErr.SetFallbackRoutingInfo(provider, model)
 		if fallbackErr == nil {
 			bifrost.logger.Debug("successfully used fallback provider %s with model %s", fallback.Provider, fallback.Model)
-			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Request served by fallback %s/%s (attempt %d/%d)", fallback.Provider, fallback.Model, i+1, len(selectedFallbacks)))
+			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Request served by fallback %s/%s (attempt %d/%d)", fallback.Provider, fallback.Model, i+1, len(chain.targets)))
 			tracer.EndSpan(handle, schemas.SpanStatusOk, "")
 			return result, nil
 		}
@@ -5447,34 +5504,19 @@ func (bifrost *Bifrost) handleRequest(ctx *schemas.BifrostContext, req *schemas.
 			tracer.SetAttribute(handle, "error", fallbackErr.Error.Message)
 		}
 
-		// Check if we should continue with more fallbacks
-		if !bifrost.shouldContinueWithFallbacks(fallback, fallbackErr) {
-			tracer.EndSpan(handle, schemas.SpanStatusError, "fallback failed")
-			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelError, fmt.Sprintf("Fallback %s/%s failed (%s); halting further fallbacks", fallback.Provider, fallback.Model, routingErrorSummary(fallbackErr)))
+		decision := chain.decideFailure(req, fallbackReq, fallbackErr, i, bifrost.shouldContinueWithFallbacks(fallback, fallbackErr))
+		if bifrost.applyFallbackFailureDecision(ctx, tracer, handle, fallback, fallbackErr, decision) {
 			return nil, fallbackErr
-		}
-
-		// The first matching error rule replaces all remaining ordinary targets.
-		// Once a dedicated chain is active it remains authoritative even when one
-		// of its own attempts fails.
-		if !dedicatedChainActivated {
-			if rule, failure := firstMatchingErrorFallbackRule(fallbackReq, fallbackErr, req.GetErrorFallbacks()); rule != nil {
-				dedicatedChainActivated = true
-				replacement := sanitizeFallbackChain(rule.Fallbacks, attemptedTargets)
-				selectedFallbacks = append(selectedFallbacks[:i+1], replacement...)
-				recordErrorFallbackDecision(ctx, rule, failure)
-				setErrorFallbackSpanAttributes(tracer, handle, ctx)
-				ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Fallback %s/%s failed (%s); matched error_fallbacks rule %q (category=%s), replacing the remaining ordinary chain with %d dedicated fallback(s)", fallback.Provider, fallback.Model, routingErrorSummary(fallbackErr), errorFallbackRuleLabel(rule), failure.category, len(replacement)))
-			}
 		}
 		tracer.EndSpan(handle, schemas.SpanStatusError, "fallback failed")
 
 		lastErr = fallbackErr
 	}
 
-	ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelError, fmt.Sprintf("All %d fallback(s) exhausted; returning primary error (%s)", len(selectedFallbacks), routingErrorSummary(primaryErr)))
-	// All providers failed, return the original error
-	return nil, primaryErr
+	ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelError, fmt.Sprintf("All %d fallback(s) exhausted; returning authoritative error (%s)", len(chain.targets), routingErrorSummary(chain.authoritativeErr)))
+	// A content-safety error that activates a dedicated chain becomes the
+	// authoritative result. Otherwise preserve the historical primary error.
+	return nil, chain.authoritativeErr
 }
 
 // handleStreamRequest handles the stream request to the provider based on the request type
@@ -5551,6 +5593,9 @@ func (bifrost *Bifrost) handleStreamRequest(ctx *schemas.BifrostContext, req *sc
 	if !shouldTryFallbacks {
 		if matchedRule != nil && len(selectedFallbacks) == 0 {
 			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelWarn, fmt.Sprintf("Primary %s/%s matched error_fallbacks rule %q (category=%s), but its dedicated chain is empty", provider, model, errorFallbackRuleLabel(matchedRule), matchedFailure.category))
+		} else if isContentPolicyFailure(matchedFailure) {
+			schemas.AppendToContextList(ctx, schemas.BifrostContextKeyRoutingEnginesUsed, schemas.RoutingEngineCore)
+			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelWarn, fmt.Sprintf("Primary %s/%s failed with content-policy enforcement (%s); no dedicated content-safety fallback is configured, suppressing %d ordinary fallback(s)", provider, model, routingErrorSummary(primaryErr), len(ordinaryFallbacks)))
 		}
 		return primaryResult, primaryErr
 	}
@@ -5566,15 +5611,14 @@ func (bifrost *Bifrost) handleStreamRequest(ctx *schemas.BifrostContext, req *sc
 	}
 
 	lastErr := primaryErr
-	attemptedTargets := attemptedFallbackTargets(provider, model)
-	dedicatedChainActivated := matchedRule != nil
+	chain := newFallbackChainState(provider, model, selectedFallbacks, matchedRule, matchedFailure, primaryErr)
 
 	// Try fallbacks in order
-	for i := 0; i < len(selectedFallbacks); i++ {
-		fallback := selectedFallbacks[i]
-		markFallbackTargetAttempted(attemptedTargets, fallback)
+	for i := 0; i < len(chain.targets); i++ {
+		fallback := chain.targets[i]
+		chain.markAttempted(fallback)
 		ctx.SetValue(schemas.BifrostContextKeyFallbackIndex, i+1)
-		ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Trying fallback %d/%d: %s/%s (previous attempt failed: %s)", i+1, len(selectedFallbacks), fallback.Provider, fallback.Model, routingErrorSummary(lastErr)))
+		ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Trying fallback %d/%d: %s/%s (previous attempt failed: %s)", i+1, len(chain.targets), fallback.Provider, fallback.Model, routingErrorSummary(lastErr)))
 		ctx.SetValue(schemas.BifrostContextKeyFallbackRequestID, uuid.New().String())
 		clearCtxForFallback(ctx)
 
@@ -5621,7 +5665,7 @@ func (bifrost *Bifrost) handleStreamRequest(ctx *schemas.BifrostContext, req *sc
 				ctx.SetRoutingInfoSnapshot(ri)
 			}
 			bifrost.logger.Debug("successfully used fallback provider %s with model %s", fallback.Provider, fallback.Model)
-			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Request served by fallback %s/%s (attempt %d/%d)", fallback.Provider, fallback.Model, i+1, len(selectedFallbacks)))
+			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Request served by fallback %s/%s (attempt %d/%d)", fallback.Provider, fallback.Model, i+1, len(chain.targets)))
 			tracer.EndSpan(handle, schemas.SpanStatusOk, "")
 			return result, nil
 		}
@@ -5630,34 +5674,23 @@ func (bifrost *Bifrost) handleStreamRequest(ctx *schemas.BifrostContext, req *sc
 			tracer.SetAttribute(handle, "error", fallbackErr.Error.Message)
 		}
 
-		// Check if we should continue with more fallbacks
-		if !bifrost.shouldContinueWithFallbacks(fallback, fallbackErr) {
-			tracer.EndSpan(handle, schemas.SpanStatusError, "fallback failed")
-			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelError, fmt.Sprintf("Fallback %s/%s failed (%s); halting further fallbacks", fallback.Provider, fallback.Model, routingErrorSummary(fallbackErr)))
+		// Only synchronous setup errors or failures found before the first visible
+		// stream delta reach this loop. Once a channel with visible output has been
+		// returned, core cannot replace it without mixing or replaying model output,
+		// so later stream errors remain in-band.
+		decision := chain.decideFailure(req, fallbackReq, fallbackErr, i, bifrost.shouldContinueWithFallbacks(fallback, fallbackErr))
+		if bifrost.applyFallbackFailureDecision(ctx, tracer, handle, fallback, fallbackErr, decision) {
 			return nil, fallbackErr
-		}
-
-		// Only synchronous setup/first-chunk errors reach this loop. Once a channel
-		// has been returned, core cannot replace it without buffering or replaying
-		// already-visible chunks, so post-return stream errors remain in-band.
-		if !dedicatedChainActivated {
-			if rule, failure := firstMatchingErrorFallbackRule(fallbackReq, fallbackErr, req.GetErrorFallbacks()); rule != nil {
-				dedicatedChainActivated = true
-				replacement := sanitizeFallbackChain(rule.Fallbacks, attemptedTargets)
-				selectedFallbacks = append(selectedFallbacks[:i+1], replacement...)
-				recordErrorFallbackDecision(ctx, rule, failure)
-				setErrorFallbackSpanAttributes(tracer, handle, ctx)
-				ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Fallback %s/%s failed (%s); matched error_fallbacks rule %q (category=%s), replacing the remaining ordinary chain with %d dedicated fallback(s)", fallback.Provider, fallback.Model, routingErrorSummary(fallbackErr), errorFallbackRuleLabel(rule), failure.category, len(replacement)))
-			}
 		}
 		tracer.EndSpan(handle, schemas.SpanStatusError, "fallback failed")
 
 		lastErr = fallbackErr
 	}
 
-	ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelError, fmt.Sprintf("All %d fallback(s) exhausted; returning primary error (%s)", len(selectedFallbacks), routingErrorSummary(primaryErr)))
-	// All providers failed, return the original error
-	return nil, primaryErr
+	ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelError, fmt.Sprintf("All %d fallback(s) exhausted; returning authoritative error (%s)", len(chain.targets), routingErrorSummary(chain.authoritativeErr)))
+	// A content-safety error that activates a dedicated chain becomes the
+	// authoritative result. Otherwise preserve the historical primary error.
+	return nil, chain.authoritativeErr
 }
 
 // validateImageResponse rejects successful-looking image responses that do not
@@ -6415,6 +6448,7 @@ func executeRequestWithRetries[T any](
 	model string,
 	req *schemas.BifrostRequest,
 	logger schemas.Logger,
+	attemptContextObserver ...func(*schemas.BifrostContext),
 ) (result T, bifrostError *schemas.BifrostError) {
 	var attempts int
 	ctx.SetValue(schemas.BifrostContextKeyConfiguredRequestTimeoutSeconds, config.NetworkConfig.DefaultRequestTimeoutInSeconds)
@@ -6784,6 +6818,16 @@ func executeRequestWithRetries[T any](
 			ctx.SetValue(schemas.BifrostContextKeyStreamStartTime, streamStartTime)
 		}
 
+		// Streaming attempts share request values but own an independently
+		// cancellable lifecycle so a failed preflight can stop only that upstream.
+		attemptCtx := ctx
+		if IsStreamRequestType(requestType) {
+			attemptCtx, _ = ctx.WithCancelScope()
+			if len(attemptContextObserver) > 0 && attemptContextObserver[0] != nil {
+				attemptContextObserver[0](attemptCtx)
+			}
+		}
+
 		// Attempt the request
 		result, bifrostError = requestHandler(currentKey)
 
@@ -6794,17 +6838,35 @@ func executeRequestWithRetries[T any](
 		emptyStream := false
 		if bifrostError == nil {
 			if streamChan, ok := any(result).(chan *schemas.BifrostStreamChunk); ok {
-				checkedStream, drainDone, firstChunkErr := providerUtils.CheckFirstStreamChunkForError(ctx, requestType, streamChan)
+				checkedStream, drainDone, firstChunkErr := providerUtils.CheckFirstStreamChunkForError(ctx, requestType, streamChan, func(chunk *schemas.BifrostStreamChunk) (*schemas.BifrostError, bool) {
+					return initialStreamError(req, chunk), streamChunkHasVisibleOutput(chunk)
+				})
 				if firstChunkErr != nil {
-					<-drainDone
-					// The dead stream's teardown (ReleaseStreamingResponse) claimed the
-					// connection_closed flag on the shared context. That claim is scoped
-					// to the response it released; clear it so the retry or fallback
-					// attempt that follows doesn't see its own fresh stream as already
-					// closed and fail every read with ErrStreamClosed.
-					ctx.ClearValue(schemas.BifrostContextKeyConnectionClosed)
-					bifrostError = firstChunkErr
+					attemptCtx.Cancel()
+					drainTimer := time.NewTimer(streamDrainGracePeriod)
+					select {
+					case <-drainDone:
+						if !drainTimer.Stop() {
+							select {
+							case <-drainTimer.C:
+							default:
+							}
+						}
+						// The dead stream's teardown (ReleaseStreamingResponse) claimed the
+						// connection_closed flag on the shared context. That claim is scoped
+						// to the response it released; clear it so the retry or fallback
+						// attempt that follows doesn't see its own fresh stream as already
+						// closed and fail every read with ErrStreamClosed.
+						ctx.ClearValue(schemas.BifrostContextKeyConnectionClosed)
+						bifrostError = firstChunkErr
+					case <-drainTimer.C:
+						// A provider that ignores attempt cancellation cannot be safely
+						// overlapped with another retry/fallback using the same request state.
+						// Fail closed instead of hanging forever or starting a competing chain.
+						bifrostError = newStreamDrainTimeoutError()
+					}
 				} else if checkedStream == nil {
+					attemptCtx.Cancel()
 					// Empty stream (zero chunks before close — includes the large-payload
 					// passthrough placeholder). Substitute a closed, non-nil channel:
 					// this result becomes the public *StreamRequest return value, and a
@@ -6823,6 +6885,9 @@ func executeRequestWithRetries[T any](
 					result = any(checkedStream).(T)
 				}
 			}
+		}
+		if bifrostError != nil && IsStreamRequestType(requestType) {
+			attemptCtx.Cancel()
 		}
 
 		if bifrostError != nil && bifrostError.ExtraFields.TimeoutSource != "" {
@@ -6921,15 +6986,19 @@ func executeRequestWithRetries[T any](
 		//   won't help — try a different one.
 		// retryable 5xx / network errors: transient server issues — retry with the same key.
 		shouldRetry := false
-		isPerKeyFailure := (bifrostError.StatusCode != nil && perKeyFailureStatusCodes[*bifrostError.StatusCode]) ||
+		contentRule, contentFailure := firstMatchingContentPolicyFallbackRule(req, bifrostError, req.GetErrorFallbacks())
+		contentPolicyDetected := contentRule != nil || isContentPolicyFailure(contentFailure)
+		isPerKeyFailure := !contentPolicyDetected && ((bifrostError.StatusCode != nil && perKeyFailureStatusCodes[*bifrostError.StatusCode]) ||
 			(bifrostError.Error != nil &&
 				(IsRateLimitErrorMessage(bifrostError.Error.Message) ||
 					(bifrostError.Error.Type != nil && IsRateLimitErrorMessage(*bifrostError.Error.Type)) ||
-					(bifrostError.Error.Code != nil && IsRateLimitErrorMessage(*bifrostError.Error.Code))))
+					(bifrostError.Error.Code != nil && IsRateLimitErrorMessage(*bifrostError.Error.Code)))))
 
 		errMessage := bifrostError.GetErrorString()
 
-		if bifrostError.Error != nil &&
+		if contentPolicyDetected {
+			logger.Debug("detected content-policy failure, skipping same-provider retries: %s", errMessage)
+		} else if bifrostError.Error != nil &&
 			(bifrostError.Error.Message == schemas.ErrProviderDoRequest ||
 				bifrostError.Error.Message == schemas.ErrProviderNetworkError) {
 			shouldRetry = true
@@ -7422,6 +7491,7 @@ func (bifrost *Bifrost) requestWorker(provider schemas.Provider, config *schemas
 		// goroutines' defers — passed via the postHookSpanFinalizer parameter directly to
 		// handleProviderStreamRequest, never via the shared req.Context.
 		var lastAttemptFinalizer func(context.Context)
+		var currentAttemptCtx *schemas.BifrostContext
 
 		// Execute request with retries. For streaming, the plugin pipeline,
 		// postHookRunner, and finalizer are allocated per-attempt inside the
@@ -7431,18 +7501,22 @@ func (bifrost *Bifrost) requestWorker(provider schemas.Provider, config *schemas
 		// returned to the pool via its deferred finalizer.
 		if IsStreamRequestType(req.RequestType) {
 			stream, bifrostError = executeRequestWithRetries(req.Context, config, func(k schemas.Key) (chan *schemas.BifrostStreamChunk, *schemas.BifrostError) {
+				attemptCtx := currentAttemptCtx
+				if attemptCtx == nil {
+					attemptCtx = req.Context
+				}
 				if aliasConfig := k.Aliases.ResolveConfig(originalModelRequested); aliasConfig != nil {
 					resolvedModel = aliasConfig.ModelID
-					req.Context.SetValue(schemas.BifrostContextKeyResolvedAlias, &schemas.ResolvedAlias{Key: originalModelRequested, Config: aliasConfig})
+					attemptCtx.SetValue(schemas.BifrostContextKeyResolvedAlias, &schemas.ResolvedAlias{Key: originalModelRequested, Config: aliasConfig})
 				} else {
 					resolvedModel = originalModelRequested
-					req.Context.SetValue(schemas.BifrostContextKeyResolvedAlias, nil)
+					attemptCtx.SetValue(schemas.BifrostContextKeyResolvedAlias, nil)
 				}
 				req.SetModel(resolvedModel)
 				// Snapshot per-attempt so postHookRunner doesn't observe a later retry's
 				// alias while this attempt's provider goroutine is still emitting chunks.
 				attemptResolvedModel := resolvedModel
-				attemptRoutingInfo = schemas.BuildRoutingInfo(req.Context, provider.GetProviderKey(), originalModelRequested, k)
+				attemptRoutingInfo = schemas.BuildRoutingInfo(attemptCtx, provider.GetProviderKey(), originalModelRequested, k)
 				// Layer fallback identity here — the reliable write point. The orchestrator's
 				// post-hand-off ctx write (handleStreamRequest) races the streaming response's
 				// async per-chunk post-hooks, so set IsFallback/Primary on the per-attempt
@@ -7451,9 +7525,9 @@ func (bifrost *Bifrost) requestWorker(provider schemas.Provider, config *schemas
 				// fallback index > 0 ⟺ this attempt is a fallback; Primary comes from the
 				// previous attempt's snapshot (the primary, or the carried-through primary on a
 				// later fallback — clearCtxForFallback keeps BifrostContextKeyRoutingInfo).
-				if fi, _ := req.Context.Value(schemas.BifrostContextKeyFallbackIndex).(int); fi > 0 {
+				if fi, _ := attemptCtx.Value(schemas.BifrostContextKeyFallbackIndex).(int); fi > 0 {
 					attemptRoutingInfo.IsFallback = true
-					if prev, ok := req.Context.Value(schemas.BifrostContextKeyRoutingInfo).(schemas.RoutingInfo); ok {
+					if prev, ok := attemptCtx.Value(schemas.BifrostContextKeyRoutingInfo).(schemas.RoutingInfo); ok {
 						if prev.IsFallback && prev.PrimaryProvider != nil {
 							attemptRoutingInfo.PrimaryProvider = prev.PrimaryProvider
 							attemptRoutingInfo.PrimaryModel = prev.PrimaryModel
@@ -7468,7 +7542,7 @@ func (bifrost *Bifrost) requestWorker(provider schemas.Provider, config *schemas
 				// Stash for the transport: streams carry RoutingInfo only on chunks, but
 				// response headers must be written before the first chunk arrives. Each
 				// retry overwrites, so the winning attempt's snapshot survives.
-				req.Context.SetValue(schemas.BifrostContextKeyRoutingInfo, attemptRoutingInfo)
+				attemptCtx.SetValue(schemas.BifrostContextKeyRoutingInfo, attemptRoutingInfo)
 				// Per-attempt snapshot for the async postHookRunner closure (it must
 				// not capture the outer var by reference — a later retry would race).
 				perAttemptRoutingInfo := attemptRoutingInfo
@@ -7516,20 +7590,26 @@ func (bifrost *Bifrost) requestWorker(provider schemas.Provider, config *schemas
 					finalizerOnce.Do(func() {
 						pipeline.FinalizeStreamingPostHookSpans(ctx)
 						bifrost.releasePluginPipeline(pipeline)
+						attemptCtx.Cancel()
 					})
 				}
 				lastAttemptFinalizer = postHookSpanFinalizer
-				streamCh, streamErr := bifrost.handleProviderStreamRequest(provider, req, k, postHookRunner, postHookSpanFinalizer)
+				attemptReq := *req
+				attemptReq.Context = attemptCtx
+				streamCh, streamErr := bifrost.handleProviderStreamRequest(provider, &attemptReq, k, postHookRunner, postHookSpanFinalizer)
 				// If stream setup failed before any provider goroutine started,
 				// no deferred finalizer will run — release the pipeline directly
 				// so a retry doesn't inherit a leaked pool entry.
 				if streamErr != nil && streamCh == nil {
 					finalizerOnce.Do(func() {
 						bifrost.releasePluginPipeline(pipeline)
+						attemptCtx.Cancel()
 					})
 				}
 				return streamCh, streamErr
-			}, keyProvider, req.RequestType, provider.GetProviderKey(), model, &req.BifrostRequest, bifrost.logger)
+			}, keyProvider, req.RequestType, provider.GetProviderKey(), model, &req.BifrostRequest, bifrost.logger, func(attemptCtx *schemas.BifrostContext) {
+				currentAttemptCtx = attemptCtx
+			})
 		} else {
 			result, bifrostError = executeRequestWithRetries(req.Context, config, func(k schemas.Key) (*schemas.BifrostResponse, *schemas.BifrostError) {
 				if aliasConfig := k.Aliases.ResolveConfig(originalModelRequested); aliasConfig != nil {
@@ -8136,6 +8216,10 @@ func isPluginPanicBifrostError(err *schemas.BifrostError) bool {
 	return err != nil && err.Error != nil && err.Error.Type != nil && *err.Error.Type == "plugin_panic"
 }
 
+func isStreamDrainTimeoutError(err *schemas.BifrostError) bool {
+	return err != nil && err.Type != nil && *err.Type == "stream_drain_timeout"
+}
+
 type requestRoutingSnapshot struct {
 	provider       schemas.ModelProvider
 	model          string
@@ -8355,6 +8439,12 @@ func (p *PluginPipeline) RunPostLLMHooks(ctx *schemas.BifrostContext, resp *sche
 	// If the skip plugin pipeline flag is set, skip the plugin pipeline
 	if skipPluginPipeline, ok := ctx.Value(schemas.BifrostContextKeySkipPluginPipeline).(bool); ok && skipPluginPipeline {
 		return resp, bifrostErr
+	}
+	// A drain timeout means the previous provider attempt may still own live
+	// resources. It is a fail-closed core error: plugins must not recover it or
+	// re-enable fallback, which could overlap a new chain with the stuck attempt.
+	if isStreamDrainTimeoutError(bifrostErr) {
+		return nil, bifrostErr
 	}
 	// Defensive: ensure count is within valid bounds
 	if runFrom < 0 {

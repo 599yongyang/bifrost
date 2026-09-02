@@ -280,6 +280,37 @@ func TestCheckFirstStreamChunk_ErrorWithEmptyMessage(t *testing.T) {
 	<-wrapped
 }
 
+func TestCheckFirstStreamChunk_MetadataLimitReturnsRetryableError(t *testing.T) {
+	stream := make(chan *schemas.BifrostStreamChunk, initialStreamInspectionLimit+1)
+	for i := 0; i < initialStreamInspectionLimit+1; i++ {
+		stream <- &schemas.BifrostStreamChunk{BifrostChatResponse: &schemas.BifrostChatResponse{ID: "metadata"}}
+	}
+	close(stream)
+
+	wrapped, done, bifrostErr := CheckFirstStreamChunkForError(
+		context.Background(),
+		schemas.ChatCompletionStreamRequest,
+		stream,
+		func(*schemas.BifrostStreamChunk) (*schemas.BifrostError, bool) { return nil, false },
+	)
+	if bifrostErr == nil {
+		for range wrapped {
+		}
+		<-done
+		t.Fatal("metadata preflight overflow must return a retryable error")
+	}
+	<-done
+	if wrapped != nil {
+		t.Fatal("metadata preflight overflow must not expose a partially inspected stream")
+	}
+	if bifrostErr == nil || bifrostErr.Type == nil || *bifrostErr.Type != "stream_preflight_limit_exceeded" {
+		t.Fatalf("error = %#v, want stream_preflight_limit_exceeded", bifrostErr)
+	}
+	if bifrostErr.AllowFallbacks == nil || !*bifrostErr.AllowFallbacks {
+		t.Fatal("metadata preflight overflow must allow fallback")
+	}
+}
+
 func TestCheckFirstStreamChunk_CtxCancelUnblocksWrapper(t *testing.T) {
 	// Source with cap=1 so wrapped also has cap=1. wrapped is left full by
 	// the re-injected first chunk, which makes the forwarder goroutine block

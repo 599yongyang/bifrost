@@ -423,7 +423,7 @@ const resources = {
 			routingRuleInfoSheet_no_error_aware_fallbacks_configured: "No error-aware fallbacks configured",
 			errorFallbackEditor_use_a_dedicated_fallback_for_content_safety_blocks: "Use a dedicated fallback for content-safety blocks",
 			errorFallbackEditor_when_the_provider_blocks_a_request_or_response_for_conte:
-				"When the provider blocks a request or response for content safety, use this dedicated chain. Rate limits, timeouts, network failures, and all other errors continue through the ordinary fallback chain above.",
+				"Content-safety failures never use the ordinary fallback chain. Enable this dedicated chain to try configured safety fallback models; leave it disabled to return the original safety error immediately. Rate limits, timeouts, network failures, and all other errors continue through the ordinary fallback chain above.",
 			errorFallbackEditor_enable_content_safety_fallback: "Enable content-safety fallback",
 			errorFallbackEditor_failure_behavior: "Failure behavior",
 			errorFallbackEditor_if_every_content_safety_fallback_fails_bifrost_returns_t:
