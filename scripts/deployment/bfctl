@@ -1,0 +1,3 @@
+#!/bin/sh
+echo "bfctl has been renamed to bifrost-deploy" >&2
+exec /opt/bifrost/bifrost-deploy "$@"

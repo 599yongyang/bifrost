@@ -1,0 +1,803 @@
+#!/usr/bin/env python3
+"""Bifrost deployment operator. No direct DB writes; app startup may migrate schemas."""
+
+import argparse
+import copy
+import datetime as dt
+import fcntl
+import getpass
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+
+
+ROOT = Path('/opt/bifrost')
+PLUGIN_DIR = Path('/opt/bifrost-data/plugins')
+ENTRY = '/app/data/plugins/bifrost-moon-response-sanitizer-linux-amd64-glibc-2.0.0-moon.18.so'
+LEGACY = {
+    '10.1.4.5': {'production': '/opt/bifrost-pg'},
+    '10.1.12.10': {'production': '/bifrost'},
+    '10.1.12.17': {'test': '/opt/bifrost-envs/test', 'standby': '/opt/bifrost-envs/standby'},
+}
+ROLES = ('test', 'standby', 'production')
+PROJECT = 'bifrost-unified'
+
+
+class Refused(Exception):
+    pass
+
+
+def require(condition, message):
+    if not condition:
+        raise Refused(message)
+
+
+def run(args, *, env=None, timeout=60, merge_stderr=False):
+    # Never echo command output on failure: Compose, psql and logs may contain secrets.
+    result = subprocess.run(args, text=True, capture_output=True, env=env, timeout=timeout)
+    require(result.returncode == 0, f'{args[0]} {args[1]} failed (exit {result.returncode}); output withheld to protect secrets')
+    return result.stdout + (result.stderr if merge_stderr else '')
+
+
+def sha(path):
+    with Path(path).open('rb') as stream:
+        return hashlib.file_digest(stream, 'sha256').hexdigest()
+
+
+def read_json(path):
+    return json.loads(Path(path).read_text())
+
+
+def write_json(path, value):
+    atomic_write(path, json.dumps(value, ensure_ascii=False, indent=2) + '\n')
+
+
+def atomic_write(path, value):
+    path = Path(path)
+    with tempfile.NamedTemporaryFile(mode='w', dir=path.parent, delete=False) as stream:
+        tmp = Path(stream.name)
+        os.chmod(tmp, 0o600)
+        stream.write(value)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(tmp, path)
+
+
+def version(value):
+    require(re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+-moon\.[0-9]+', value), 'invalid Moon release version')
+    return value
+
+
+def image_info(ref):
+    info = json.loads(run(['docker', 'image', 'inspect', ref]))[0]
+    require(info['Os'] == 'linux' and info['Architecture'] == 'amd64', 'image must be linux/amd64')
+    return info
+
+
+def fingerprint(info):
+    # Unlike .Id, this is stable across Docker's classic/containerd image stores.
+    content = {key: info.get(key) for key in ('Os', 'Architecture', 'Config', 'RootFS', 'Created')}
+    return hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()
+
+
+def container():
+    ids = run(['docker', 'container', 'ls', '-a', '--filter', 'name=^/bifrost$', '--format', '{{.ID}}']).split()
+    require(len(ids) <= 1, 'ambiguous bifrost container')
+    return json.loads(run(['docker', 'container', 'inspect', ids[0]]))[0] if ids else None
+
+
+def local_ip():
+    links = json.loads(run(['ip', '-j', '-4', 'address', 'show', 'scope', 'global']))
+    found = {addr['local'] for link in links for addr in link.get('addr_info', [])} & LEGACY.keys()
+    require(len(found) == 1, 'host is not exactly one of the three registered Bifrost nodes')
+    return found.pop()
+
+
+def global_ips():
+    links = json.loads(run(['ip', '-j', '-4', 'address', 'show', 'scope', 'global']))
+    return {addr['local'] for link in links for addr in link.get('addr_info', [])}
+
+
+def compose(path, *args, timeout=60):
+    # Pin file/project environment; do not inherit COMPOSE_FILE or unrelated .env values.
+    env = {k: v for k, v in os.environ.items() if not k.startswith('COMPOSE_')}
+    return run(['docker', 'compose', '--env-file', '/dev/null', '-f', str(path), *args], env=env, timeout=timeout)
+
+
+def check_config(config, role):
+    require(set(config) == {'config_store', 'logs_store'}, 'config.json must contain only the two PostgreSQL stores')
+    environment = 'test' if role == 'test' else 'prod'
+    for key, suffix in [('config_store', 'config'), ('logs_store', 'logs')]:
+        store = config[key]
+        cfg = store.get('config', {})
+        require(store.get('enabled') is True and store.get('type') == 'postgres', 'both stores must use PostgreSQL')
+        expected = {'host': '10.1.12.7', 'user': f'bf_{environment}',
+                    'db_name': f'bifrost_{environment}_{suffix}', 'password': 'env.BF_DB_PASSWORD', 'ssl_mode': 'require'}
+        require(all(cfg.get(k) == v for k, v in expected.items()) and str(cfg.get('port')) == '5432',
+                f'{role}: unexpected database, role or TLS configuration')
+
+
+def standard_config(role):
+    environment = 'test' if role == 'test' else 'prod'
+    return {key: {'enabled': True, 'type': 'postgres', 'config': {
+        'host': '10.1.12.7', 'port': '5432', 'user': f'bf_{environment}',
+        'password': 'env.BF_DB_PASSWORD', 'db_name': f'bifrost_{environment}_{suffix}',
+        'ssl_mode': 'require', 'max_idle_conns': 2, 'max_open_conns': maximum,
+    }} for key, suffix, maximum in [('config_store', 'config', 5), ('logs_store', 'logs', 10)]}
+
+
+def standard_service(role):
+    service = {
+        'image': 'bifrost-moon:not-yet-imported', 'platform': 'linux/amd64', 'pull_policy': 'never',
+        'container_name': 'bifrost', 'restart': 'unless-stopped',
+        'ports': [{'target': 8080, 'published': '18080' if role == 'test' else '8080', 'protocol': 'tcp'}],
+        'environment': {'APP_DIR': '/app/data', 'APP_HOST': '0.0.0.0', 'APP_PORT': '8080',
+                        'LOG_LEVEL': 'info', 'LOG_STYLE': 'json', 'GOGC': '100', 'BIFROST_AUTO_GOMEMLIMIT': '1'},
+        'volumes': [], 'mem_limit': '6g', 'memswap_limit': '6g', 'cpus': '3',
+        'ulimits': {'nofile': {'soft': 65536, 'hard': 65536}}, 'stop_grace_period': '5m',
+        'logging': {'driver': 'json-file', 'options': {'max-size': '20m', 'max-file': '5'}},
+    }
+    if role != 'test':
+        service['extra_hosts'] = {'langfuse-archive.tailb34b09.ts.net': '100.108.96.112'}
+    return service
+
+
+def password(path):
+    require(Path(path).stat().st_mode & 0o077 == 0, 'postgres.env must be mode 600 (or stricter)')
+    lines = [s for s in Path(path).read_text().splitlines() if s.strip() and not s.lstrip().startswith('#')]
+    require(len(lines) == 1 and lines[0].startswith('BF_DB_PASSWORD='), 'secret file must contain only BF_DB_PASSWORD=... in raw format')
+    result = lines[0].split('=', 1)[1]
+    require(bool(result) and '\x00' not in result, 'empty or invalid database password')
+    return result
+
+
+def read_secret(label):
+    require(sys.stdin.isatty(), 'interactive terminal required to enter database passwords')
+    first = getpass.getpass(f'{label} PostgreSQL password: ')
+    second = getpass.getpass(f'Repeat {label} PostgreSQL password: ')
+    require(first == second and bool(first) and '\n' not in first and '\x00' not in first,
+            'passwords did not match or contain an unsupported character')
+    return first
+
+
+def db_check(config, secret, role):
+    check_config(config, role)
+    env = {k: v for k, v in os.environ.items() if not k.startswith('PG')}
+    env.update(PGPASSWORD=password(secret), PGOPTIONS='-c default_transaction_read_only=on -c statement_timeout=10000')
+    for key in ('config_store', 'logs_store'):
+        cfg = config[key]['config']
+        sql = "SELECT current_database() || '|' || current_user || '|' || ssl::text FROM pg_stat_ssl WHERE pid=pg_backend_pid();"
+        conn = f"host=10.1.12.7 port=5432 dbname={cfg['db_name']} user={cfg['user']} sslmode=require connect_timeout=5"
+        args = ['psql', conn, '-X', '-w', '-At', '-v', 'ON_ERROR_STOP=1', '-c']
+        result = run(args + [sql], env=env).strip()
+        require(result == f"{cfg['db_name']}|{cfg['user']}|true", 'database identity/TLS check failed')
+        if key == 'config_store':
+            result = run(args + ["SELECT path FROM config_plugins WHERE name='moon' AND enabled=true;"], env=env).strip()
+            require(result == ENTRY, 'shared Moon entry is unexpected or disabled; do not auto-change shared DB')
+            if role == 'test':
+                result = run(args + ["SELECT COUNT(*) FROM config_plugins WHERE name='otel' AND enabled=true;"], env=env).strip()
+                require(result == '0', 'test OTel is enabled; review isolation before proceeding')
+        else:
+            result = run(args + ["SELECT to_regclass('public.logs') IS NOT NULL;"], env=env).strip()
+            require(result == 't', 'logs schema is not initialized; this tool does not bootstrap databases')
+
+
+def check_tree(path):
+    require(path.is_dir() and not path.is_symlink(), f'not a real directory: {path}')
+    for item in path.rglob('*'):
+        require(not item.is_symlink() and (item.is_dir() or item.is_file()), f'unsupported symlink/special file: {item}')
+
+
+def has_raw_postgres_env(text):
+    """Validate the one supported env_file shape without depending on Compose's JSON normalization."""
+    lines = text.splitlines()
+    starts = [i for i, line in enumerate(lines) if line.strip() == 'env_file:']
+    if len(starts) != 1:
+        return False
+    start = starts[0]
+    base = len(lines[start]) - len(lines[start].lstrip())
+    block = []
+    for line in lines[start + 1:]:
+        if line.strip() and len(line) - len(line.lstrip()) <= base:
+            break
+        if line.strip() and not line.lstrip().startswith('#'):
+            block.append(line.strip())
+    entries = [line for line in block if line.startswith('-')]
+    paths = [line for line in block if re.fullmatch(r"-\s+path:\s*(['\"]?)\./postgres\.env\1", line)]
+    formats = [line for line in block if re.fullmatch(r"format:\s*(['\"]?)raw\1", line)]
+    return len(entries) == len(paths) == len(formats) == 1
+
+
+def normalize_legacy_service(service, compose_source):
+    require(has_raw_postgres_env(compose_source), 'legacy Compose must declare exactly one ./postgres.env with format: raw')
+    require(not re.search(r'^\s*BF_DB_PASSWORD\s*:', compose_source, re.MULTILINE),
+            'do not declare BF_DB_PASSWORD directly in Compose environment')
+    service = copy.deepcopy(service)
+    # Compose 2.40 may resolve env_file into environment and report env_file=null.
+    # The source declaration above is authoritative; never persist the resolved secret.
+    service.pop('env_file', None)
+    environment = service.get('environment') or {}
+    require(isinstance(environment, dict), 'legacy Compose environment must be a mapping')
+    environment.pop('BF_DB_PASSWORD', None)
+    service['environment'] = environment
+    return service
+
+
+def read_versions(root):
+    values = {}
+    for line in (root / 'versions.env').read_text().splitlines():
+        if not line.strip() or line.lstrip().startswith('#'):
+            continue
+        key, sep, value = line.partition('=')
+        require(sep and key in {f'{r.upper()}_VERSION' for r in ROLES} and key not in values,
+                'versions.env accepts only unique ROLE_VERSION=release lines (no shell syntax)')
+        values[key] = version(value)
+    return values
+
+
+def release(root, ver):
+    path = root / 'releases' / version(ver)
+    manifest = read_json(path / 'release.json')
+    require(manifest.get('version') == ver, 'release manifest version mismatch')
+    require(sha(path / 'moon.so') == manifest['plugin_sha256'], 'release plugin checksum mismatch')
+    info = image_info(f'bifrost-moon:{ver}')
+    require(fingerprint(info) == manifest['image_fingerprint'], 'image differs from registered release; do not reuse version tags')
+    return manifest, info['Id']
+
+
+def pack(args):
+    ver = version(args.version)
+    info = image_info(f'bifrost-moon:{ver}')
+    plugin = Path(args.plugin).resolve()
+    require(plugin.is_file(), 'plugin file missing')
+    output = Path(args.output).resolve()
+    require(not output.exists(), 'output exists; releases are immutable')
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='.bf-package-', dir=output.parent) as temp:
+        stage = Path(temp)
+        shutil.copyfile(plugin, stage / 'moon.so')
+        run(['docker', 'image', 'save', '-o', str(stage / 'image.tar'), f'bifrost-moon:{ver}'], timeout=600)
+        require(fingerprint(image_info(f'bifrost-moon:{ver}')) == fingerprint(info), 'image changed during packaging')
+        write_json(stage / 'release.json', {'version': ver, 'image_fingerprint': fingerprint(info),
+                   'plugin_sha256': sha(stage / 'moon.so'), 'archive_sha256': sha(stage / 'image.tar')})
+        shutil.copytree(stage, output)
+    print(f'PACKAGE_READY: {output}; pairing/ABI and inference still require test-environment validation')
+
+
+def import_bundle(root, args):
+    source = Path(args.bundle).resolve()
+    manifest = read_json(source / 'release.json')
+    ver = version(manifest['version'])
+    target = root / 'releases' / ver
+    require(not target.exists(), 'release already registered; refuse overwrite')
+    require(sha(source / 'moon.so') == manifest['plugin_sha256'], 'bundle plugin checksum mismatch')
+    require(sha(source / 'image.tar') == manifest['archive_sha256'], 'bundle archive checksum mismatch')
+    tag = f'bifrost-moon:{ver}'
+    existing = run(['docker', 'image', 'ls', '-q', tag]).strip()
+    if existing:
+        require(fingerprint(image_info(tag)) == manifest['image_fingerprint'], 'same tag already exists with different content')
+    else:
+        print('Loading verified image archive (this does not restart Bifrost)...', flush=True)
+        run(['docker', 'image', 'load', '-i', str(source / 'image.tar')], timeout=600)
+    require(fingerprint(image_info(tag)) == manifest['image_fingerprint'], 'loaded image does not match manifest')
+    with tempfile.TemporaryDirectory(prefix='.import-', dir=root / 'releases') as temp:
+        stage = Path(temp)
+        for name in ('moon.so', 'image.tar', 'release.json'):
+            shutil.copyfile(source / name, stage / name)
+        require(sha(stage / 'moon.so') == manifest['plugin_sha256'] and sha(stage / 'image.tar') == manifest['archive_sha256'],
+                'bundle changed during copy')
+        os.chmod(stage / 'moon.so', 0o644)
+        os.rename(stage, target)
+    placeholder = root / 'plugins' / Path(ENTRY).name
+    if not placeholder.exists():
+        shutil.copyfile(target / 'moon.so', placeholder)
+        os.chmod(placeholder, 0o644)
+    print(f'IMPORTED: {ver}; current running version unchanged')
+
+
+def init(root):
+    require(not (root / 'config/node.json').exists(), 'already initialized; init never overwrites configuration')
+    ip = local_ip()
+    profiles = {}
+    # Complete read-only validation before creating deployment configuration.
+    for role, directory in LEGACY[ip].items():
+        source = Path(directory)
+        document = json.loads(compose(source / 'compose.yaml', 'config', '--no-env-resolution', '--format', 'json'))
+        require(set(document['services']) == {'bifrost'}, 'legacy Compose must contain exactly the bifrost service')
+        service = normalize_legacy_service(document['services']['bifrost'], (source / 'compose.yaml').read_text())
+        require(service.get('container_name') == 'bifrost', 'unexpected legacy container name')
+        require(service.get('network_mode', 'bridge') == 'bridge', 'custom network mode needs manual adoption review')
+        # `compose config` materializes the implicit default network even if YAML omitted it.
+        require(not (set(service.get('networks', {})) - {'default'}), 'custom networks need manual adoption review')
+        networks = document.get('networks', {})
+        if networks.get('default', {}).get('ipam') == {}:
+            networks['default'].pop('ipam')
+        require(not networks or networks == {'default': {'name': document['name'] + '_default'}},
+                'non-default network configuration needs manual adoption review')
+        service.pop('networks', None)
+        ver = version(service['image'].removeprefix('bifrost-moon:'))
+        require(service['image'] == f'bifrost-moon:{ver}', 'unexpected image repository')
+        mounts = {m['target']: m for m in service['volumes']}
+        required = {'/app/data', '/app/data/config.json', '/app/data/plugins'}
+        require(required <= mounts.keys() and not (mounts.keys() - required - {ENTRY}), 'unknown or missing mount; review before adopting')
+        require(all(m['type'] == 'bind' for m in mounts.values()), 'only bind mounts supported for adoption')
+        require(Path(mounts['/app/data']['source']) == source / 'data', 'unexpected legacy data path')
+        require(Path(mounts['/app/data/config.json']['source']) == source / 'config.json', 'unexpected legacy config path')
+        require(Path(mounts['/app/data/plugins']['source']) == PLUGIN_DIR, 'unexpected legacy plugin directory')
+        check_config(read_json(source / 'config.json'), role)
+        password(source / 'postgres.env')
+        check_ports(service, role)
+        check_tree(source / 'data')
+        plugin = Path(mounts.get(ENTRY, {}).get('source', str(PLUGIN_DIR / f'bifrost-moon-response-sanitizer-linux-amd64-glibc-{ver}.so')))
+        require(plugin.is_file(), 'paired plugin file missing')
+        info = image_info(service['image'])
+        profiles[role] = {'legacy': str(source), 'legacy_project': document['name'], 'service': service, 'version': ver,
+                          'plugin': str(plugin), 'manifest': {'version': ver, 'plugin_sha256': sha(plugin), 'image_fingerprint': fingerprint(info)},
+                          'source_hashes': {name: sha(source / name) for name in ('compose.yaml', 'config.json', 'postgres.env')}}
+    check_tree(PLUGIN_DIR)
+    for name in ('config', 'secrets', 'releases', 'data', 'backups', 'inbox'):
+        (root / name).mkdir(mode=0o700, parents=True, exist_ok=True)
+    for role, profile in profiles.items():
+        source = Path(profile['legacy'])
+        cfg = root / 'config' / f'{role}.json'
+        secret = root / 'secrets' / f'{role}.env'
+        require(not cfg.exists() and not secret.exists(), 'partial init exists; inspect it rather than overwrite')
+        shutil.copyfile(source / 'config.json', cfg)
+        shutil.copyfile(source / 'postgres.env', secret)
+        os.chmod(cfg, 0o600)
+        os.chmod(secret, 0o600)
+        target = root / 'releases' / profile['version']
+        if not target.exists():
+            target.mkdir(mode=0o700)
+            shutil.copyfile(profile['plugin'], target / 'moon.so')
+            os.chmod(target / 'moon.so', 0o644)
+            write_json(target / 'release.json', profile['manifest'])
+        else:
+            require(read_json(target / 'release.json') == profile['manifest'], 'same version has conflicting node artifacts')
+        write_json(root / 'config' / f'{role}.compose.json', profile['service'])
+    require(not (root / 'plugins').exists(), 'plugin staging directory already exists')
+    shutil.copytree(PLUGIN_DIR, root / 'plugins', copy_function=shutil.copy2)
+    write_json(root / 'config/node.json', {'ip': ip, 'profiles': profiles})
+    atomic_write(root / 'versions.env', ''.join(f'{r.upper()}_VERSION={p["version"]}\n' for r, p in profiles.items()))
+    print(f'INITIALIZED: {ip} -> {root}; old container, old directories and databases unchanged')
+    print('Next: plan the current role, then adopt that SAME version/role. Data is copied only after stopping its old writer.')
+
+
+def bootstrap(root, args):
+    """Create a clean standardized node. This never adopts an old container or directory."""
+    require(not (root / 'config/node.json').exists(), 'already initialized; bootstrap never overwrites a node')
+    require(container() is None, 'a bifrost container already exists; use legacy init/adopt or review it manually')
+    ip = args.ip
+    require(ip in global_ips(), 'the requested IP is not assigned to this host')
+    ver = version(args.version)
+    roles = ('production',) if args.node_type == 'production' else ('test', 'standby')
+    paths = {name: root / name for name in ('config', 'secrets', 'releases', 'data', 'backups', 'inbox', 'plugins')}
+    for path in paths.values():
+        require(not path.exists(), f'partial bootstrap path exists: {path}; inspect rather than overwrite')
+    secrets = {}
+    for role in roles:
+        label = 'bf_test' if role == 'test' else 'bf_prod'
+        secrets[role] = read_secret(label)
+
+    # Validate credentials and database identity before writing node configuration.
+    with tempfile.TemporaryDirectory(prefix='.bootstrap-check-', dir=root) as temp:
+        temp = Path(temp)
+        for role in roles:
+            secret = temp / f'{role}.env'
+            atomic_write(secret, f'BF_DB_PASSWORD={secrets[role]}\n')
+            db_check(standard_config(role), secret, role)
+
+    for name, path in paths.items():
+        path.mkdir(mode=0o750 if name == 'plugins' else 0o700)
+    profiles = {}
+    for role in roles:
+        write_json(root / 'config' / f'{role}.json', standard_config(role))
+        write_json(root / 'config' / f'{role}.compose.json', standard_service(role))
+        atomic_write(root / 'secrets' / f'{role}.env', f'BF_DB_PASSWORD={secrets[role]}\n')
+        profiles[role] = {'provisioned_by': 'bootstrap'}
+    write_json(root / 'config/node.json', {'ip': ip, 'profiles': profiles, 'provisioned_by': 'bootstrap'})
+    atomic_write(root / 'versions.env', ''.join(f'{role.upper()}_VERSION={ver}\n' for role in roles))
+    print(f'BOOTSTRAPPED: {ip} roles={",".join(roles)} target={ver}; no container was started')
+    print('Next: import the paired release, then plan and launch the initial role.')
+
+
+def check_ports(service, role):
+    ports = service.get('ports', [])
+    expected = '18080' if role == 'test' else '8080'
+    require(bool(ports) and all(str(p['published']) == expected and p['target'] == 8080 and p.get('protocol', 'tcp') == 'tcp' for p in ports),
+            f'{role} must publish only {expected}->8080/tcp')
+
+
+def node(root):
+    value = read_json(root / 'config/node.json')
+    if value['ip'] in LEGACY:
+        require(value['ip'] == local_ip(), 'node configuration belongs to a different host')
+    else:
+        require(value['ip'] in global_ips(), 'node configuration IP is not assigned to this host')
+    return value
+
+
+def build_compose(root, role, ver, image_id, revision, service):
+    service = copy.deepcopy(service)
+    service.update(image=image_id, pull_policy='never', container_name='bifrost')
+    service.setdefault('labels', {}).update({'bifrost.managed_by': 'bifrost-deploy', 'bifrost.deployment_role': role,
+                                            'bifrost.release': ver, 'bifrost.revision': str(revision)})
+    service['env_file'] = [{'path': str(revision / 'postgres.env'), 'format': 'raw'}]
+    service['volumes'] = []
+    for source, target, readonly in [(root / 'data' / role, '/app/data', False),
+                                     (revision / 'config.json', '/app/data/config.json', True),
+                                     (root / 'plugins', '/app/data/plugins', True),
+                                     (root / 'releases' / ver / 'moon.so', ENTRY, True)]:
+        service['volumes'].append({'type': 'bind', 'source': str(source), 'target': target,
+                                   'read_only': readonly, 'bind': {'create_host_path': False}})
+    check_ports(service, role)
+    return {'name': PROJECT, 'services': {'bifrost': service}}
+
+
+def prepare(root, role):
+    cfg = node(root)
+    require(role in cfg['profiles'], 'role not allowed on this node')
+    ver = read_versions(root).get(f'{role.upper()}_VERSION')
+    require(ver is not None, 'version variable missing for this role')
+    manifest, image_id = release(root, ver)
+    require((root / 'plugins' / Path(ENTRY).name).is_file(), 'fixed plugin mount-point file is missing from preserved plugins directory')
+    config = read_json(root / 'config' / f'{role}.json')
+    service = read_json(root / 'config' / f'{role}.compose.json')
+    check_ports(service, role)
+    require('BF_DB_PASSWORD' not in service.get('environment', {}), 'password must be in secret file only')
+    db_check(config, root / 'secrets' / f'{role}.env', role)
+    print(f"TARGET: {cfg['ip']}  role={role}  version={ver}  port={'18080' if role == 'test' else '8080'}")
+    print(f"DATABASES: {config['config_store']['config']['db_name']} + {config['logs_store']['config']['db_name']}")
+    print(f"PLUGIN SHA256: {manifest['plugin_sha256']}")
+    return cfg, ver, image_id, service
+
+
+def no_data_writer(path):
+    ids = run(['docker', 'ps', '-q']).split()
+    if not ids:
+        return
+    for item in json.loads(run(['docker', 'inspect', *ids])):
+        for mount in item.get('Mounts', []):
+            source = Path(mount['Source'])
+            if mount.get('RW', True):
+                require(not (source == path or source in path.parents or path in source.parents),
+                        'a running container still mounts the legacy data tree writable; stop its writer first')
+
+
+def confirm(action, role, ver):
+    print('Confirm: callers have been stopped/drained; pending image/video work and log flush are accounted for.')
+    if role in ('production', 'standby'):
+        print('Production gate: test passed, shared-schema coexistence AND rollback compatibility reviewed, DB backup available.')
+    else:
+        print('Test gate: real-supplier cost and test-only database/external destinations have been reviewed.')
+    print('This tool does NOT switch NewAPI channels, back up/restore PostgreSQL, or prove business-level success.')
+    token = f'{action} {role} {ver}'
+    require(sys.stdin.isatty(), 'interactive terminal required; no unattended confirmation bypass')
+    require(input(f'Type {token!r} to continue: ') == token, 'cancelled; no deployment change')
+
+
+def ensure_managed(current):
+    managers = ('bfctl', 'bifrost-deploy')
+    require(current is not None and current['Config'].get('Labels', {}).get('bifrost.managed_by') in managers,
+            'container is not managed by bifrost-deploy; use legacy adopt only for an old deployment')
+    require(current['Config']['Labels'].get('com.docker.compose.project') == PROJECT, 'unexpected Compose project')
+
+
+def legacy_role(current, cfg):
+    require(current is not None, 'legacy container bifrost not found')
+    labels = current['Config'].get('Labels', {})
+    directory = labels.get('com.docker.compose.project.working_dir')
+    matches = [r for r, p in cfg['profiles'].items() if p.get('legacy') == directory and p.get('legacy_project') == labels.get('com.docker.compose.project')]
+    require(len(matches) == 1, 'legacy container ownership/path does not match registered profile')
+    return matches[0]
+
+
+def state(root):
+    return read_json(root / 'state.json') if (root / 'state.json').exists() else None
+
+
+def new_revision(root, role, ver, image_id, service):
+    revision = Path(tempfile.mkdtemp(prefix=dt.datetime.now(dt.timezone.utc).strftime('%Y%m%dT%H%M%SZ-'), dir=root / 'backups'))
+    for source, name in [(root / 'config' / f'{role}.json', 'config.json'),
+                         (root / 'secrets' / f'{role}.env', 'postgres.env')]:
+        shutil.copyfile(source, revision / name)
+        os.chmod(revision / name, 0o640 if name == 'config.json' else 0o600)
+    # Container user is 1000:0; root group may read only the bind-mounted config, never the password file.
+    os.chown(revision / 'config.json', 0, 0)
+    document = build_compose(root, role, ver, image_id, revision, service)
+    write_json(revision / 'compose.yaml', document)  # JSON is valid YAML, no PyYAML dependency.
+    compose(revision / 'compose.yaml', 'config', '--quiet')
+    write_json(revision / 'metadata.json', {'role': role, 'version': ver,
+               'config_sha256': sha(revision / 'config.json'), 'secret_sha256': sha(revision / 'postgres.env')})
+    return {'kind': 'managed', 'role': role, 'version': ver, 'revision': str(revision)}
+
+
+def verify(root, expected):
+    require(expected and expected['kind'] == 'managed', 'no managed revision to verify')
+    revision = Path(expected['revision'])
+    metadata = read_json(revision / 'metadata.json')
+    require(sha(revision / 'config.json') == metadata['config_sha256'] and sha(revision / 'postgres.env') == metadata['secret_sha256'],
+            'immutable revision config/secret was modified')
+    manifest, image_id = release(root, expected['version'])
+    current = container()
+    ensure_managed(current)
+    labels = current['Config']['Labels']
+    require(labels.get('bifrost.revision') == str(revision) and labels.get('bifrost.deployment_role') == expected['role'], 'running revision/role mismatch')
+    require(current['Image'] == image_id and current['State'].get('Health', {}).get('Status') == 'healthy', 'image/health mismatch')
+    expected_mounts = {m['target']: m['source'] for m in read_json(revision / 'compose.yaml')['services']['bifrost']['volumes']}
+    actual_mounts = {m['Destination']: m['Source'] for m in current['Mounts']}
+    require(all(actual_mounts.get(k) == v for k, v in expected_mounts.items()), 'runtime mount mismatch')
+    for path, checksum in [(ENTRY, manifest['plugin_sha256']), ('/app/data/config.json', metadata['config_sha256'])]:
+        require(run(['docker', 'exec', 'bifrost', 'sha256sum', path]).split()[0] == checksum, 'container file checksum mismatch')
+    health = json.loads(run(['docker', 'exec', 'bifrost', 'wget', '-qO-', 'http://127.0.0.1:8080/health']))
+    require(health.get('status') == 'ok' and health.get('components', {}).get('db_pings') == 'ok', 'in-container DB health probe failed')
+    db_check(read_json(revision / 'config.json'), revision / 'postgres.env', expected['role'])
+    receipt = revision / 'startup-evidence.json'
+    identity = {'container_id': current['Id'], 'started_at': current['State']['StartedAt'],
+                'plugin_sha256': manifest['plugin_sha256']}
+    if not receipt.exists() or read_json(receipt) != identity:
+        logs = run(['docker', 'logs', '--since', current['State']['StartedAt'], '--tail', '5000', 'bifrost'], merge_stderr=True)
+        require(re.search(r'plugin status:\s*moon\s*-\s*active', logs),
+                'Moon startup evidence missing (not proof of inactivity); inspect private startup logs before serving traffic')
+        # No secret log contents saved. A restart/new container invalidates this receipt.
+        write_json(receipt, identity)
+    print('VERIFY_OK: image, mounted files, DB credentials/TLS, DB health and Moon startup evidence match.')
+    print('Still required: real image request, result visibility, identity hiding, fallback and Langfuse checks before enabling the channel.')
+
+
+def start(root, expected):
+    revision = Path(expected['revision'])
+    atomic_write(root / 'compose.yaml', (revision / 'compose.yaml').read_text())
+    compose(root / 'compose.yaml', 'up', '-d', '--force-recreate', '--pull', 'never', '--wait', '--wait-timeout', '120', timeout=480)
+    verify(root, expected)
+
+
+def launch(root, role):
+    require(not (root / 'pending.json').exists(), 'unfinished operation exists; inspect status and use rollback first')
+    require(state(root) is None and container() is None, 'initial launch requires no existing state or bifrost container')
+    _, ver, image_id, service = prepare(root, role)
+    confirm('LAUNCH', role, ver)
+    after = new_revision(root, role, ver, image_id, service)
+    db_check(read_json(Path(after['revision']) / 'config.json'), Path(after['revision']) / 'postgres.env', role)
+    before = {'kind': 'absent', 'role': role, 'version': ver}
+    journal = {'before': before, 'after': after}
+    data = root / 'data' / role
+    require(not data.exists(), 'initial role data directory already exists; inspect partial launch')
+    write_json(root / 'pending.json', journal)
+    write_json(Path(after['revision']) / 'transition.json', journal)
+    data.mkdir(mode=0o2770)
+    os.chown(data, 1000, 0)
+    start(root, after)
+    write_json(root / 'state.json', after)
+    write_json(root / 'last-transition.json', journal)
+    (root / 'pending.json').unlink()
+    print('LAUNCHED: basic verification passed. Keep the channel disabled until business smoke tests pass.')
+
+
+def deploy(root, role, adopt=False):
+    require(not (root / 'pending.json').exists(), 'unfinished operation exists; inspect status and use rollback first')
+    cfg, ver, image_id, service = prepare(root, role)
+    current = container()
+    previous = state(root)
+    if adopt:
+        require(previous is None, 'already adopted; use deploy')
+        require(legacy_role(current, cfg) == role, 'adopt must keep the currently active legacy role; switch modes AFTER adoption')
+        profile = cfg['profiles'][role]
+        require(ver == profile['version'] and current['Config']['Image'] == f'bifrost-moon:{ver}', 'adoption must not change the release version')
+        for name, digest in profile['source_hashes'].items():
+            require(sha(Path(profile['legacy']) / name) == digest, 'legacy files changed since init; review before adoption')
+        require(current['Image'] == image_id, 'legacy running image differs from release')
+        previous = {'kind': 'legacy', 'role': role, 'version': ver, 'container_id': current['Id'],
+                    'restart': current['HostConfig']['RestartPolicy']['Name'],
+                    'running': current['State']['Running'], 'legacy': profile['legacy']}
+    else:
+        ensure_managed(current)
+        require(previous and current['Config']['Labels'].get('bifrost.revision') == previous['revision'], 'state differs from current container')
+    legacy = cfg['profiles'][role].get('legacy')
+    require(not adopt or legacy, 'adopt is only for a registered legacy deployment')
+    source_data = Path(legacy) / 'data' if legacy else None
+    if source_data and (adopt or not (root / 'data' / role).exists()):
+        check_tree(source_data)
+        size = sum(p.stat().st_size for p in source_data.rglob('*') if p.is_file())
+        require(shutil.disk_usage(root).free > size + 128 * 1024 * 1024, 'not enough free disk to safely copy legacy runtime data')
+    confirm('ADOPT' if adopt else 'DEPLOY', role, ver)
+    after = new_revision(root, role, ver, image_id, service)
+    # Recheck the exact copied files, not a mutable profile read earlier in prepare().
+    db_check(read_json(Path(after['revision']) / 'config.json'), Path(after['revision']) / 'postgres.env', role)
+    if adopt:
+        # Keep this historical prefix: already-adopted nodes use it to identify the preserved legacy container.
+        previous['backup_name'] = 'bifrost-before-bfctl-' + Path(after['revision']).name.lower()
+    journal = {'before': previous, 'after': after}
+    # Write recovery information BEFORE the first action that stops a service.
+    write_json(root / 'pending.json', journal)
+    write_json(Path(after['revision']) / 'transition.json', journal)
+    print('Stopping this node; no NewAPI channel has been changed...', flush=True)
+    run(['docker', 'stop', '--time', '300', current['Id']], timeout=360)
+    stopped = json.loads(run(['docker', 'inspect', current['Id']]))[0]
+    require(not stopped['State']['Running'] and stopped['State'].get('ExitCode') == 0 and not stopped['State'].get('OOMKilled'),
+            'unclean/forced shutdown; preserve evidence and inspect before rollback')
+    if adopt:
+        run(['docker', 'update', '--restart=no', current['Id']])
+        run(['docker', 'rename', current['Id'], previous['backup_name']])
+    # Never copy data while its writer is running; inactive node17 mode has a separate source.
+    destination = root / 'data' / role
+    if source_data and (adopt or not destination.exists()):
+        no_data_writer(source_data)
+    if adopt and destination.exists():
+        # Re-adoption after restoring legacy must not reuse a stale earlier runtime copy.
+        os.rename(destination, Path(after['revision']) / 'data-before-readoption')
+    if not destination.exists():
+        if source_data:
+            with tempfile.TemporaryDirectory(prefix='.data-', dir=root / 'data') as temp:
+                run(['cp', '-a', str(source_data) + '/.', temp], timeout=600)
+                os.chown(temp, 1000, 0)
+                os.chmod(temp, 0o2770)
+                os.rename(temp, destination)
+        else:
+            destination.mkdir(mode=0o2770)
+            os.chown(destination, 1000, 0)
+    start(root, after)
+    write_json(root / 'state.json', after)
+    write_json(root / 'last-transition.json', journal)
+    (root / 'pending.json').unlink()
+    print('DEPLOYED: basic verification passed. Keep the channel disabled until business smoke tests pass.')
+
+
+def rollback(root):
+    node(root)
+    path = root / ('pending.json' if (root / 'pending.json').exists() else 'last-transition.json')
+    require(path.exists(), 'no rollback transition available')
+    journal = read_json(path)
+    before = journal['before']
+    current = container()
+    if current and not (before['kind'] == 'legacy' and current['Id'] == before['container_id']):
+        ensure_managed(current)
+        allowed = {journal['after']['revision']}
+        if before['kind'] == 'managed':
+            allowed.add(before['revision'])
+        require(current['Config']['Labels'].get('bifrost.revision') in allowed,
+                'running container is unrelated to the rollback transition; review manual changes')
+    confirm('ROLLBACK', before['role'], before['version'])
+    # Persist even rollback attempts so a failed rollback remains recoverable.
+    write_json(root / 'pending.json', journal)
+    current = container()
+    if before['kind'] == 'absent':
+        if current:
+            ensure_managed(current)
+            if current['State']['Running']:
+                run(['docker', 'stop', '--time', '300', current['Id']], timeout=360)
+            run(['docker', 'update', '--restart=no', current['Id']])
+            run(['docker', 'rename', current['Id'], 'bifrost-failed-' + dt.datetime.now().strftime('%Y%m%d%H%M%S')])
+        if (root / 'state.json').exists():
+            (root / 'state.json').unlink()
+        if (root / 'compose.yaml').exists():
+            os.replace(root / 'compose.yaml', Path(journal['after']['revision']) / 'active-before-first-launch-rollback.yaml')
+        data = root / 'data' / before['role']
+        if data.exists():
+            os.replace(data, Path(journal['after']['revision']) / 'data-before-first-launch-rollback')
+        print('INITIAL_LAUNCH_ROLLED_BACK: no Bifrost container is active; generated data and evidence were retained.')
+    elif before['kind'] == 'legacy':
+        old = json.loads(run(['docker', 'inspect', before['container_id']]))[0]
+        if current and current['Id'] != old['Id']:
+            ensure_managed(current)
+            run(['docker', 'stop', '--time', '300', current['Id']], timeout=360)
+            run(['docker', 'update', '--restart=no', current['Id']])
+            run(['docker', 'rename', current['Id'], 'bifrost-failed-' + dt.datetime.now().strftime('%Y%m%d%H%M%S')])
+        if old['Name'] != '/bifrost':
+            run(['docker', 'rename', old['Id'], 'bifrost'])
+        run(['docker', 'update', f"--restart={before['restart']}", old['Id']])
+        if before['running']:
+            run(['docker', 'start', old['Id']])
+        if (root / 'state.json').exists():
+            (root / 'state.json').unlink()
+        if (root / 'compose.yaml').exists():
+            os.replace(root / 'compose.yaml', Path(journal['after']['revision']) / 'active-before-legacy-rollback.yaml')
+        print(f"LEGACY_RESTORED: use {before['legacy']}/compose.yaml; verify health and business behavior manually.")
+    else:
+        release(root, before['version'])
+        db_check(read_json(Path(before['revision']) / 'config.json'), Path(before['revision']) / 'postgres.env', before['role'])
+        if current:
+            ensure_managed(current)
+            run(['docker', 'stop', '--time', '300', current['Id']], timeout=360)
+        start(root, before)
+        write_json(root / 'state.json', before)
+        print('ROLLED_BACK: versions.env is unchanged; check desired vs running versions before the next deploy.')
+    (root / 'pending.json').unlink()
+    if (root / 'last-transition.json').exists():
+        (root / 'last-transition.json').unlink()
+    print('No database was restored. Retained backup files/containers can be inspected; none were deleted.')
+
+
+def status(root):
+    cfg = node(root)
+    print(f"NODE: {cfg['ip']}  ROOT: {root}")
+    print('DESIRED:', json.dumps(read_versions(root)))
+    current = container()
+    if current:
+        labels = current['Config'].get('Labels', {})
+        print('RUNNING:', json.dumps({'state': current['State']['Status'], 'health': current['State'].get('Health', {}).get('Status'),
+              'role': labels.get('bifrost.deployment_role', 'legacy/unknown'), 'version': labels.get('bifrost.release', current['Config']['Image']),
+              'managed': labels.get('bifrost.managed_by') in ('bfctl', 'bifrost-deploy'), 'ports': current['HostConfig']['PortBindings']}, ensure_ascii=False))
+    else:
+        print('RUNNING: no bifrost container')
+    print('PENDING:', (root / 'pending.json').exists())
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest='command', required=True)
+    package = commands.add_parser('pack', help='build-machine: package a locally built image and matching plugin')
+    package.add_argument('version')
+    package.add_argument('--plugin', required=True)
+    package.add_argument('--output', required=True)
+    bootstrap_command = commands.add_parser('bootstrap', help='initialize a brand-new standardized node; never start a container')
+    bootstrap_command.add_argument('node_type', choices=('production', 'test-standby'))
+    bootstrap_command.add_argument('--ip', required=True)
+    bootstrap_command.add_argument('--version', required=True)
+    commands.add_parser('init', help='legacy only: stage an old deployment for adoption')
+    commands.add_parser('status', help='safe role/version/port summary')
+    commands.add_parser('verify', help='verify running managed revision; no paid inference')
+    commands.add_parser('rollback', help='interactively restore the previous container deployment, NOT the database')
+    bundle = commands.add_parser('import', help='register an immutable offline release without restarting')
+    bundle.add_argument('bundle')
+    for name in ('plan', 'launch', 'adopt', 'deploy'):
+        command = commands.add_parser(name)
+        command.add_argument('role', choices=ROLES)
+    args = parser.parse_args()
+    os.umask(0o077)
+    if args.command == 'pack':
+        pack(args)
+        return
+    require(sys.platform == 'linux' and os.geteuid() == 0, 'run on a registered Ubuntu server using sudo')
+    require(Path(__file__).resolve() == ROOT / 'bifrost-deploy',
+            'install this script as /opt/bifrost/bifrost-deploy first')
+    require(not ROOT.is_symlink() and ROOT.stat().st_uid == 0 and ROOT.stat().st_mode & 0o022 == 0,
+            '/opt/bifrost must be a root-owned, non-writable-by-others directory')
+    # Prevent two local updates or imports racing. No distributed DB locks/writes.
+    # Keep the legacy lock filename so an older installed bfctl and this renamed tool cannot run concurrently.
+    with (ROOT / '.bfctl.lock').open('a') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise Refused('another bifrost-deploy operation is in progress')
+        if args.command == 'bootstrap':
+            bootstrap(ROOT, args)
+        elif args.command == 'init':
+            init(ROOT)
+        elif args.command == 'status':
+            status(ROOT)
+        elif args.command == 'verify':
+            verify(ROOT, state(ROOT))
+        elif args.command == 'rollback':
+            rollback(ROOT)
+        elif args.command == 'import':
+            node(ROOT)
+            import_bundle(ROOT, args)
+        elif args.command == 'plan':
+            prepare(ROOT, args.role)
+            print('PLAN_OK: read-only checks; no container or database changes')
+        elif args.command == 'launch':
+            launch(ROOT, args.role)
+        else:
+            deploy(ROOT, args.role, adopt=args.command == 'adopt')
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (Refused, OSError, ValueError, KeyError, subprocess.TimeoutExpired) as error:
+        if isinstance(error, Refused):
+            print(f'STOP: {error}', file=sys.stderr)
+        else:
+            print(f'STOP: {type(error).__name__}; inspect local files/dependencies (details withheld to protect secrets)', file=sys.stderr)
+        print('If pending.json exists, do not enable the channel; inspect status and the rollback procedure.', file=sys.stderr)
+        sys.exit(1)
+    except (KeyboardInterrupt, EOFError):
+        print('\nInterrupted. If pending.json exists, inspect status and use rollback before another deploy.', file=sys.stderr)
+        sys.exit(130)
