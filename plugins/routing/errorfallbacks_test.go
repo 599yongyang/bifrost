@@ -37,6 +37,23 @@ func TestResolveRoutingErrorFallbacksPreservesScenarioSupplementAndCustomProvide
 	assert.Equal(t, "image-model", resolved[0].Fallbacks[0].Model)
 }
 
+func TestResolveRoutingErrorFallbacksKeepsContentSafetyRecognitionWithoutTargets(t *testing.T) {
+	resolved := resolveRoutingErrorFallbacks([]configstoreTables.TableRoutingErrorFallback{{
+		Name:     "custom recognition",
+		Scenario: "content_policy",
+		Supplement: &configstoreTables.TableRoutingErrorFallbackSupplement{
+			Providers: []string{"custom-provider"}, MessageContainsAny: []string{"vendor moderation gate"},
+		},
+		Fallbacks: []string{},
+	}}, "routed-model")
+
+	require.Len(t, resolved, 1)
+	assert.Equal(t, schemas.FailureCategoryContentPolicy, resolved[0].Scenario)
+	require.NotNil(t, resolved[0].Supplement)
+	assert.Equal(t, []string{"vendor moderation gate"}, resolved[0].Supplement.MessageContainsAny)
+	assert.Empty(t, resolved[0].Fallbacks)
+}
+
 func TestPreRequestHookInjectsErrorFallbacksUsingRoutedModelWithoutChangingOrdinaryFallbackSemantics(t *testing.T) {
 	store, err := rules.NewLocalStore(context.Background(), rules.NewMockLogger(), nil)
 	require.NoError(t, err)
@@ -64,6 +81,32 @@ func TestPreRequestHookInjectsErrorFallbacksUsingRoutedModelWithoutChangingOrdin
 	require.Len(t, req.ChatRequest.ErrorFallbacks[0].Fallbacks, 1)
 	assert.Equal(t, schemas.Azure, req.ChatRequest.ErrorFallbacks[0].Fallbacks[0].Provider)
 	assert.Equal(t, "routed-model", req.ChatRequest.ErrorFallbacks[0].Fallbacks[0].Model)
+}
+
+func TestPreRequestHookInjectsContentSafetyRecognitionWithoutFallbackTargets(t *testing.T) {
+	store, err := rules.NewLocalStore(context.Background(), rules.NewMockLogger(), nil)
+	require.NoError(t, err)
+	require.NoError(t, store.UpsertRule(context.Background(), &configstoreTables.TableRoutingRule{
+		ID: "recognition-only", Name: "recognition-only", CelExpression: "model == 'incoming'",
+		Targets: []configstoreTables.TableRoutingTarget{{Provider: bifrost.Ptr("openai"), Model: bifrost.Ptr("routed-model"), Weight: 1}},
+		ParsedErrorFallbacks: []configstoreTables.TableRoutingErrorFallback{{
+			Scenario: "content_policy",
+			Supplement: &configstoreTables.TableRoutingErrorFallbackSupplement{
+				MessageContainsAny: []string{"vendor moderation gate"},
+			},
+			Fallbacks: []string{},
+		}},
+		Enabled: bifrost.Ptr(true), Scope: "global",
+	}))
+	plugin, err := InitFromStore(context.Background(), nil, rules.NewMockLogger(), nil, store, NewMockGovernance())
+	require.NoError(t, err)
+	req := chatRequest("incoming")
+
+	require.NoError(t, plugin.PreRequestHook(schemas.NewBifrostContext(context.Background(), time.Now()), req))
+	require.Len(t, req.ChatRequest.ErrorFallbacks, 1)
+	assert.Empty(t, req.ChatRequest.ErrorFallbacks[0].Fallbacks)
+	require.NotNil(t, req.ChatRequest.ErrorFallbacks[0].Supplement)
+	assert.Equal(t, []string{"vendor moderation gate"}, req.ChatRequest.ErrorFallbacks[0].Supplement.MessageContainsAny)
 }
 
 func TestPreRequestHookRawOnlyPolicySurvivesRuleUpdateAndRemoval(t *testing.T) {

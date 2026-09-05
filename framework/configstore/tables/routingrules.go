@@ -72,6 +72,45 @@ type TableRoutingErrorFallbackSupplement struct {
 	MessageContainsAny []string `json:"message_contains_any,omitempty"`
 }
 
+// HasContentSafetyRecognitionClues reports whether this rule contains custom
+// content-safety recognition beyond the built-in classifier. Such a rule may
+// intentionally have no fallback targets: it recognizes the error so core can
+// return it directly instead of entering the ordinary fallback chain.
+func (r TableRoutingErrorFallback) HasContentSafetyRecognitionClues() bool {
+	const contentPolicyScenario = "content_policy"
+	if strings.EqualFold(strings.TrimSpace(r.Scenario), contentPolicyScenario) && r.Supplement != nil {
+		return hasNonBlankRoutingMatcher(r.Supplement.ErrorCodes) || hasNonBlankRoutingMatcher(r.Supplement.ErrorTypes) ||
+			hasValidRoutingStatusMatcher(r.Supplement.StatusCodes) || hasNonBlankRoutingMatcher(r.Supplement.MessageContainsAny)
+	}
+	hasContentPolicyCategory := false
+	for _, category := range r.When.Categories {
+		if strings.EqualFold(strings.TrimSpace(category), contentPolicyScenario) {
+			hasContentPolicyCategory = true
+			break
+		}
+	}
+	return hasContentPolicyCategory && (hasNonBlankRoutingMatcher(r.When.ErrorCodes) || hasNonBlankRoutingMatcher(r.When.ErrorTypes) ||
+		hasValidRoutingStatusMatcher(r.When.StatusCodes) || hasNonBlankRoutingMatcher(r.When.MessageContains))
+}
+
+func hasNonBlankRoutingMatcher(values []string) bool {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func hasValidRoutingStatusMatcher(values []int) bool {
+	for _, value := range values {
+		if value >= 100 && value <= 599 {
+			return true
+		}
+	}
+	return false
+}
+
 // TableName for TableRoutingRule
 func (TableRoutingRule) TableName() string { return "routing_rules" }
 

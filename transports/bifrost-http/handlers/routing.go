@@ -78,10 +78,15 @@ func (h *RoutingHandler) RegisterRoutes(r *router.Router, middlewares ...schemas
 	register(fasthttp.MethodGet, "/api/routing/rules/{rule_id}", "/api/governance/routing-rules/{rule_id}", h.getRoutingRule)
 	register(fasthttp.MethodPut, "/api/routing/rules/{rule_id}", "/api/governance/routing-rules/{rule_id}", h.updateRoutingRule)
 	register(fasthttp.MethodDelete, "/api/routing/rules/{rule_id}", "/api/governance/routing-rules/{rule_id}", h.deleteRoutingRule)
+	register(fasthttp.MethodGet, "/api/routing/content-safety-signals", "/api/governance/content-safety-signals", h.getContentSafetySignals)
 
 	register(fasthttp.MethodGet, "/api/routing/complexity-analyzer-config", "/api/governance/complexity-analyzer-config", h.getComplexityAnalyzerConfig)
 	register(fasthttp.MethodPut, "/api/routing/complexity-analyzer-config", "/api/governance/complexity-analyzer-config", h.updateComplexityAnalyzerConfig)
 	register(fasthttp.MethodPost, "/api/routing/complexity-analyzer-config/reset", "/api/governance/complexity-analyzer-config/reset", h.resetComplexityAnalyzerConfig)
+}
+
+func (h *RoutingHandler) getContentSafetySignals(ctx *fasthttp.RequestCtx) {
+	SendJSON(ctx, bifrost.BuiltInContentSafetySignals())
 }
 
 // RoutingTarget represents a single weighted routing target within a rule.
@@ -298,10 +303,6 @@ func validateAndNormalizeRoutingErrorFallbacks(errorFallbacks []configstoreTable
 		if err != nil {
 			return nil, fmt.Errorf("error_fallbacks[%d].%w", i, err)
 		}
-		if len(fallbacks) == 0 {
-			return nil, fmt.Errorf("error_fallbacks[%d].fallbacks must contain at least one fallback target", i)
-		}
-
 		scenario := strings.ToLower(strings.TrimSpace(rule.Scenario))
 		hasWhen := !routingErrorFallbackConditionEmpty(rule.When)
 		if scenario != "" && hasWhen {
@@ -319,9 +320,13 @@ func validateAndNormalizeRoutingErrorFallbacks(errorFallbacks []configstoreTable
 			if err != nil {
 				return nil, fmt.Errorf("error_fallbacks[%d].supplement %w", i, err)
 			}
-			normalized = append(normalized, configstoreTables.TableRoutingErrorFallback{
+			normalizedRule := configstoreTables.TableRoutingErrorFallback{
 				Name: strings.TrimSpace(rule.Name), Scenario: scenario, Supplement: supplement, Fallbacks: fallbacks,
-			})
+			}
+			if len(fallbacks) == 0 && !normalizedRule.HasContentSafetyRecognitionClues() {
+				return nil, fmt.Errorf("error_fallbacks[%d].fallbacks must contain at least one fallback target", i)
+			}
+			normalized = append(normalized, normalizedRule)
 			continue
 		}
 
@@ -332,9 +337,13 @@ func validateAndNormalizeRoutingErrorFallbacks(errorFallbacks []configstoreTable
 		if err != nil {
 			return nil, fmt.Errorf("error_fallbacks[%d].when %w", i, err)
 		}
-		normalized = append(normalized, configstoreTables.TableRoutingErrorFallback{
+		normalizedRule := configstoreTables.TableRoutingErrorFallback{
 			Name: strings.TrimSpace(rule.Name), When: when, Fallbacks: fallbacks,
-		})
+		}
+		if len(fallbacks) == 0 && !normalizedRule.HasContentSafetyRecognitionClues() {
+			return nil, fmt.Errorf("error_fallbacks[%d].fallbacks must contain at least one fallback target", i)
+		}
+		normalized = append(normalized, normalizedRule)
 	}
 	return normalized, nil
 }

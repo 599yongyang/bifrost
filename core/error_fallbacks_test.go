@@ -77,6 +77,19 @@ func TestRecognizeFailureCategories(t *testing.T) {
 	}
 }
 
+func TestBuiltInContentSafetySignalsExposeEveryClassifierPath(t *testing.T) {
+	catalog := BuiltInContentSafetySignals()
+	assert.ElementsMatch(t, contentPolicyStructuredSignals, catalog.Structured)
+	assert.ElementsMatch(t, contentPolicyFinishReasons, catalog.FinishReasons)
+	assert.Contains(t, catalog.FinishReasons, "contentfilter")
+	assert.Contains(t, catalog.FinishReasons, "image_safety")
+	assert.Contains(t, catalog.Messages, "generated images appear to be unsafe")
+	assert.Contains(t, catalog.Messages, "裸露、色情或情色内容")
+
+	catalog.Structured[0] = "mutated"
+	assert.NotEqual(t, "mutated", BuiltInContentSafetySignals().Structured[0], "callers must not mutate the runtime catalog")
+}
+
 func TestFirstMatchingErrorFallbackRuleUsesFirstMatch(t *testing.T) {
 	req := errorFallbackChatRequest()
 	req.ChatRequest.ErrorFallbacks = []schemas.ErrorFallbackRule{
@@ -184,6 +197,17 @@ func TestContentPolicySupplementMatchesProviderSpecificMessageWithoutCodeChange(
 
 	_, ok = matchErrorFallbackRule(classifyBifrostFailure(err, schemas.OpenAI, schemas.ImageGenerationRequest), rule)
 	assert.False(t, ok, "provider-scoped message clues must not affect other providers")
+
+	unscopedRule := rule
+	unscopedSupplement := *rule.Supplement
+	unscopedSupplement.Providers = nil
+	unscopedRule.Supplement = &unscopedSupplement
+	_, ok = matchErrorFallbackRule(classifyBifrostFailure(err, schemas.OpenAI, schemas.ImageGenerationRequest), unscopedRule)
+	assert.True(t, ok, "custom clues without a provider scope must apply to every provider")
+
+	builtInErr := testFallbackError(400, "content_filter", "blocked by content policy")
+	_, ok = matchErrorFallbackRule(classifyBifrostFailure(builtInErr, schemas.OpenAI, schemas.ImageGenerationRequest), rule)
+	assert.True(t, ok, "provider scopes must not restrict built-in content-safety recognition")
 }
 
 func TestResolveFallbackChainDedicatedReplacesOrdinaryAndDeduplicates(t *testing.T) {
@@ -528,6 +552,48 @@ func TestHandleRequestContentPolicyWithoutDedicatedRuleSkipsOrdinaryFallback(t *
 	require.NotNil(t, bifrostErr)
 	assert.Zero(t, ordinaryHits.Load())
 	assert.Equal(t, schemas.FailureCategoryContentPolicy, RecognizeFailure(FailureSignal{Error: bifrostErr}).Category)
+}
+
+func TestHandleRequestRecognitionOnlyContentSafetyRuleSkipsOrdinaryFallback(t *testing.T) {
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"error":{"message":"vendor moderation gate rejected this prompt","type":"invalid_request_error","code":"bad_request"}}`)
+	}))
+	defer primary.Close()
+	var ordinaryHits atomic.Int32
+	ordinary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		ordinaryHits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"ordinary","choices":[{"message":{"role":"assistant","content":"ordinary"},"finish_reason":"stop"}]}`)
+	}))
+	defer ordinary.Close()
+
+	account := NewMockAccount()
+	configureFallbackTestProvider(account, schemas.OpenAI, primary.URL)
+	configureFallbackTestProvider(account, schemas.XAI, ordinary.URL)
+	client := newStreamTestClient(t, account)
+	ctx := schemas.NewBifrostContext(context.Background(), time.Now().Add(30*time.Second))
+	response, bifrostErr := client.ChatCompletionRequest(ctx, &schemas.BifrostChatRequest{
+		Provider:  schemas.OpenAI,
+		Model:     "gpt-4o-mini",
+		Input:     []schemas.ChatMessage{{Role: schemas.ChatMessageRoleUser, Content: &schemas.ChatMessageContent{ContentStr: Ptr("hi")}}},
+		Fallbacks: []schemas.Fallback{{Provider: schemas.XAI, Model: "ordinary-model"}},
+		ErrorFallbacks: []schemas.ErrorFallbackRule{{
+			Name:     "custom-recognition",
+			Scenario: schemas.FailureCategoryContentPolicy,
+			Supplement: &schemas.ErrorFallbackSupplement{
+				MessageContainsAny: []string{"vendor moderation gate"},
+			},
+			Fallbacks: nil,
+		}},
+	})
+
+	require.Nil(t, response)
+	require.NotNil(t, bifrostErr)
+	assert.Contains(t, bifrostErr.GetErrorString(), "vendor moderation gate")
+	assert.Zero(t, ordinaryHits.Load())
+	assert.Equal(t, string(schemas.FailureCategoryContentPolicy), GetStringFromContext(ctx, schemas.BifrostContextKeyErrorFallbackCategory))
 }
 
 func TestHandleRequestContentPolicyDuringOrdinaryChainStopsRemainingFallbacks(t *testing.T) {

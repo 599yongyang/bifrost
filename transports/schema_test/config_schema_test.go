@@ -10,7 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bytedance/sonic"
 	"github.com/maximhq/bifrost/core/schemas"
+	"github.com/maximhq/bifrost/framework/configstore/tables"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
@@ -638,6 +640,114 @@ func TestSchemaGovernanceModelConfigs(t *testing.T) {
 			t.Errorf("governance with model_configs should be valid, got: %v", err)
 		}
 	})
+}
+
+func TestSchemaAllowsContentSafetyRecognitionWithoutFallbackTargets(t *testing.T) {
+	compiled := compileSchema(t)
+	config := `{
+		"governance": {
+		"routing_rules": [{
+			"id": "content-safety-recognition",
+			"name": "Content safety recognition",
+			"cel_expression": "true",
+			"targets": [{"provider": "openai", "model": "gpt-4o", "weight": 1}],
+			"error_fallbacks": [{
+				"scenario": "content_policy",
+				"supplement": {"message_contains_any": ["vendor moderation gate"]},
+				"fallbacks": []
+			}],
+			"scope": "global"
+		}]
+		}
+	}`
+
+	if err := validateConfig(t, compiled, config); err != nil {
+		t.Fatalf("content-safety recognition-only rule should validate, got: %v", err)
+	}
+}
+
+func TestSchemaAcceptsRealSerializedScenarioErrorFallback(t *testing.T) {
+	compiled := compileSchema(t)
+	errorFallbacks := []tables.TableRoutingErrorFallback{{
+		Scenario: "content_policy",
+		Supplement: &tables.TableRoutingErrorFallbackSupplement{
+			Providers: []string{"custom-provider"}, MessageContainsAny: []string{"vendor moderation gate"},
+		},
+		Fallbacks: []string{},
+	}}
+	payload, err := sonic.Marshal(map[string]any{
+		"governance": map[string]any{
+			"routing_rules": []map[string]any{{
+				"id": "serialized-content-safety", "name": "Serialized content safety", "cel_expression": "true",
+				"targets":         []map[string]any{{"provider": "openai", "model": "gpt-4o", "weight": 1}},
+				"error_fallbacks": errorFallbacks, "scope": "global",
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal real routing rule: %v", err)
+	}
+	if !bytes.Contains(payload, []byte(`"when":{}`)) {
+		t.Fatalf("test must exercise the real zero-value when shape, got: %s", payload)
+	}
+
+	if err := validateConfig(t, compiled, string(payload)); err != nil {
+		t.Fatalf("real serialized scenario rule should validate, got: %v\npayload: %s", err, payload)
+	}
+}
+
+func TestSchemaRejectsWhitespaceOnlyErrorFallbackMatchers(t *testing.T) {
+	compiled := compileSchema(t)
+	config := `{
+		"governance": {
+			"routing_rules": [{
+				"id": "blank-content-safety",
+				"name": "Blank content safety",
+				"cel_expression": "true",
+				"targets": [{"provider": "openai", "model": "gpt-4o", "weight": 1}],
+				"error_fallbacks": [{
+					"scenario": "content_policy",
+					"supplement": {"message_contains_any": ["   "]},
+					"fallbacks": []
+				}],
+				"scope": "global"
+			}]
+		}
+	}`
+
+	if err := validateConfig(t, compiled, config); err == nil {
+		t.Fatal("whitespace-only content-safety matcher must be rejected")
+	}
+}
+
+func TestSchemaRejectsInvalidErrorFallbackMatcherShapes(t *testing.T) {
+	compiled := compileSchema(t)
+	tests := []struct {
+		name string
+		rule string
+	}{
+		{name: "scenario with non-empty when", rule: `{"scenario":"content_policy","when":{"status_codes":[400]},"fallbacks":["openai/gpt-4o"]}`},
+		{name: "legacy empty when", rule: `{"when":{},"fallbacks":["openai/gpt-4o"]}`},
+		{name: "provider only supplement", rule: `{"scenario":"content_policy","supplement":{"providers":["openai"]},"fallbacks":[]}`},
+		{name: "blank error code", rule: `{"scenario":"content_policy","supplement":{"error_codes":["   "]},"fallbacks":[]}`},
+		{name: "blank provider", rule: `{"scenario":"content_policy","supplement":{"providers":["   "],"message_contains_any":["blocked"]},"fallbacks":[]}`},
+		{name: "blank legacy message", rule: `{"when":{"categories":["content_policy"],"message_contains":["   "]},"fallbacks":[]}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := fmt.Sprintf(`{
+				"governance": {"routing_rules": [{
+					"id": "invalid-shape", "name": "Invalid shape", "cel_expression": "true",
+					"targets": [{"provider": "openai", "model": "gpt-4o", "weight": 1}],
+					"error_fallbacks": [%s], "scope": "global"
+				}]}
+			}`, tt.rule)
+			if err := validateConfig(t, compiled, config); err == nil {
+				t.Fatalf("invalid error fallback shape should be rejected: %s", tt.rule)
+			}
+		})
+	}
 }
 
 // loadSchema reads and parses config.schema.json into a generic map.

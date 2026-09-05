@@ -411,7 +411,7 @@ func resolveRoutingErrorFallbacks(rules []configstoreTables.TableRoutingErrorFal
 			}
 			fallbacks = append(fallbacks, schemas.Fallback{Provider: provider, Model: model})
 		}
-		if len(fallbacks) == 0 {
+		if len(fallbacks) == 0 && !rule.HasContentSafetyRecognitionClues() {
 			continue
 		}
 

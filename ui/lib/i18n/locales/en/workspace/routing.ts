@@ -419,9 +419,25 @@ const resources = {
 			routingRuleInfoSheet_message_contains: "Message contains",
 			routingRuleInfoSheet_unnamed_error_rule: "Unnamed error rule",
 			routingRuleInfoSheet_dedicated_chain: "Dedicated chain",
+			routingRuleInfoSheet_recognition_only: "Recognition only",
 			routingRuleInfoSheet_error_aware_fallbacks: "Error-aware fallbacks",
 			routingRuleInfoSheet_no_error_aware_fallbacks_configured: "No error-aware fallbacks configured",
 			errorFallbackEditor_use_a_dedicated_fallback_for_content_safety_blocks: "Use a dedicated fallback for content-safety blocks",
+			errorFallbackEditor_content_safety_recognition: "Content-safety recognition",
+			errorFallbackEditor_always_enabled: "Always active",
+			errorFallbackEditor_recognition_description:
+				"Bifrost checks built-in signals and your custom clues on every request matched by this routing rule, whether safety fallback is enabled or not.",
+			errorFallbackEditor_built_in_rules: "Built-in recognition",
+			errorFallbackEditor_built_in_rules_description:
+				"{{codes}} error codes and types · {{phrases}} message phrases. Matching is case-insensitive.",
+			errorFallbackEditor_built_in_rules_loading: "Loading the active runtime recognition catalog…",
+			errorFallbackEditor_built_in_rules_unavailable:
+				"The active runtime recognition catalog is temporarily unavailable. Recognition continues on the server.",
+			errorFallbackEditor_error_codes_and_types: "Error codes and types",
+			errorFallbackEditor_message_phrases: "Message phrases",
+			errorFallbackEditor_content_safety_handling: "Content-safety response",
+			errorFallbackEditor_disabled_behavior:
+				"Fallback is off. Recognized content-safety errors are returned immediately and never enter the ordinary fallback chain.",
 			errorFallbackEditor_when_the_provider_blocks_a_request_or_response_for_conte:
 				"Content-safety failures never use the ordinary fallback chain. Enable this dedicated chain to try configured safety fallback models; leave it disabled to return the original safety error immediately. Rate limits, timeouts, network failures, and all other errors continue through the ordinary fallback chain above.",
 			errorFallbackEditor_enable_content_safety_fallback: "Enable content-safety fallback",
@@ -437,6 +453,7 @@ const resources = {
 			errorFallbackEditor_move_target_down: "Move target down",
 			errorFallbackEditor_remove_target: "Remove target",
 			errorFallbackEditor_custom_recognition_clues: "Custom recognition clues",
+			errorFallbackEditor_legacy_and_matching: "Legacy AND matching",
 			errorFallbackEditor_custom_recognition_clues_description:
 				"Add provider-specific message clues when an upstream uses content-safety wording that Bifrost does not recognize yet. Saving the routing rule applies them immediately.",
 			errorFallbackEditor_match_providers: "Apply custom clues to providers (optional)",
@@ -444,6 +461,8 @@ const resources = {
 			errorFallbackEditor_search_providers: "Search providers...",
 			errorFallbackEditor_match_providers_hint:
 				"Leave empty to use only these custom clues for every provider; built-in recognition is unchanged.",
+			errorFallbackEditor_legacy_provider_scope_hint:
+				"This legacy rule applies to all providers. Provider scoping is disabled to preserve its original AND semantics.",
 			errorFallbackEditor_error_message_keywords: "Error message contains any",
 			errorFallbackEditor_error_message_keywords_placeholder: "Type a stable phrase and press Enter",
 			errorFallbackEditor_error_message_keywords_hint:
@@ -540,6 +559,9 @@ const resources = {
 			errorFallbackRules_needs_at_least_one_matcher: "{{value0}} needs at least one matcher",
 			errorFallbackRules_limits_providers_but_has_no_supplemental_recognition_clu:
 				"{{value0}} limits providers but has no supplemental recognition clue",
+			errorFallbackRules_mixed_legacy_contract:
+				"This legacy content-safety rule combines unsupported matcher formats. Recreate it before saving.",
+			errorFallbackRules_invalid_status_codes: "{{value0}} contains invalid HTTP status codes: {{value1}}. Use integers from 100 to 599.",
 			errorFallbackRules_needs_at_least_one_fallback_target: "{{value0}} needs at least one fallback target",
 			errorFallbackRules_contains_duplicate_fallback_targets: "{{value0}} contains duplicate fallback targets",
 		},

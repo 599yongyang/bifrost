@@ -104,6 +104,12 @@ export interface GetRoutingRuleResponse {
 	rule: RoutingRule;
 }
 
+export interface ContentSafetySignalCatalog {
+	structured: string[];
+	finish_reasons: string[];
+	messages: string[];
+}
+
 export interface RoutingTargetFormData {
 	provider: string;
 	model: string;

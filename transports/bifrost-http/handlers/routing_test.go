@@ -311,6 +311,62 @@ func TestCreateRoutingRulePersistsAndReturnsErrorFallbacks(t *testing.T) {
 	assert.Contains(t, string(reqCtx.Response.Body()), `"error_fallbacks"`)
 }
 
+func TestCreateRoutingRuleAcceptsContentSafetyRecognitionWithoutFallbackTargets(t *testing.T) {
+	SetLogger(&mockLogger{})
+	store := setupPricingOverrideHandlerStore(t)
+	manager := &mockRoutingManager{}
+	handler := &RoutingHandler{configStore: store, routingManager: manager}
+
+	reqCtx := newTestRequestCtx(`{
+		"name":"recognize-content-policy",
+		"cel_expression":"true",
+		"targets":[{"provider":"openai","model":"gpt-image-1","weight":1}],
+		"error_fallbacks":[{
+			"name":"custom recognition",
+			"scenario":"content_policy",
+			"supplement":{"message_contains_any":["vendor moderation gate"]},
+			"when":{},
+			"fallbacks":[]
+		}]
+	}`)
+	handler.createRoutingRule(reqCtx)
+
+	require.Equal(t, fasthttp.StatusOK, reqCtx.Response.StatusCode(), string(reqCtx.Response.Body()))
+	rules, err := store.GetRoutingRules(context.Background())
+	require.NoError(t, err)
+	require.Len(t, rules, 1)
+	require.Len(t, rules[0].ParsedErrorFallbacks, 1)
+	stored := rules[0].ParsedErrorFallbacks[0]
+	require.NotNil(t, stored.Supplement)
+	assert.Equal(t, []string{"vendor moderation gate"}, stored.Supplement.MessageContainsAny)
+	assert.Empty(t, stored.Fallbacks)
+}
+
+func TestCreateRoutingRuleAcceptsLegacyContentSafetyRecognitionWithoutFallbackTargets(t *testing.T) {
+	SetLogger(&mockLogger{})
+	store := setupPricingOverrideHandlerStore(t)
+	handler := &RoutingHandler{configStore: store, routingManager: &mockRoutingManager{}}
+
+	reqCtx := newTestRequestCtx(`{
+		"name":"legacy-recognition",
+		"cel_expression":"true",
+		"targets":[{"provider":"openai","model":"gpt-image-1","weight":1}],
+		"error_fallbacks":[{
+			"when":{"categories":["content_policy"],"message_contains":["legacy moderation gate"]},
+			"fallbacks":[]
+		}]
+	}`)
+	handler.createRoutingRule(reqCtx)
+
+	require.Equal(t, fasthttp.StatusOK, reqCtx.Response.StatusCode(), string(reqCtx.Response.Body()))
+	rules, err := store.GetRoutingRules(context.Background())
+	require.NoError(t, err)
+	require.Len(t, rules, 1)
+	require.Len(t, rules[0].ParsedErrorFallbacks, 1)
+	assert.Equal(t, []string{"legacy moderation gate"}, rules[0].ParsedErrorFallbacks[0].When.MessageContains)
+	assert.Empty(t, rules[0].ParsedErrorFallbacks[0].Fallbacks)
+}
+
 func TestUpdateRoutingRuleCanExplicitlyClearErrorFallbacks(t *testing.T) {
 	SetLogger(&mockLogger{})
 	store := setupPricingOverrideHandlerStore(t)
@@ -377,6 +433,9 @@ func TestRoutingRuleRejectsInvalidErrorFallbackContracts(t *testing.T) {
 		{"bad status", `{"when":{"status_codes":[99]},"fallbacks":["openai/gpt-4o"]}`, "valid HTTP status"},
 		{"empty matcher", `{"when":{"error_codes":[" "]},"fallbacks":["openai/gpt-4o"]}`, "must not be empty"},
 		{"empty supplement", `{"scenario":"timeout","supplement":{"providers":["openai"]},"fallbacks":["openai/gpt-4o"]}`, "non-provider matcher"},
+		{"empty timeout fallback chain", `{"scenario":"timeout","fallbacks":[]}`, "at least one fallback target"},
+		{"empty content fallback without recognition", `{"scenario":"content_policy","fallbacks":[]}`, "at least one fallback target"},
+		{"empty legacy content fallback without recognition", `{"when":{"categories":["content_policy"]},"fallbacks":[]}`, "at least one fallback target"},
 		{"invalid fallback", `{"scenario":"timeout","fallbacks":["not-a-provider"]}`, "provider/model"},
 		{"duplicate fallback", `{"scenario":"timeout","fallbacks":["openai/GPT-4O","openai/gpt-4o"]}`, "duplicates an earlier"},
 	}
@@ -392,4 +451,22 @@ func TestRoutingRuleRejectsInvalidErrorFallbackContracts(t *testing.T) {
 			assert.Contains(t, string(reqCtx.Response.Body()), tt.want)
 		})
 	}
+}
+
+func TestContentSafetySignalsReturnsRuntimeCatalog(t *testing.T) {
+	handler := &RoutingHandler{}
+	ctx := newTestRequestCtx("")
+	handler.getContentSafetySignals(ctx)
+
+	require.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
+	var catalog struct {
+		Structured    []string `json:"structured"`
+		FinishReasons []string `json:"finish_reasons"`
+		Messages      []string `json:"messages"`
+	}
+	require.NoError(t, json.Unmarshal(ctx.Response.Body(), &catalog))
+	assert.Contains(t, catalog.Structured, "content_filter")
+	assert.Contains(t, catalog.FinishReasons, "contentfilter")
+	assert.Contains(t, catalog.FinishReasons, "image_safety")
+	assert.Contains(t, catalog.Messages, "裸露、色情或情色内容")
 }

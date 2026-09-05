@@ -680,13 +680,58 @@ func chatChoiceHasUsableOutput(message *schemas.ChatMessage) bool {
 		len(assistant.Annotations) > 0 || len(assistant.ToolCalls) > 0 || assistant.Audio != nil)
 }
 
-func isContentPolicyFinishReason(value string) bool {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "content_filter", "content_filtered", "contentfilter", "contentfiltered", "safety", "image_safety", "unsafe_content", "prohibited_content", "image_prohibited_content", "guardrail_intervened":
-		return true
-	default:
-		return false
+// ContentSafetySignalCatalog describes the provider-response signals used by
+// the built-in content-safety classifier. It is exposed to the dashboard so
+// operators see the exact runtime catalog instead of a separately maintained copy.
+type ContentSafetySignalCatalog struct {
+	Structured    []string `json:"structured"`
+	FinishReasons []string `json:"finish_reasons"`
+	Messages      []string `json:"messages"`
+}
+
+var contentPolicyStructuredSignals = []string{
+	"content_filter", "content_filtered", "content_policy", "content_policy_error", "content_policy_violation",
+	"safety_violation", "safety_violations", "responsible_ai_policy_violation", "unsafe_content",
+	"prohibited_content", "image_prohibited_content", "guardrail_intervened",
+}
+
+var contentPolicyFinishReasons = []string{
+	"content_filter", "content_filtered", "contentfilter", "contentfiltered", "safety", "image_safety",
+	"unsafe_content", "prohibited_content", "image_prohibited_content", "guardrail_intervened",
+}
+
+var contentPolicyFinishReasonSet = func() map[string]struct{} {
+	set := make(map[string]struct{}, len(contentPolicyFinishReasons))
+	for _, reason := range contentPolicyFinishReasons {
+		set[reason] = struct{}{}
 	}
+	return set
+}()
+
+var contentPolicyMessageMatchers = []safePhraseMatcher{
+	{id: "safety_system", phrases: []string{"rejected by the safety system", "被安全系统拒绝", "安全系统拒绝"}},
+	{id: "unsafe_image", phrases: []string{"generated images appear to be unsafe", "appear to be unsafe", "图片可能不安全"}},
+	{id: "content_policy", phrases: []string{"content policy", "responsible ai policy", "内容安全", "内容政策", "安全策略", "guardrail intervened"}},
+	{id: "sexual_content_protection", phrases: []string{"裸露、色情或情色内容", "裸露、色情或情色", "色情或情色内容"}},
+}
+
+// BuiltInContentSafetySignals returns a defensive copy of the classifier catalog.
+func BuiltInContentSafetySignals() ContentSafetySignalCatalog {
+	messages := make([]string, 0)
+	for _, matcher := range contentPolicyMessageMatchers {
+		messages = append(messages, matcher.phrases...)
+	}
+	return ContentSafetySignalCatalog{
+		Structured:    append([]string(nil), contentPolicyStructuredSignals...),
+		FinishReasons: append([]string(nil), contentPolicyFinishReasons...),
+		Messages:      messages,
+	}
+}
+
+func isContentPolicyFinishReason(value string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	_, ok := contentPolicyFinishReasonSet[normalized]
+	return ok
 }
 
 func populateErrorFallbackExtraFields(err *schemas.BifrostError, req *schemas.BifrostRequest) {
@@ -710,15 +755,10 @@ func captureFailureRecognitionSignals(err *schemas.BifrostError) {
 }
 
 func detectContentPolicySignal(failure classifiedFailure) errorFallbackMatch {
-	if hit, ok := firstNormalizedHit([]string{"content_filter", "content_filtered", "content_policy", "content_policy_error", "content_policy_violation", "safety_violation", "safety_violations", "responsible_ai_policy_violation", "unsafe_content", "prohibited_content", "image_prohibited_content", "guardrail_intervened"}, append(append([]string(nil), failure.errorCodes...), failure.errorTypes...)); ok {
+	if hit, ok := firstNormalizedHit(contentPolicyStructuredSignals, append(append([]string(nil), failure.errorCodes...), failure.errorTypes...)); ok {
 		return errorFallbackMatch{matchedBy: failureMatchedByStructured, pack: "content_policy", patternID: hit}
 	}
-	if id, ok := firstMessagePhrase(failure.message, []safePhraseMatcher{
-		{id: "safety_system", phrases: []string{"rejected by the safety system", "被安全系统拒绝", "安全系统拒绝"}},
-		{id: "unsafe_image", phrases: []string{"generated images appear to be unsafe", "appear to be unsafe", "图片可能不安全"}},
-		{id: "content_policy", phrases: []string{"content policy", "responsible ai policy", "内容安全", "内容政策", "安全策略", "guardrail intervened"}},
-		{id: "sexual_content_protection", phrases: []string{"裸露、色情或情色内容", "裸露、色情或情色", "色情或情色内容"}},
-	}); ok {
+	if id, ok := firstMessagePhrase(failure.message, contentPolicyMessageMatchers); ok {
 		pack := "global_multilingual"
 		matchedBy := failureMatchedByMessagePack
 		if failure.baseProvider == schemas.Azure || failure.baseProvider == schemas.OpenAI || failure.baseProvider == schemas.Gemini || failure.baseProvider == schemas.Bedrock {

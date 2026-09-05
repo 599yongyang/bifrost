@@ -30,6 +30,7 @@ import {
 } from "@/lib/store/apis/skillsApi";
 import { AllSkillsVersionBump, SkillListItem } from "@/lib/types/skills";
 import { cn } from "@/lib/utils";
+import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { getApiBaseUrl, getExampleBaseUrl } from "@/lib/utils/port";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import {
@@ -38,7 +39,6 @@ import {
 	ArrowUpDown,
 	ArrowUpRight,
 	BookOpenText,
-	Check,
 	ChevronDown,
 	ChevronLeft,
 	ChevronRight,
@@ -62,8 +62,8 @@ const SKILLS_REPOSITORY_DOCS_URL = "https://docs.getbifrost.ai/features/skills-r
 // ---------- MarketplacePopover ----------
 
 function MarketplacePopover() {
-	const [copiedKey, setCopiedKey] = useState<string | null>(null);
 	const [open, setOpen] = useState(false);
+	const { copyWithResult: copyToClipboard } = useCopyToClipboard();
 	const marketplaceBaseUrl = `${getExampleBaseUrl()}/api`;
 
 	const items = [
@@ -79,18 +79,8 @@ function MarketplacePopover() {
 		},
 	];
 
-	const handleCopy = (key: string, text: string) => {
-		navigator.clipboard
-			.writeText(text)
-			.then(() => {
-				setCopiedKey(key);
-				setOpen(false);
-				toast.success("Copied to clipboard");
-				setTimeout(() => setCopiedKey(null), 2000);
-			})
-			.catch(() => {
-				toast.error("Failed to copy to clipboard");
-			});
+	const handleCopy = async (text: string) => {
+		if (await copyToClipboard(text)) setOpen(false);
 	};
 
 	return (
@@ -112,17 +102,13 @@ function MarketplacePopover() {
 							data-testid={`skill-copy-marketplace-${item.key}`}
 							className="hover:bg-muted/50 flex w-full cursor-pointer items-center gap-3 px-3 py-2 text-left transition-colors"
 							aria-label={`Copy ${item.label} command`}
-							onClick={() => handleCopy(item.key, item.command)}
+							onClick={() => handleCopy(item.command)}
 						>
 							<div className="min-w-0 flex-1">
 								<p className="text-xs font-medium">{item.label}</p>
 								<p className="text-muted-foreground mt-0.5 truncate font-mono text-xs">{item.command}</p>
 							</div>
-							{copiedKey === item.key ? (
-								<Check className="h-3.5 w-3.5 shrink-0 text-green-500" />
-							) : (
-								<Clipboard className="text-muted-foreground h-3.5 w-3.5 shrink-0" />
-							)}
+							<Clipboard className="text-muted-foreground h-3.5 w-3.5 shrink-0" />
 						</button>
 					))}
 				</div>

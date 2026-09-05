@@ -11,12 +11,12 @@ import { ProviderIconType, RenderProviderIcon } from "@/lib/constants/icons";
 import { getProviderLabel } from "@/lib/constants/logs";
 import { useGetCustomerQuery, useGetTeamQuery, useGetVirtualKeyQuery } from "@/lib/store/apis/governanceApi";
 import { RoutingErrorFallback, RoutingRule } from "@/lib/types/routingRules";
+import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { formatDistanceToNow } from "date-fns";
 import { enUS, zhCN } from "date-fns/locale";
 import { Check, Copy, GitMerge, Key } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { RuleGroupType, RuleType } from "react-querybuilder";
-import { toast } from "sonner";
 import { routingRulesCopy as copy } from "../routingRulesCopy";
 import i18n from "@/lib/i18n";
 
@@ -68,17 +68,11 @@ function useScopeName(scope: string, scopeId?: string): string | undefined {
 // ─── copy button ─────────────────────────────────────────────────────────────
 
 function CopyButton({ value, label, testId }: { value: string; label?: string; testId: string }) {
-	const [copied, setCopied] = useState(false);
-
-	const handleCopy = async () => {
-		try {
-			await navigator.clipboard.writeText(value);
-			setCopied(true);
-			setTimeout(() => setCopied(false), 1500);
-		} catch {
-			toast.error(copy.copyFailed);
-		}
-	};
+	const { copy: copyToClipboard, copied } = useCopyToClipboard({
+		successMessage: false,
+		errorMessage: copy.copyFailed,
+		resetDelay: 1500,
+	});
 
 	return (
 		<Tooltip>
@@ -88,7 +82,7 @@ function CopyButton({ value, label, testId }: { value: string; label?: string; t
 					variant="ghost"
 					size="icon"
 					className="h-6 w-6 shrink-0"
-					onClick={handleCopy}
+					onClick={() => copyToClipboard(value)}
 					aria-label={copied ? copy.copiedLabel(label ?? copy.value) : copy.copyLabel(label ?? copy.value)}
 					data-testid={testId}
 				>
@@ -307,7 +301,11 @@ function ErrorFallbackRuleCard({ rule }: { rule: RoutingErrorFallback }) {
 				<span className="text-sm font-semibold">
 					{rule.name?.trim() || i18n.t("workspace.routingRules.copy.routingRuleInfoSheet_unnamed_error_rule")}
 				</span>
-				<Badge variant="outline">{i18n.t("workspace.routingRules.copy.routingRuleInfoSheet_dedicated_chain")}</Badge>
+				<Badge variant="outline">
+					{rule.fallbacks.length > 0
+						? i18n.t("workspace.routingRules.copy.routingRuleInfoSheet_dedicated_chain")
+						: i18n.t("workspace.routingRules.copy.routingRuleInfoSheet_recognition_only")}
+				</Badge>
 			</div>
 			<div className="space-y-2">
 				{rows.map((row) => (

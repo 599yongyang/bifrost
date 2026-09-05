@@ -9,11 +9,15 @@ import {
 	GetRoutingRulesParams,
 	CreateRoutingRuleRequest,
 	UpdateRoutingRuleRequest,
+	ContentSafetySignalCatalog,
 } from "@/lib/types/routingRules";
 import { baseApi } from "./baseApi";
 
 export const routingRulesApi = baseApi.injectEndpoints({
 	endpoints: (builder) => ({
+		getContentSafetySignals: builder.query<ContentSafetySignalCatalog, void>({
+			query: () => ({ url: "/routing/content-safety-signals" }),
+		}),
 		// Get routing rules with pagination
 		getRoutingRules: builder.query<GetRoutingRulesResponse, GetRoutingRulesParams | void>({
 			query: (params) => ({
@@ -127,6 +131,7 @@ export const routingRulesApi = baseApi.injectEndpoints({
 });
 
 export const {
+	useGetContentSafetySignalsQuery,
 	useGetRoutingRulesQuery,
 	useGetRoutingRuleQuery,
 	useCreateRoutingRuleMutation,
