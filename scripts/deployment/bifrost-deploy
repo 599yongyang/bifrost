@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bifrost deployment operator. No direct DB writes; app startup may migrate schemas."""
+"""Bifrost 统一部署工具。不直接写数据库；应用启动时可能执行数据库迁移。"""
 
 import argparse
 import copy
@@ -33,6 +33,35 @@ class Refused(Exception):
     pass
 
 
+class ChineseArgumentParser(argparse.ArgumentParser):
+    def __init__(self, *args, **kwargs):
+        kwargs['add_help'] = False
+        super().__init__(*args, **kwargs)
+        self._positionals.title = '命令与参数'
+        self._optionals.title = '选项'
+        self.add_argument('-h', '--help', action='help', help='显示帮助并退出')
+
+    def format_usage(self):
+        return super().format_usage().replace('usage:', '用法：', 1)
+
+    def format_help(self):
+        return super().format_help().replace('usage:', '用法：', 1)
+
+    def error(self, message):
+        if message.startswith('the following arguments are required:'):
+            detail = message.split(':', 1)[1].strip()
+            message = f'缺少必填参数：{detail}'
+        elif 'invalid choice:' in message:
+            message = '参数值不在允许范围，请查看 --help'
+        elif message.startswith('unrecognized arguments:'):
+            detail = message.split(':', 1)[1].strip()
+            message = f'无法识别的参数：{detail}'
+        else:
+            message = '参数不正确，请查看 --help'
+        self.print_usage(sys.stderr)
+        self.exit(2, f'错误：{message}\n')
+
+
 def require(condition, message):
     if not condition:
         raise Refused(message)
@@ -41,7 +70,7 @@ def require(condition, message):
 def run(args, *, env=None, timeout=60, merge_stderr=False):
     # Never echo command output on failure: Compose, psql and logs may contain secrets.
     result = subprocess.run(args, text=True, capture_output=True, env=env, timeout=timeout)
-    require(result.returncode == 0, f'{args[0]} {args[1]} failed (exit {result.returncode}); output withheld to protect secrets')
+    require(result.returncode == 0, f'{args[0]} {args[1]} 执行失败（退出码 {result.returncode}）；为保护敏感信息已隐藏输出')
     return result.stdout + (result.stderr if merge_stderr else '')
 
 
@@ -70,13 +99,13 @@ def atomic_write(path, value):
 
 
 def version(value):
-    require(re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+-moon\.[0-9]+', value), 'invalid Moon release version')
+    require(re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+-moon\.[0-9]+', value), 'Moon 发布版本格式不正确')
     return value
 
 
 def image_info(ref):
     info = json.loads(run(['docker', 'image', 'inspect', ref]))[0]
-    require(info['Os'] == 'linux' and info['Architecture'] == 'amd64', 'image must be linux/amd64')
+    require(info['Os'] == 'linux' and info['Architecture'] == 'amd64', '镜像必须为 linux/amd64')
     return info
 
 
@@ -88,14 +117,14 @@ def fingerprint(info):
 
 def container():
     ids = run(['docker', 'container', 'ls', '-a', '--filter', 'name=^/bifrost$', '--format', '{{.ID}}']).split()
-    require(len(ids) <= 1, 'ambiguous bifrost container')
+    require(len(ids) <= 1, '发现多个同名 bifrost 容器，无法确定目标')
     return json.loads(run(['docker', 'container', 'inspect', ids[0]]))[0] if ids else None
 
 
 def local_ip():
     links = json.loads(run(['ip', '-j', '-4', 'address', 'show', 'scope', 'global']))
     found = {addr['local'] for link in links for addr in link.get('addr_info', [])} & LEGACY.keys()
-    require(len(found) == 1, 'host is not exactly one of the three registered Bifrost nodes')
+    require(len(found) == 1, '当前主机不属于已登记的三个 Bifrost 节点，或匹配到多个地址')
     return found.pop()
 
 
@@ -111,16 +140,16 @@ def compose(path, *args, timeout=60):
 
 
 def check_config(config, role):
-    require(set(config) == {'config_store', 'logs_store'}, 'config.json must contain only the two PostgreSQL stores')
+    require(set(config) == {'config_store', 'logs_store'}, 'config.json 只能包含两个 PostgreSQL 存储配置')
     environment = 'test' if role == 'test' else 'prod'
     for key, suffix in [('config_store', 'config'), ('logs_store', 'logs')]:
         store = config[key]
         cfg = store.get('config', {})
-        require(store.get('enabled') is True and store.get('type') == 'postgres', 'both stores must use PostgreSQL')
+        require(store.get('enabled') is True and store.get('type') == 'postgres', '配置库和日志库都必须使用 PostgreSQL')
         expected = {'host': '10.1.12.7', 'user': f'bf_{environment}',
                     'db_name': f'bifrost_{environment}_{suffix}', 'password': 'env.BF_DB_PASSWORD', 'ssl_mode': 'require'}
         require(all(cfg.get(k) == v for k, v in expected.items()) and str(cfg.get('port')) == '5432',
-                f'{role}: unexpected database, role or TLS configuration')
+                f'{role}：数据库、账号或 TLS 配置与预期不一致')
 
 
 def standard_config(role):
@@ -149,20 +178,20 @@ def standard_service(role):
 
 
 def password(path):
-    require(Path(path).stat().st_mode & 0o077 == 0, 'postgres.env must be mode 600 (or stricter)')
+    require(Path(path).stat().st_mode & 0o077 == 0, 'postgres.env 权限必须为 600 或更严格')
     lines = [s for s in Path(path).read_text().splitlines() if s.strip() and not s.lstrip().startswith('#')]
-    require(len(lines) == 1 and lines[0].startswith('BF_DB_PASSWORD='), 'secret file must contain only BF_DB_PASSWORD=... in raw format')
+    require(len(lines) == 1 and lines[0].startswith('BF_DB_PASSWORD='), '密码文件只能包含一行原始格式的 BF_DB_PASSWORD=...')
     result = lines[0].split('=', 1)[1]
-    require(bool(result) and '\x00' not in result, 'empty or invalid database password')
+    require(bool(result) and '\x00' not in result, '数据库密码为空或格式无效')
     return result
 
 
 def read_secret(label):
-    require(sys.stdin.isatty(), 'interactive terminal required to enter database passwords')
-    first = getpass.getpass(f'{label} PostgreSQL password: ')
-    second = getpass.getpass(f'Repeat {label} PostgreSQL password: ')
+    require(sys.stdin.isatty(), '输入数据库密码需要交互式终端')
+    first = getpass.getpass(f'请输入 {label} PostgreSQL 密码：')
+    second = getpass.getpass(f'请再次输入 {label} PostgreSQL 密码：')
     require(first == second and bool(first) and '\n' not in first and '\x00' not in first,
-            'passwords did not match or contain an unsupported character')
+            '两次密码不一致，或密码包含不支持的字符')
     return first
 
 
@@ -176,22 +205,22 @@ def db_check(config, secret, role):
         conn = f"host=10.1.12.7 port=5432 dbname={cfg['db_name']} user={cfg['user']} sslmode=require connect_timeout=5"
         args = ['psql', conn, '-X', '-w', '-At', '-v', 'ON_ERROR_STOP=1', '-c']
         result = run(args + [sql], env=env).strip()
-        require(result == f"{cfg['db_name']}|{cfg['user']}|true", 'database identity/TLS check failed')
+        require(result == f"{cfg['db_name']}|{cfg['user']}|true", '数据库身份或 TLS 校验失败')
         if key == 'config_store':
             result = run(args + ["SELECT path FROM config_plugins WHERE name='moon' AND enabled=true;"], env=env).strip()
-            require(result == ENTRY, 'shared Moon entry is unexpected or disabled; do not auto-change shared DB')
+            require(result == ENTRY, '共享 Moon 插件入口异常或未启用；不要自动修改共享数据库')
             if role == 'test':
                 result = run(args + ["SELECT COUNT(*) FROM config_plugins WHERE name='otel' AND enabled=true;"], env=env).strip()
-                require(result == '0', 'test OTel is enabled; review isolation before proceeding')
+                require(result == '0', '测试环境 OTel 仍处于启用状态，请先检查环境隔离')
         else:
             result = run(args + ["SELECT to_regclass('public.logs') IS NOT NULL;"], env=env).strip()
-            require(result == 't', 'logs schema is not initialized; this tool does not bootstrap databases')
+            require(result == 't', '日志库表结构尚未初始化；本工具不会初始化数据库')
 
 
 def check_tree(path):
-    require(path.is_dir() and not path.is_symlink(), f'not a real directory: {path}')
+    require(path.is_dir() and not path.is_symlink(), f'目录不存在或不是普通目录：{path}')
     for item in path.rglob('*'):
-        require(not item.is_symlink() and (item.is_dir() or item.is_file()), f'unsupported symlink/special file: {item}')
+        require(not item.is_symlink() and (item.is_dir() or item.is_file()), f'不支持符号链接或特殊文件：{item}')
 
 
 def has_raw_postgres_env(text):
@@ -215,15 +244,15 @@ def has_raw_postgres_env(text):
 
 
 def normalize_legacy_service(service, compose_source):
-    require(has_raw_postgres_env(compose_source), 'legacy Compose must declare exactly one ./postgres.env with format: raw')
+    require(has_raw_postgres_env(compose_source), '旧 Compose 必须且只能声明一个 format: raw 的 ./postgres.env')
     require(not re.search(r'^\s*BF_DB_PASSWORD\s*:', compose_source, re.MULTILINE),
-            'do not declare BF_DB_PASSWORD directly in Compose environment')
+            '不要在 Compose environment 中直接声明 BF_DB_PASSWORD')
     service = copy.deepcopy(service)
     # Compose 2.40 may resolve env_file into environment and report env_file=null.
     # The source declaration above is authoritative; never persist the resolved secret.
     service.pop('env_file', None)
     environment = service.get('environment') or {}
-    require(isinstance(environment, dict), 'legacy Compose environment must be a mapping')
+    require(isinstance(environment, dict), '旧 Compose 的 environment 必须使用映射格式')
     environment.pop('BF_DB_PASSWORD', None)
     service['environment'] = environment
     return service
@@ -236,18 +265,20 @@ def read_versions(root):
             continue
         key, sep, value = line.partition('=')
         require(sep and key in {f'{r.upper()}_VERSION' for r in ROLES} and key not in values,
-                'versions.env accepts only unique ROLE_VERSION=release lines (no shell syntax)')
+                'versions.env 只允许唯一的 ROLE_VERSION=版本 行，不能包含 Shell 语法')
         values[key] = version(value)
     return values
 
 
 def release(root, ver):
     path = root / 'releases' / version(ver)
+    require(path.is_dir() and (path / 'release.json').is_file(),
+            f'目标版本 {ver} 尚未导入；请先执行 import')
     manifest = read_json(path / 'release.json')
-    require(manifest.get('version') == ver, 'release manifest version mismatch')
-    require(sha(path / 'moon.so') == manifest['plugin_sha256'], 'release plugin checksum mismatch')
+    require(manifest.get('version') == ver, '发布清单中的版本不一致')
+    require(sha(path / 'moon.so') == manifest['plugin_sha256'], '发布插件 SHA-256 校验失败')
     info = image_info(f'bifrost-moon:{ver}')
-    require(fingerprint(info) == manifest['image_fingerprint'], 'image differs from registered release; do not reuse version tags')
+    require(fingerprint(info) == manifest['image_fingerprint'], '镜像与登记的发布版本不一致；禁止复用版本标签')
     return manifest, info['Id']
 
 
@@ -255,19 +286,19 @@ def pack(args):
     ver = version(args.version)
     info = image_info(f'bifrost-moon:{ver}')
     plugin = Path(args.plugin).resolve()
-    require(plugin.is_file(), 'plugin file missing')
+    require(plugin.is_file(), '插件文件不存在')
     output = Path(args.output).resolve()
-    require(not output.exists(), 'output exists; releases are immutable')
+    require(not output.exists(), '输出目录已存在；发布包不可覆盖')
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.bf-package-', dir=output.parent) as temp:
         stage = Path(temp)
         shutil.copyfile(plugin, stage / 'moon.so')
         run(['docker', 'image', 'save', '-o', str(stage / 'image.tar'), f'bifrost-moon:{ver}'], timeout=600)
-        require(fingerprint(image_info(f'bifrost-moon:{ver}')) == fingerprint(info), 'image changed during packaging')
+        require(fingerprint(image_info(f'bifrost-moon:{ver}')) == fingerprint(info), '打包过程中镜像发生变化')
         write_json(stage / 'release.json', {'version': ver, 'image_fingerprint': fingerprint(info),
                    'plugin_sha256': sha(stage / 'moon.so'), 'archive_sha256': sha(stage / 'image.tar')})
         shutil.copytree(stage, output)
-    print(f'PACKAGE_READY: {output}; pairing/ABI and inference still require test-environment validation')
+    print(f'PACKAGE_READY: {output}；镜像/插件配套、ABI 和推理功能仍需在测试环境验证')
 
 
 def import_bundle(root, args):
@@ -275,67 +306,67 @@ def import_bundle(root, args):
     manifest = read_json(source / 'release.json')
     ver = version(manifest['version'])
     target = root / 'releases' / ver
-    require(not target.exists(), 'release already registered; refuse overwrite')
-    require(sha(source / 'moon.so') == manifest['plugin_sha256'], 'bundle plugin checksum mismatch')
-    require(sha(source / 'image.tar') == manifest['archive_sha256'], 'bundle archive checksum mismatch')
+    require(not target.exists(), '该发布版本已登记，拒绝覆盖')
+    require(sha(source / 'moon.so') == manifest['plugin_sha256'], '发布包中的插件 SHA-256 校验失败')
+    require(sha(source / 'image.tar') == manifest['archive_sha256'], '发布包中的镜像归档 SHA-256 校验失败')
     tag = f'bifrost-moon:{ver}'
     existing = run(['docker', 'image', 'ls', '-q', tag]).strip()
     if existing:
-        require(fingerprint(image_info(tag)) == manifest['image_fingerprint'], 'same tag already exists with different content')
+        require(fingerprint(image_info(tag)) == manifest['image_fingerprint'], '同名镜像标签已存在，但内容不同')
     else:
-        print('Loading verified image archive (this does not restart Bifrost)...', flush=True)
+        print('正在加载已校验的镜像归档（不会重启 Bifrost）……', flush=True)
         run(['docker', 'image', 'load', '-i', str(source / 'image.tar')], timeout=600)
-    require(fingerprint(image_info(tag)) == manifest['image_fingerprint'], 'loaded image does not match manifest')
+    require(fingerprint(image_info(tag)) == manifest['image_fingerprint'], '加载后的镜像与发布清单不一致')
     with tempfile.TemporaryDirectory(prefix='.import-', dir=root / 'releases') as temp:
         stage = Path(temp)
         for name in ('moon.so', 'image.tar', 'release.json'):
             shutil.copyfile(source / name, stage / name)
         require(sha(stage / 'moon.so') == manifest['plugin_sha256'] and sha(stage / 'image.tar') == manifest['archive_sha256'],
-                'bundle changed during copy')
+                '复制过程中发布包内容发生变化')
         os.chmod(stage / 'moon.so', 0o644)
         os.rename(stage, target)
     placeholder = root / 'plugins' / Path(ENTRY).name
     if not placeholder.exists():
         shutil.copyfile(target / 'moon.so', placeholder)
         os.chmod(placeholder, 0o644)
-    print(f'IMPORTED: {ver}; current running version unchanged')
+    print(f'IMPORTED: {ver}；当前运行版本未改变')
 
 
 def init(root):
-    require(not (root / 'config/node.json').exists(), 'already initialized; init never overwrites configuration')
+    require(not (root / 'config/node.json').exists(), '节点已经初始化，init 不会覆盖现有配置')
     ip = local_ip()
     profiles = {}
     # Complete read-only validation before creating deployment configuration.
     for role, directory in LEGACY[ip].items():
         source = Path(directory)
         document = json.loads(compose(source / 'compose.yaml', 'config', '--no-env-resolution', '--format', 'json'))
-        require(set(document['services']) == {'bifrost'}, 'legacy Compose must contain exactly the bifrost service')
+        require(set(document['services']) == {'bifrost'}, '旧 Compose 必须且只能包含 bifrost 服务')
         service = normalize_legacy_service(document['services']['bifrost'], (source / 'compose.yaml').read_text())
-        require(service.get('container_name') == 'bifrost', 'unexpected legacy container name')
-        require(service.get('network_mode', 'bridge') == 'bridge', 'custom network mode needs manual adoption review')
+        require(service.get('container_name') == 'bifrost', '旧容器名称与预期不一致')
+        require(service.get('network_mode', 'bridge') == 'bridge', '自定义网络模式需要人工审查后才能接管')
         # `compose config` materializes the implicit default network even if YAML omitted it.
-        require(not (set(service.get('networks', {})) - {'default'}), 'custom networks need manual adoption review')
+        require(not (set(service.get('networks', {})) - {'default'}), '自定义网络需要人工审查后才能接管')
         networks = document.get('networks', {})
         if networks.get('default', {}).get('ipam') == {}:
             networks['default'].pop('ipam')
         require(not networks or networks == {'default': {'name': document['name'] + '_default'}},
-                'non-default network configuration needs manual adoption review')
+                '非默认网络配置需要人工审查后才能接管')
         service.pop('networks', None)
         ver = version(service['image'].removeprefix('bifrost-moon:'))
-        require(service['image'] == f'bifrost-moon:{ver}', 'unexpected image repository')
+        require(service['image'] == f'bifrost-moon:{ver}', '镜像仓库名称与预期不一致')
         mounts = {m['target']: m for m in service['volumes']}
         required = {'/app/data', '/app/data/config.json', '/app/data/plugins'}
-        require(required <= mounts.keys() and not (mounts.keys() - required - {ENTRY}), 'unknown or missing mount; review before adopting')
-        require(all(m['type'] == 'bind' for m in mounts.values()), 'only bind mounts supported for adoption')
-        require(Path(mounts['/app/data']['source']) == source / 'data', 'unexpected legacy data path')
-        require(Path(mounts['/app/data/config.json']['source']) == source / 'config.json', 'unexpected legacy config path')
-        require(Path(mounts['/app/data/plugins']['source']) == PLUGIN_DIR, 'unexpected legacy plugin directory')
+        require(required <= mounts.keys() and not (mounts.keys() - required - {ENTRY}), '挂载项缺失或包含未知挂载，请人工审查后再接管')
+        require(all(m['type'] == 'bind' for m in mounts.values()), '接管仅支持 bind 挂载')
+        require(Path(mounts['/app/data']['source']) == source / 'data', '旧数据目录与预期不一致')
+        require(Path(mounts['/app/data/config.json']['source']) == source / 'config.json', '旧配置文件路径与预期不一致')
+        require(Path(mounts['/app/data/plugins']['source']) == PLUGIN_DIR, '旧插件目录与预期不一致')
         check_config(read_json(source / 'config.json'), role)
         password(source / 'postgres.env')
         check_ports(service, role)
         check_tree(source / 'data')
         plugin = Path(mounts.get(ENTRY, {}).get('source', str(PLUGIN_DIR / f'bifrost-moon-response-sanitizer-linux-amd64-glibc-{ver}.so')))
-        require(plugin.is_file(), 'paired plugin file missing')
+        require(plugin.is_file(), '缺少与镜像配套的插件文件')
         info = image_info(service['image'])
         profiles[role] = {'legacy': str(source), 'legacy_project': document['name'], 'service': service, 'version': ver,
                           'plugin': str(plugin), 'manifest': {'version': ver, 'plugin_sha256': sha(plugin), 'image_fingerprint': fingerprint(info)},
@@ -347,7 +378,7 @@ def init(root):
         source = Path(profile['legacy'])
         cfg = root / 'config' / f'{role}.json'
         secret = root / 'secrets' / f'{role}.env'
-        require(not cfg.exists() and not secret.exists(), 'partial init exists; inspect it rather than overwrite')
+        require(not cfg.exists() and not secret.exists(), '发现未完成的初始化文件，请检查后处理，不要覆盖')
         shutil.copyfile(source / 'config.json', cfg)
         shutil.copyfile(source / 'postgres.env', secret)
         os.chmod(cfg, 0o600)
@@ -359,27 +390,27 @@ def init(root):
             os.chmod(target / 'moon.so', 0o644)
             write_json(target / 'release.json', profile['manifest'])
         else:
-            require(read_json(target / 'release.json') == profile['manifest'], 'same version has conflicting node artifacts')
+            require(read_json(target / 'release.json') == profile['manifest'], '同一版本存在内容冲突的节点产物')
         write_json(root / 'config' / f'{role}.compose.json', profile['service'])
-    require(not (root / 'plugins').exists(), 'plugin staging directory already exists')
+    require(not (root / 'plugins').exists(), '插件暂存目录已经存在，请检查未完成的初始化')
     shutil.copytree(PLUGIN_DIR, root / 'plugins', copy_function=shutil.copy2)
     write_json(root / 'config/node.json', {'ip': ip, 'profiles': profiles})
     atomic_write(root / 'versions.env', ''.join(f'{r.upper()}_VERSION={p["version"]}\n' for r, p in profiles.items()))
-    print(f'INITIALIZED: {ip} -> {root}; old container, old directories and databases unchanged')
-    print('Next: plan the current role, then adopt that SAME version/role. Data is copied only after stopping its old writer.')
+    print(f'INITIALIZED: {ip} -> {root}；旧容器、旧目录和数据库均未修改')
+    print('下一步：对当前相同版本和角色执行 plan，然后执行 adopt。只有停止旧写入进程后才会复制数据。')
 
 
 def bootstrap(root, args):
     """Create a clean standardized node. This never adopts an old container or directory."""
-    require(not (root / 'config/node.json').exists(), 'already initialized; bootstrap never overwrites a node')
-    require(container() is None, 'a bifrost container already exists; use legacy init/adopt or review it manually')
+    require(not (root / 'config/node.json').exists(), '节点已经初始化，bootstrap 不会覆盖现有节点')
+    require(container() is None, '已经存在 bifrost 容器；旧部署请使用 init/adopt，其他情况请人工审查')
     ip = args.ip
-    require(ip in global_ips(), 'the requested IP is not assigned to this host')
+    require(ip in global_ips(), '指定 IP 不属于当前主机')
     ver = version(args.version)
     roles = ('production',) if args.node_type == 'production' else ('test', 'standby')
     paths = {name: root / name for name in ('config', 'secrets', 'releases', 'data', 'backups', 'inbox', 'plugins')}
     for path in paths.values():
-        require(not path.exists(), f'partial bootstrap path exists: {path}; inspect rather than overwrite')
+        require(not path.exists(), f'发现未完成的 bootstrap 路径：{path}；请检查后处理，不要覆盖')
     secrets = {}
     for role in roles:
         label = 'bf_test' if role == 'test' else 'bf_prod'
@@ -403,23 +434,23 @@ def bootstrap(root, args):
         profiles[role] = {'provisioned_by': 'bootstrap'}
     write_json(root / 'config/node.json', {'ip': ip, 'profiles': profiles, 'provisioned_by': 'bootstrap'})
     atomic_write(root / 'versions.env', ''.join(f'{role.upper()}_VERSION={ver}\n' for role in roles))
-    print(f'BOOTSTRAPPED: {ip} roles={",".join(roles)} target={ver}; no container was started')
-    print('Next: import the paired release, then plan and launch the initial role.')
+    print(f'BOOTSTRAPPED: {ip}，角色={",".join(roles)}，目标版本={ver}；未启动任何容器')
+    print('下一步：导入配套发布包，然后执行 plan 和 launch 启动首个角色。')
 
 
 def check_ports(service, role):
     ports = service.get('ports', [])
     expected = '18080' if role == 'test' else '8080'
     require(bool(ports) and all(str(p['published']) == expected and p['target'] == 8080 and p.get('protocol', 'tcp') == 'tcp' for p in ports),
-            f'{role} must publish only {expected}->8080/tcp')
+            f'{role} 只能发布 {expected}->8080/tcp')
 
 
 def node(root):
     value = read_json(root / 'config/node.json')
     if value['ip'] in LEGACY:
-        require(value['ip'] == local_ip(), 'node configuration belongs to a different host')
+        require(value['ip'] == local_ip(), '节点配置属于另一台主机')
     else:
-        require(value['ip'] in global_ips(), 'node configuration IP is not assigned to this host')
+        require(value['ip'] in global_ips(), '节点配置中的 IP 不属于当前主机')
     return value
 
 
@@ -442,19 +473,19 @@ def build_compose(root, role, ver, image_id, revision, service):
 
 def prepare(root, role):
     cfg = node(root)
-    require(role in cfg['profiles'], 'role not allowed on this node')
+    require(role in cfg['profiles'], '当前节点不允许使用这个角色')
     ver = read_versions(root).get(f'{role.upper()}_VERSION')
-    require(ver is not None, 'version variable missing for this role')
+    require(ver is not None, 'versions.env 缺少当前角色的版本变量')
     manifest, image_id = release(root, ver)
-    require((root / 'plugins' / Path(ENTRY).name).is_file(), 'fixed plugin mount-point file is missing from preserved plugins directory')
+    require((root / 'plugins' / Path(ENTRY).name).is_file(), '保留插件目录中缺少固定入口文件')
     config = read_json(root / 'config' / f'{role}.json')
     service = read_json(root / 'config' / f'{role}.compose.json')
     check_ports(service, role)
-    require('BF_DB_PASSWORD' not in service.get('environment', {}), 'password must be in secret file only')
+    require('BF_DB_PASSWORD' not in service.get('environment', {}), '数据库密码只能存放在密码文件中')
     db_check(config, root / 'secrets' / f'{role}.env', role)
-    print(f"TARGET: {cfg['ip']}  role={role}  version={ver}  port={'18080' if role == 'test' else '8080'}")
-    print(f"DATABASES: {config['config_store']['config']['db_name']} + {config['logs_store']['config']['db_name']}")
-    print(f"PLUGIN SHA256: {manifest['plugin_sha256']}")
+    print(f"目标节点：{cfg['ip']}  角色={role}  版本={ver}  端口={'18080' if role == 'test' else '8080'}")
+    print(f"数据库：{config['config_store']['config']['db_name']} + {config['logs_store']['config']['db_name']}")
+    print(f"插件 SHA-256：{manifest['plugin_sha256']}")
     return cfg, ver, image_id, service
 
 
@@ -467,34 +498,34 @@ def no_data_writer(path):
             source = Path(mount['Source'])
             if mount.get('RW', True):
                 require(not (source == path or source in path.parents or path in source.parents),
-                        'a running container still mounts the legacy data tree writable; stop its writer first')
+                        '仍有运行中的容器以可写方式挂载旧数据目录，请先停止对应写入进程')
 
 
 def confirm(action, role, ver):
-    print('Confirm: callers have been stopped/drained; pending image/video work and log flush are accounted for.')
+    print('请确认：调用来源已停止或摘流，在途图片/视频任务及日志刷新已妥善处理。')
     if role in ('production', 'standby'):
-        print('Production gate: test passed, shared-schema coexistence AND rollback compatibility reviewed, DB backup available.')
+        print('生产门槛：测试已通过，已审查新旧版本共用表结构及回退兼容性，数据库备份可用。')
     else:
-        print('Test gate: real-supplier cost and test-only database/external destinations have been reviewed.')
-    print('This tool does NOT switch NewAPI channels, back up/restore PostgreSQL, or prove business-level success.')
+        print('测试门槛：已确认真实供应商费用、测试数据库以及测试专用外部目标。')
+    print('本工具不会切换 NewAPI 渠道、备份/恢复 PostgreSQL，也不能替代真实业务验收。')
     token = f'{action} {role} {ver}'
-    require(sys.stdin.isatty(), 'interactive terminal required; no unattended confirmation bypass')
-    require(input(f'Type {token!r} to continue: ') == token, 'cancelled; no deployment change')
+    require(sys.stdin.isatty(), '必须在交互式终端确认，不允许绕过确认无人值守执行')
+    require(input(f'请输入 {token!r} 继续：') == token, '操作已取消，部署没有变化')
 
 
 def ensure_managed(current):
     managers = ('bfctl', 'bifrost-deploy')
     require(current is not None and current['Config'].get('Labels', {}).get('bifrost.managed_by') in managers,
-            'container is not managed by bifrost-deploy; use legacy adopt only for an old deployment')
-    require(current['Config']['Labels'].get('com.docker.compose.project') == PROJECT, 'unexpected Compose project')
+            '当前容器不由 bifrost-deploy 管理；只有旧部署才能使用 adopt')
+    require(current['Config']['Labels'].get('com.docker.compose.project') == PROJECT, 'Compose 项目名称与预期不一致')
 
 
 def legacy_role(current, cfg):
-    require(current is not None, 'legacy container bifrost not found')
+    require(current is not None, '没有找到旧 bifrost 容器')
     labels = current['Config'].get('Labels', {})
     directory = labels.get('com.docker.compose.project.working_dir')
     matches = [r for r, p in cfg['profiles'].items() if p.get('legacy') == directory and p.get('legacy_project') == labels.get('com.docker.compose.project')]
-    require(len(matches) == 1, 'legacy container ownership/path does not match registered profile')
+    require(len(matches) == 1, '旧容器所属项目或路径与登记配置不一致')
     return matches[0]
 
 
@@ -519,24 +550,24 @@ def new_revision(root, role, ver, image_id, service):
 
 
 def verify(root, expected):
-    require(expected and expected['kind'] == 'managed', 'no managed revision to verify')
+    require(expected and expected['kind'] == 'managed', '没有可以验证的受管版本')
     revision = Path(expected['revision'])
     metadata = read_json(revision / 'metadata.json')
     require(sha(revision / 'config.json') == metadata['config_sha256'] and sha(revision / 'postgres.env') == metadata['secret_sha256'],
-            'immutable revision config/secret was modified')
+            '受保护的版本配置或密码文件已被修改')
     manifest, image_id = release(root, expected['version'])
     current = container()
     ensure_managed(current)
     labels = current['Config']['Labels']
-    require(labels.get('bifrost.revision') == str(revision) and labels.get('bifrost.deployment_role') == expected['role'], 'running revision/role mismatch')
-    require(current['Image'] == image_id and current['State'].get('Health', {}).get('Status') == 'healthy', 'image/health mismatch')
+    require(labels.get('bifrost.revision') == str(revision) and labels.get('bifrost.deployment_role') == expected['role'], '运行版本或角色与状态文件不一致')
+    require(current['Image'] == image_id and current['State'].get('Health', {}).get('Status') == 'healthy', '镜像或健康状态与预期不一致')
     expected_mounts = {m['target']: m['source'] for m in read_json(revision / 'compose.yaml')['services']['bifrost']['volumes']}
     actual_mounts = {m['Destination']: m['Source'] for m in current['Mounts']}
-    require(all(actual_mounts.get(k) == v for k, v in expected_mounts.items()), 'runtime mount mismatch')
+    require(all(actual_mounts.get(k) == v for k, v in expected_mounts.items()), '容器实际挂载与部署配置不一致')
     for path, checksum in [(ENTRY, manifest['plugin_sha256']), ('/app/data/config.json', metadata['config_sha256'])]:
-        require(run(['docker', 'exec', 'bifrost', 'sha256sum', path]).split()[0] == checksum, 'container file checksum mismatch')
+        require(run(['docker', 'exec', 'bifrost', 'sha256sum', path]).split()[0] == checksum, '容器内文件 SHA-256 校验失败')
     health = json.loads(run(['docker', 'exec', 'bifrost', 'wget', '-qO-', 'http://127.0.0.1:8080/health']))
-    require(health.get('status') == 'ok' and health.get('components', {}).get('db_pings') == 'ok', 'in-container DB health probe failed')
+    require(health.get('status') == 'ok' and health.get('components', {}).get('db_pings') == 'ok', '容器内数据库健康检查失败')
     db_check(read_json(revision / 'config.json'), revision / 'postgres.env', expected['role'])
     receipt = revision / 'startup-evidence.json'
     identity = {'container_id': current['Id'], 'started_at': current['State']['StartedAt'],
@@ -544,11 +575,11 @@ def verify(root, expected):
     if not receipt.exists() or read_json(receipt) != identity:
         logs = run(['docker', 'logs', '--since', current['State']['StartedAt'], '--tail', '5000', 'bifrost'], merge_stderr=True)
         require(re.search(r'plugin status:\s*moon\s*-\s*active', logs),
-                'Moon startup evidence missing (not proof of inactivity); inspect private startup logs before serving traffic')
+                '未找到 Moon 启动成功证据（不等于插件未运行）；接入流量前请检查私有启动日志')
         # No secret log contents saved. A restart/new container invalidates this receipt.
         write_json(receipt, identity)
-    print('VERIFY_OK: image, mounted files, DB credentials/TLS, DB health and Moon startup evidence match.')
-    print('Still required: real image request, result visibility, identity hiding, fallback and Langfuse checks before enabling the channel.')
+    print('VERIFY_OK: 镜像、挂载文件、数据库账号/TLS、数据库健康状态和 Moon 启动证据均匹配。')
+    print('启用渠道前仍需验证：真实生图、结果可见性、身份隐藏、fallback 和 Langfuse。')
 
 
 def start(root, expected):
@@ -559,8 +590,8 @@ def start(root, expected):
 
 
 def launch(root, role):
-    require(not (root / 'pending.json').exists(), 'unfinished operation exists; inspect status and use rollback first')
-    require(state(root) is None and container() is None, 'initial launch requires no existing state or bifrost container')
+    require(not (root / 'pending.json').exists(), '存在未完成操作；请先检查 status 并执行 rollback')
+    require(state(root) is None and container() is None, '首次启动要求不存在旧状态和 bifrost 容器')
     _, ver, image_id, service = prepare(root, role)
     confirm('LAUNCH', role, ver)
     after = new_revision(root, role, ver, image_id, service)
@@ -568,7 +599,7 @@ def launch(root, role):
     before = {'kind': 'absent', 'role': role, 'version': ver}
     journal = {'before': before, 'after': after}
     data = root / 'data' / role
-    require(not data.exists(), 'initial role data directory already exists; inspect partial launch')
+    require(not data.exists(), '首次启动的数据目录已经存在，请检查未完成的启动操作')
     write_json(root / 'pending.json', journal)
     write_json(Path(after['revision']) / 'transition.json', journal)
     data.mkdir(mode=0o2770)
@@ -577,35 +608,35 @@ def launch(root, role):
     write_json(root / 'state.json', after)
     write_json(root / 'last-transition.json', journal)
     (root / 'pending.json').unlink()
-    print('LAUNCHED: basic verification passed. Keep the channel disabled until business smoke tests pass.')
+    print('LAUNCHED: 基础验证通过。真实业务冒烟测试通过前请保持渠道禁用。')
 
 
 def deploy(root, role, adopt=False):
-    require(not (root / 'pending.json').exists(), 'unfinished operation exists; inspect status and use rollback first')
+    require(not (root / 'pending.json').exists(), '存在未完成操作；请先检查 status 并执行 rollback')
     cfg, ver, image_id, service = prepare(root, role)
     current = container()
     previous = state(root)
     if adopt:
-        require(previous is None, 'already adopted; use deploy')
-        require(legacy_role(current, cfg) == role, 'adopt must keep the currently active legacy role; switch modes AFTER adoption')
+        require(previous is None, '节点已经接管，请使用 deploy')
+        require(legacy_role(current, cfg) == role, 'adopt 必须保持旧容器当前角色；完成接管后才能切换模式')
         profile = cfg['profiles'][role]
-        require(ver == profile['version'] and current['Config']['Image'] == f'bifrost-moon:{ver}', 'adoption must not change the release version')
+        require(ver == profile['version'] and current['Config']['Image'] == f'bifrost-moon:{ver}', '接管过程中不能修改发布版本')
         for name, digest in profile['source_hashes'].items():
-            require(sha(Path(profile['legacy']) / name) == digest, 'legacy files changed since init; review before adoption')
-        require(current['Image'] == image_id, 'legacy running image differs from release')
+            require(sha(Path(profile['legacy']) / name) == digest, '旧部署文件在 init 后发生变化，请重新审查后再接管')
+        require(current['Image'] == image_id, '旧容器运行镜像与登记发布版本不一致')
         previous = {'kind': 'legacy', 'role': role, 'version': ver, 'container_id': current['Id'],
                     'restart': current['HostConfig']['RestartPolicy']['Name'],
                     'running': current['State']['Running'], 'legacy': profile['legacy']}
     else:
         ensure_managed(current)
-        require(previous and current['Config']['Labels'].get('bifrost.revision') == previous['revision'], 'state differs from current container')
+        require(previous and current['Config']['Labels'].get('bifrost.revision') == previous['revision'], '状态文件与当前容器版本不一致')
     legacy = cfg['profiles'][role].get('legacy')
-    require(not adopt or legacy, 'adopt is only for a registered legacy deployment')
+    require(not adopt or legacy, 'adopt 只适用于已登记的旧部署')
     source_data = Path(legacy) / 'data' if legacy else None
     if source_data and (adopt or not (root / 'data' / role).exists()):
         check_tree(source_data)
         size = sum(p.stat().st_size for p in source_data.rglob('*') if p.is_file())
-        require(shutil.disk_usage(root).free > size + 128 * 1024 * 1024, 'not enough free disk to safely copy legacy runtime data')
+        require(shutil.disk_usage(root).free > size + 128 * 1024 * 1024, '磁盘剩余空间不足，无法安全复制旧运行数据')
     confirm('ADOPT' if adopt else 'DEPLOY', role, ver)
     after = new_revision(root, role, ver, image_id, service)
     # Recheck the exact copied files, not a mutable profile read earlier in prepare().
@@ -617,11 +648,11 @@ def deploy(root, role, adopt=False):
     # Write recovery information BEFORE the first action that stops a service.
     write_json(root / 'pending.json', journal)
     write_json(Path(after['revision']) / 'transition.json', journal)
-    print('Stopping this node; no NewAPI channel has been changed...', flush=True)
+    print('正在停止当前节点；NewAPI 渠道没有被本工具修改……', flush=True)
     run(['docker', 'stop', '--time', '300', current['Id']], timeout=360)
     stopped = json.loads(run(['docker', 'inspect', current['Id']]))[0]
     require(not stopped['State']['Running'] and stopped['State'].get('ExitCode') == 0 and not stopped['State'].get('OOMKilled'),
-            'unclean/forced shutdown; preserve evidence and inspect before rollback')
+            '容器未正常退出或被强制停止；请保留现场并检查后再回退')
     if adopt:
         run(['docker', 'update', '--restart=no', current['Id']])
         run(['docker', 'rename', current['Id'], previous['backup_name']])
@@ -646,13 +677,13 @@ def deploy(root, role, adopt=False):
     write_json(root / 'state.json', after)
     write_json(root / 'last-transition.json', journal)
     (root / 'pending.json').unlink()
-    print('DEPLOYED: basic verification passed. Keep the channel disabled until business smoke tests pass.')
+    print('DEPLOYED: 基础验证通过。真实业务冒烟测试通过前请保持渠道禁用。')
 
 
 def rollback(root):
     node(root)
     path = root / ('pending.json' if (root / 'pending.json').exists() else 'last-transition.json')
-    require(path.exists(), 'no rollback transition available')
+    require(path.exists(), '没有可用的上一条部署转换，无法自动回退')
     journal = read_json(path)
     before = journal['before']
     current = container()
@@ -662,7 +693,7 @@ def rollback(root):
         if before['kind'] == 'managed':
             allowed.add(before['revision'])
         require(current['Config']['Labels'].get('bifrost.revision') in allowed,
-                'running container is unrelated to the rollback transition; review manual changes')
+                '当前容器与待回退的部署转换无关，请检查是否存在人工修改')
     confirm('ROLLBACK', before['role'], before['version'])
     # Persist even rollback attempts so a failed rollback remains recoverable.
     write_json(root / 'pending.json', journal)
@@ -681,7 +712,7 @@ def rollback(root):
         data = root / 'data' / before['role']
         if data.exists():
             os.replace(data, Path(journal['after']['revision']) / 'data-before-first-launch-rollback')
-        print('INITIAL_LAUNCH_ROLLED_BACK: no Bifrost container is active; generated data and evidence were retained.')
+        print('INITIAL_LAUNCH_ROLLED_BACK: 当前没有活动的 Bifrost 容器；已保留生成的数据和诊断资料。')
     elif before['kind'] == 'legacy':
         old = json.loads(run(['docker', 'inspect', before['container_id']]))[0]
         if current and current['Id'] != old['Id']:
@@ -698,7 +729,7 @@ def rollback(root):
             (root / 'state.json').unlink()
         if (root / 'compose.yaml').exists():
             os.replace(root / 'compose.yaml', Path(journal['after']['revision']) / 'active-before-legacy-rollback.yaml')
-        print(f"LEGACY_RESTORED: use {before['legacy']}/compose.yaml; verify health and business behavior manually.")
+        print(f"LEGACY_RESTORED: 请使用 {before['legacy']}/compose.yaml，并人工验证健康状态和业务功能。")
     else:
         release(root, before['version'])
         db_check(read_json(Path(before['revision']) / 'config.json'), Path(before['revision']) / 'postgres.env', before['role'])
@@ -707,44 +738,44 @@ def rollback(root):
             run(['docker', 'stop', '--time', '300', current['Id']], timeout=360)
         start(root, before)
         write_json(root / 'state.json', before)
-        print('ROLLED_BACK: versions.env is unchanged; check desired vs running versions before the next deploy.')
+        print('ROLLED_BACK: versions.env 未修改；下次部署前请核对目标版本与运行版本。')
     (root / 'pending.json').unlink()
     if (root / 'last-transition.json').exists():
         (root / 'last-transition.json').unlink()
-    print('No database was restored. Retained backup files/containers can be inspected; none were deleted.')
+    print('本次没有恢复数据库。备份文件和容器均已保留，没有删除。')
 
 
 def status(root):
     cfg = node(root)
-    print(f"NODE: {cfg['ip']}  ROOT: {root}")
-    print('DESIRED:', json.dumps(read_versions(root)))
+    print(f"节点：{cfg['ip']}  根目录：{root}")
+    print('目标版本：', json.dumps(read_versions(root)))
     current = container()
     if current:
         labels = current['Config'].get('Labels', {})
-        print('RUNNING:', json.dumps({'state': current['State']['Status'], 'health': current['State'].get('Health', {}).get('Status'),
+        print('运行状态：', json.dumps({'state': current['State']['Status'], 'health': current['State'].get('Health', {}).get('Status'),
               'role': labels.get('bifrost.deployment_role', 'legacy/unknown'), 'version': labels.get('bifrost.release', current['Config']['Image']),
               'managed': labels.get('bifrost.managed_by') in ('bfctl', 'bifrost-deploy'), 'ports': current['HostConfig']['PortBindings']}, ensure_ascii=False))
     else:
-        print('RUNNING: no bifrost container')
-    print('PENDING:', (root / 'pending.json').exists())
+        print('运行状态：没有 bifrost 容器')
+    print('存在待处理操作：', '是' if (root / 'pending.json').exists() else '否')
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = ChineseArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
-    package = commands.add_parser('pack', help='build-machine: package a locally built image and matching plugin')
+    package = commands.add_parser('pack', help='构建机：打包本地镜像和配套插件')
     package.add_argument('version')
     package.add_argument('--plugin', required=True)
     package.add_argument('--output', required=True)
-    bootstrap_command = commands.add_parser('bootstrap', help='initialize a brand-new standardized node; never start a container')
+    bootstrap_command = commands.add_parser('bootstrap', help='初始化全新标准节点，不启动容器')
     bootstrap_command.add_argument('node_type', choices=('production', 'test-standby'))
     bootstrap_command.add_argument('--ip', required=True)
     bootstrap_command.add_argument('--version', required=True)
-    commands.add_parser('init', help='legacy only: stage an old deployment for adoption')
-    commands.add_parser('status', help='safe role/version/port summary')
-    commands.add_parser('verify', help='verify running managed revision; no paid inference')
-    commands.add_parser('rollback', help='interactively restore the previous container deployment, NOT the database')
-    bundle = commands.add_parser('import', help='register an immutable offline release without restarting')
+    commands.add_parser('init', help='仅兼容旧环境：登记待接管的旧部署')
+    commands.add_parser('status', help='查看角色、版本、端口和运行状态')
+    commands.add_parser('verify', help='验证当前受管版本，不发起付费推理')
+    commands.add_parser('rollback', help='交互式恢复上一套容器部署，不恢复数据库')
+    bundle = commands.add_parser('import', help='登记不可变离线发布包，不重启服务')
     bundle.add_argument('bundle')
     for name in ('plan', 'launch', 'adopt', 'deploy'):
         command = commands.add_parser(name)
@@ -754,18 +785,18 @@ def main():
     if args.command == 'pack':
         pack(args)
         return
-    require(sys.platform == 'linux' and os.geteuid() == 0, 'run on a registered Ubuntu server using sudo')
+    require(sys.platform == 'linux' and os.geteuid() == 0, '请在已登记的 Ubuntu 服务器上使用 sudo 运行')
     require(Path(__file__).resolve() == ROOT / 'bifrost-deploy',
-            'install this script as /opt/bifrost/bifrost-deploy first')
+            '请先将脚本安装为 /opt/bifrost/bifrost-deploy')
     require(not ROOT.is_symlink() and ROOT.stat().st_uid == 0 and ROOT.stat().st_mode & 0o022 == 0,
-            '/opt/bifrost must be a root-owned, non-writable-by-others directory')
+            '/opt/bifrost 必须属于 root，且其他用户不可写入')
     # Prevent two local updates or imports racing. No distributed DB locks/writes.
     # Keep the legacy lock filename so an older installed bfctl and this renamed tool cannot run concurrently.
     with (ROOT / '.bfctl.lock').open('a') as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            raise Refused('another bifrost-deploy operation is in progress')
+            raise Refused('另一个 bifrost-deploy 操作正在执行')
         if args.command == 'bootstrap':
             bootstrap(ROOT, args)
         elif args.command == 'init':
@@ -781,7 +812,7 @@ def main():
             import_bundle(ROOT, args)
         elif args.command == 'plan':
             prepare(ROOT, args.role)
-            print('PLAN_OK: read-only checks; no container or database changes')
+            print('PLAN_OK: 只读预检通过，容器和数据库均未修改。')
         elif args.command == 'launch':
             launch(ROOT, args.role)
         else:
@@ -795,9 +826,9 @@ if __name__ == '__main__':
         if isinstance(error, Refused):
             print(f'STOP: {error}', file=sys.stderr)
         else:
-            print(f'STOP: {type(error).__name__}; inspect local files/dependencies (details withheld to protect secrets)', file=sys.stderr)
-        print('If pending.json exists, do not enable the channel; inspect status and the rollback procedure.', file=sys.stderr)
+            print(f'STOP: {type(error).__name__}；请检查本地文件和依赖（为保护敏感信息已隐藏详情）', file=sys.stderr)
+        print('如果存在 pending.json，请勿启用渠道；先检查 status 并按回退流程处理。', file=sys.stderr)
         sys.exit(1)
     except (KeyboardInterrupt, EOFError):
-        print('\nInterrupted. If pending.json exists, inspect status and use rollback before another deploy.', file=sys.stderr)
+        print('\n操作已中断。如果存在 pending.json，请先检查 status 并执行 rollback，再进行下一次部署。', file=sys.stderr)
         sys.exit(130)

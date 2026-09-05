@@ -229,6 +229,9 @@ ui/out/
 # production
 ui/build
 
+# local deployment release bundles (large image archives and plugins)
+/release-packages/
+
 # misc
 .DS_Store
 *.pem

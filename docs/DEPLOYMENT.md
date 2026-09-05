@@ -114,6 +114,8 @@ docker build --platform linux/amd64 \
 
 `bifrost-deploy` 将本节点 `releases/<版本>/moon.so` 挂载到这个固定入口。**实际版本看镜像、挂载来源和 SHA，不看入口文件名；不要为了升级一台而修改共享插件路径。**
 
+后续计划将数据库逻辑入口规范为 `/app/data/plugins/moon.so`。当前不执行，原因、双入口迁移步骤和回退要求记录在 [Moon 插件固定路径优化备忘录](deployment/PLUGIN-PATH-MIGRATION.md)。
+
 更多 fork 构建背景见 [MAINTENANCE.md](MAINTENANCE.md) 和插件仓库的 [RELEASE.md](https://github.com/northmoon-labs/bifrost-moon-plugin/blob/main/docs/RELEASE.md)。其中旧 SQLite/Canary 启动命令不用于当前共享库部署。
 
 <a id="preflight"></a>

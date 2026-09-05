@@ -213,7 +213,7 @@ class DeploymentTest(unittest.TestCase):
 
     def test_forced_stop_leaves_recovery_journal(self):
         self.docker.exit_code = 137
-        with self.assertRaisesRegex(bf.Refused, 'shutdown'):
+        with self.assertRaisesRegex(bf.Refused, '未正常退出'):
             bf.deploy(self.root, 'test', adopt=True)
         self.assertTrue((self.root / 'pending.json').exists())
         self.assertEqual(self.docker.items['old']['Name'], '/bifrost')
@@ -225,25 +225,25 @@ class DeploymentTest(unittest.TestCase):
         self.assertTrue(self.docker.named()['State']['Running'])
 
     def test_adoption_must_not_switch_mode(self):
-        with self.assertRaisesRegex(bf.Refused, 'currently active'):
+        with self.assertRaisesRegex(bf.Refused, '当前角色'):
             bf.deploy(self.root, 'standby', adopt=True)
         self.assertTrue(self.docker.named()['State']['Running'])
 
     def test_changed_legacy_file_blocks_adoption(self):
         (self.base / 'test/compose.yaml').write_text('changed')
-        with self.assertRaisesRegex(bf.Refused, 'changed since init'):
+        with self.assertRaisesRegex(bf.Refused, 'init 后发生变化'):
             bf.deploy(self.root, 'test', adopt=True)
         self.assertTrue(self.docker.named()['State']['Running'])
 
     def test_tampered_plugin_blocks_stop(self):
         (self.root / 'releases/2.0.0-moon.18/moon.so').write_text('tampered')
-        with self.assertRaisesRegex(bf.Refused, 'checksum'):
+        with self.assertRaisesRegex(bf.Refused, 'SHA-256 校验失败'):
             bf.deploy(self.root, 'test', adopt=True)
         self.assertTrue(self.docker.named()['State']['Running'])
 
     def test_pending_blocks_second_operation(self):
         bf.write_json(self.root / 'pending.json', {})
-        with self.assertRaisesRegex(bf.Refused, 'unfinished'):
+        with self.assertRaisesRegex(bf.Refused, '未完成操作'):
             bf.deploy(self.root, 'test', adopt=True)
         self.assertTrue(self.docker.named()['State']['Running'])
 
@@ -271,7 +271,7 @@ class DeploymentTest(unittest.TestCase):
             return original(args, **kwargs)
 
         with patch.object(bf, 'run', side_effect=no_plugin):
-            with self.assertRaisesRegex(bf.Refused, 'Moon startup'):
+            with self.assertRaisesRegex(bf.Refused, 'Moon 启动成功证据'):
                 bf.deploy(self.root, 'test', adopt=True)
         self.assertTrue(self.docker.named()['State']['Running'])
         self.assertTrue((self.root / 'pending.json').exists())
@@ -282,7 +282,7 @@ class DeploymentTest(unittest.TestCase):
         other = copy.deepcopy(self.docker.items['old'])
         other.update(Id='other', Name='/unexpected-writer', Mounts=[{'Source': str(self.base / 'test/data'), 'RW': True}])
         self.docker.items['other'] = other
-        with self.assertRaisesRegex(bf.Refused, 'still mounts'):
+        with self.assertRaisesRegex(bf.Refused, '可写方式挂载旧数据目录'):
             bf.deploy(self.root, 'test', adopt=True)
         self.assertFalse(any(c[0] == 'cp' for c in self.docker.calls))
 
@@ -305,7 +305,7 @@ class DeploymentTest(unittest.TestCase):
         with patch.object(bf, 'run', side_effect=rotated_logs):
             bf.verify(self.root, bf.state(self.root))
             self.docker.named()['State']['StartedAt'] = '2026-09-03T03:00:00Z'
-            with self.assertRaisesRegex(bf.Refused, 'Moon startup'):
+            with self.assertRaisesRegex(bf.Refused, 'Moon 启动成功证据'):
                 bf.verify(self.root, bf.state(self.root))
 
     def test_cancel_never_stops_service(self):
@@ -319,7 +319,7 @@ class DeploymentTest(unittest.TestCase):
         bf.deploy(self.root, 'test', adopt=True)
         revision = Path(bf.state(self.root)['revision'])
         (revision / 'config.json').write_text('{}')
-        with self.assertRaisesRegex(bf.Refused, 'modified'):
+        with self.assertRaisesRegex(bf.Refused, '已被修改'):
             bf.verify(self.root, bf.state(self.root))
 
     def test_readoption_copies_fresh_legacy_data(self):
@@ -331,6 +331,34 @@ class DeploymentTest(unittest.TestCase):
 
 
 class ValidationTest(unittest.TestCase):
+    def test_chinese_help_labels(self):
+        parser = bf.ChineseArgumentParser(description='测试')
+        parser.add_argument('command')
+        help_text = parser.format_help()
+        self.assertIn('命令与参数', help_text)
+        self.assertIn('选项', help_text)
+        self.assertIn('显示帮助并退出', help_text)
+
+    def test_argument_errors_are_chinese(self):
+        parser = bf.ChineseArgumentParser(prog='tool')
+        parser.add_argument('role', choices=('test', 'production'))
+        for arguments, expected in [([], '缺少必填参数'), (['wrong'], '参数值不在允许范围')]:
+            error_output = io.StringIO()
+            with self.subTest(arguments=arguments), patch('sys.stderr', new=error_output), self.assertRaises(SystemExit):
+                parser.parse_args(arguments)
+            rendered = error_output.getvalue()
+            self.assertIn('用法：', rendered)
+            self.assertIn(expected, rendered)
+            self.assertNotIn('usage:', rendered)
+            self.assertNotIn('error:', rendered)
+
+    def test_missing_release_reports_actionable_chinese_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'releases').mkdir()
+            with self.assertRaisesRegex(bf.Refused, '目标版本.*尚未导入'):
+                bf.release(root, '2.0.0-moon.99')
+
     def test_raw_env_file_is_validated_from_compose_source(self):
         valid = """services:
   bifrost:
@@ -481,7 +509,7 @@ class NewNodeTest(unittest.TestCase):
     def test_bootstrap_rejects_unassigned_ip_before_password_prompt(self):
         args = bf.argparse.Namespace(node_type='production', ip='10.2.3.9', version='2.0.0-moon.19')
         with patch.object(bf, 'global_ips', return_value={'10.2.3.4'}), patch.object(bf, 'container', return_value=None), patch.object(bf, 'read_secret') as secret:
-            with self.assertRaisesRegex(bf.Refused, 'not assigned'):
+            with self.assertRaisesRegex(bf.Refused, '不属于当前主机'):
                 bf.bootstrap(self.root, args)
         secret.assert_not_called()
 
@@ -490,7 +518,7 @@ class NewNodeTest(unittest.TestCase):
         args = bf.argparse.Namespace(node_type='production', ip='10.2.3.4', version='2.0.0-moon.19')
         with patch.object(bf, 'global_ips', return_value={'10.2.3.4'}), patch.object(bf, 'container', return_value=None), \
                 patch.object(bf, 'read_secret', return_value='new-node-secret'), patch.object(bf, 'db_check'):
-            with self.assertRaisesRegex(bf.Refused, 'partial bootstrap'):
+            with self.assertRaisesRegex(bf.Refused, '未完成的 bootstrap'):
                 bf.bootstrap(self.root, args)
         self.assertFalse((self.root / 'config').exists())
 
@@ -552,19 +580,19 @@ class PackageTest(unittest.TestCase):
         self.assertTrue(any(c[:3] == ['docker', 'image', 'load'] for c in calls))
         self.assertFalse(any('stop' in c or 'compose' in c for c in calls))
         self.assertEqual(bf.read_json(self.root / 'releases/2.0.0-moon.19/release.json'), self.manifest)
-        with self.assertRaisesRegex(bf.Refused, 'already registered'):
+        with self.assertRaisesRegex(bf.Refused, '已登记'):
             bf.import_bundle(self.root, bf.argparse.Namespace(bundle=str(self.bundle)))
 
     def test_bad_archive_rejected_before_docker(self):
         (self.bundle / 'image.tar').write_bytes(b'bad')
-        with patch.object(bf, 'run') as runner, self.assertRaisesRegex(bf.Refused, 'archive checksum'):
+        with patch.object(bf, 'run') as runner, self.assertRaisesRegex(bf.Refused, '镜像归档 SHA-256 校验失败'):
             bf.import_bundle(self.root, bf.argparse.Namespace(bundle=str(self.bundle)))
         runner.assert_not_called()
 
     def test_conflicting_tag_is_not_overwritten(self):
         other = dict(self.info, Config={'User': 'different'})
         with patch.object(bf, 'run', return_value='existing-id') as runner, patch.object(bf, 'image_info', return_value=other):
-            with self.assertRaisesRegex(bf.Refused, 'different content'):
+            with self.assertRaisesRegex(bf.Refused, '内容不同'):
                 bf.import_bundle(self.root, bf.argparse.Namespace(bundle=str(self.bundle)))
         self.assertFalse(any(c.args[0][:3] == ['docker', 'image', 'load'] for c in runner.call_args_list))
 
@@ -579,7 +607,7 @@ class PackageTest(unittest.TestCase):
         args = bf.argparse.Namespace(version='2.0.0-moon.19', plugin=str(self.bundle / 'moon.so'), output=str(output))
         with patch.object(bf, 'run', side_effect=save), patch.object(bf, 'image_info', return_value=self.info):
             bf.pack(args)
-            with self.assertRaisesRegex(bf.Refused, 'output exists'):
+            with self.assertRaisesRegex(bf.Refused, '输出目录已存在'):
                 bf.pack(args)
         manifest = bf.read_json(output / 'release.json')
         self.assertEqual(manifest['archive_sha256'], bf.sha(output / 'image.tar'))

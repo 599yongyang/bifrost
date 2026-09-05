@@ -23,11 +23,11 @@ flowchart TD
     D --> E{"测试通过？"}
     E -->|否| X["修复后递增版本，重新构建/打包，只上传 B"]
     X --> A
-    E -->|是| P["把同一个已验证发布包上传并 import 到 A、C"]
-    P --> F["B 修改 STANDBY_VERSION"]
+    E -->|是| F["B 修改 STANDBY_VERSION"]
     F --> G["plan standby → deploy standby → 定向验收"]
     G --> H["NewAPI 启用 B 内网 10.1.12.17:8080"]
-    H --> I["A 修改 PRODUCTION_VERSION；摘流 → plan/deploy → 验收恢复"]
+    H --> P["把同一个已验证发布包上传并 import 到 A、C"]
+    P --> I["A 修改 PRODUCTION_VERSION；摘流 → plan/deploy → 验收恢复"]
     I --> J["C 修改 PRODUCTION_VERSION；摘流 → plan/deploy → 验收恢复"]
     J --> K["NewAPI 停用 B 备用渠道"]
     K --> L["B plan test → deploy test，恢复日常测试环境"]
@@ -45,7 +45,7 @@ flowchart TD
 | `deploy` | 经人工确认后真正重建容器并切换配套镜像和插件 |
 | 业务验收 | 用真实请求验证结果、fallback、共享日志、身份隐藏和 Langfuse |
 
-推荐只先分发到 B。测试通过后，才把**完全相同且校验值不变**的发布包分发到 A、C。真正影响运行服务的是 `deploy`；生产节点必须先在 NewAPI 摘流并排空，再执行它。
+推荐只先分发到 B。B 测试通过、切换生产备用并加入 NewAPI 后，才把**完全相同且校验值不变**的发布包分发到 A、C。真正影响运行服务的是 `deploy`；生产节点必须先在 NewAPI 摘流并排空，再执行它。
 
 ## 1. 命令与目录
 
@@ -127,17 +127,19 @@ docker build --platform linux/amd64 \
 python3 scripts/deployment/bifrost-deploy pack \
   2.0.0-moon.19 \
   --plugin ../bifrost-moon-plugin/build/bifrost-moon-response-sanitizer-linux-amd64-glibc-2.0.0-moon.19.so \
-  --output /tmp/bifrost-release-2.0.0-moon.19
+  --output ./release-packages/bifrost-release-2.0.0-moon.19
 ```
 
 输出目录固定包含：
 
 ```text
-bifrost-release-2.0.0-moon.19/
+release-packages/bifrost-release-2.0.0-moon.19/
 ├── image.tar
 ├── moon.so
 └── release.json
 ```
+
+`release-packages/` 位于当前 Bifrost 项目根目录并已加入 `.gitignore`。每个版本使用独立目录；`pack` 会拒绝覆盖已经存在的同名发布目录。
 
 ### 第三步：上传到服务器
 
@@ -145,6 +147,13 @@ bifrost-release-2.0.0-moon.19/
 
 ```text
 /opt/bifrost/inbox/bifrost-release-2.0.0-moon.19/
+```
+
+第一次上传前，只把专用 `inbox/` 目录交给 `ubuntu` 用户；不要修改整个 `/opt/bifrost`：
+
+```bash
+sudo install -d -o ubuntu -g ubuntu -m 700 /opt/bifrost/inbox
+test -w /opt/bifrost/inbox && echo "inbox 可以上传"
 ```
 
 上传不会改变当前运行版本。`inbox/` 只用于发布包，不放数据库密码。
@@ -181,29 +190,7 @@ sudo /opt/bifrost/bifrost-deploy deploy test
 
 不要覆盖或重新发布同一个版本号；`import` 会拒绝同版本不同内容。
 
-### 第五步：测试通过后，再上传 A、C
-
-测试通过后，将 B 上已经验证的**同一个发布目录**上传到：
-
-- A：公网 `159.75.78.126`
-- C：公网 `134.175.41.186`
-
-两台上传后的服务器路径均为：
-
-```text
-/opt/bifrost/inbox/bifrost-release-2.0.0-moon.19/
-```
-
-在 A、C 分别执行：
-
-```bash
-sudo /opt/bifrost/bifrost-deploy import \
-  /opt/bifrost/inbox/bifrost-release-2.0.0-moon.19
-```
-
-三台的 `release.json`、镜像归档和 `moon.so` 必须来自同一个已验证发布包，不在测试通过后重新打包。
-
-### 第六步：B 启动同版本生产备用
+### 第五步：B 启动同版本生产备用
 
 测试通过，并确认生产数据库备份及新旧 schema 共存/回退兼容性后，将 B 的备用版本改为 `.19`：
 
@@ -219,6 +206,35 @@ sudo /opt/bifrost/bifrost-deploy deploy standby
 ```
 
 备用使用 8080 和生产数据库。先定向验收，再由管理员在 NewAPI 启用 B 的内网渠道 `10.1.12.17:8080`。
+
+### 第六步：备用正常后，再上传 A、C
+
+B 已通过生产库定向验收并加入 NewAPI 后，将 B 上验证过的**同一个发布目录**上传到：
+
+- A：公网 `159.75.78.126`
+- C：公网 `134.175.41.186`
+
+两台上传后的服务器路径均为：
+
+```text
+/opt/bifrost/inbox/bifrost-release-2.0.0-moon.19/
+```
+
+A、C 第一次上传前也分别执行一次：
+
+```bash
+sudo install -d -o ubuntu -g ubuntu -m 700 /opt/bifrost/inbox
+test -w /opt/bifrost/inbox && echo "inbox 可以上传"
+```
+
+在 A、C 分别执行：
+
+```bash
+sudo /opt/bifrost/bifrost-deploy import \
+  /opt/bifrost/inbox/bifrost-release-2.0.0-moon.19
+```
+
+三台的 `release.json`、镜像归档和 `moon.so` 必须来自同一个已验证发布包，不在测试通过后重新打包。
 
 ### 第七步：依次更新 A、C，最后让 B 返回测试
 
